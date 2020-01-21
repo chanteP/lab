@@ -23,8 +23,10 @@
         html{
             height: 100%;
             font-size: 50px;
+            overflow-x: hidden;
         }
         body{
+            position: relative;
             font-size: 13px;
             min-height: 100vh;
             overflow-x: hidden;
@@ -41,6 +43,11 @@
         }
         html[data-dpr="2"] body{
             font-size: 26px;
+        }
+        textarea, input, select{
+            font-size: inherit;
+            color: inherit;
+            font-family: inherit;
         }
     </style>
 </head>

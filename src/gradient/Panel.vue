@@ -40,23 +40,26 @@ export default createComponent({
 });
 </script>
 <style scoped lang="scss">
-.config-wrapper{
-    margin: 0 0 .2rem;
-    padding: 0 .2rem;
+.config-wrapper {
+    margin: 0 0 0.2rem;
+    padding: 0 0.2rem;
 }
-.form-item{
-    height: .5rem;
-    line-height: .5rem;
-    label{
-        float: left;
+.form-item {
+    position: relative;
+    height: 0.5rem;
+    line-height: 0.5rem;
+    label {
+        position: absolute;
         width: 4rem;
-        font-size: .3rem;
+        font-size: 0.3rem;
         font-weight: 700;
     }
-    input{
+    input {
         display: block;
-        margin-left: 4rem;
-        width: 5rem;
+        box-sizing: border-box;
+        padding-left: 4rem;
+        width: 100%;
+        line-height: 0.5rem;
     }
 }
 </style>
