@@ -29,10 +29,7 @@ export default createComponent({
         const state = reactive({
             colorList: (props.data.colorList.length
                 ? props.data.colorList
-                : [
-                      { color: '#FFFFFF', stop: 0 },
-                      { color: '#000000', stop: 1 }
-                  ]
+                : gradientMap[props.data.type].getDefault()
             ).map((data, index, arr) => createColor(data)),
             disabled: false,
 
@@ -71,7 +68,10 @@ export default createComponent({
             colorStop.removeReady && state.colorList.splice(index, 1);
         }
         function calcStop(e) {
-            return +((e.pageX - context.refs.preview.getBoundingClientRect().left) / context.refs.preview.clientWidth).toFixed(2);
+            return +(
+                (e.pageX - context.refs.preview.getBoundingClientRect().left) /
+                context.refs.preview.clientWidth
+            ).toFixed(3);
         }
         function findNearColor(currentStop, exclude = null) {
             let i = 0;

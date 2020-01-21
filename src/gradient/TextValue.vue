@@ -1,12 +1,31 @@
 <template>
-    <textarea class="text-view" v-model="value" disabled />
-    </template>
+    <textarea class="text-view" ref="textarea" v-model="value" disabled /></template>
 <script>
-import { createComponent } from '@vue/composition-api';
+import { createComponent, watch, onMounted } from '@vue/composition-api';
 
 export default createComponent({
     props: {
         value: String
+    },
+    setup(props, context) {
+        watch(
+            () => props.value,
+            () => {
+                calcHeight();
+            }
+        );
+        onMounted(() => {
+            calcHeight();
+        });
+        function calcHeight() {
+            if (!context.refs.textarea) {
+                return;
+            }
+            context.refs.textarea.style.height = context.refs.textarea.scrollHeight + 'px';
+        }
+        return {
+            calcHeight
+        };
     }
 });
 </script>
@@ -16,7 +35,7 @@ export default createComponent({
     box-sizing: border-box;
     width: 100%;
     min-height: 1rem;
-    line-height: 1;
+    line-height: 1.4;
     margin: 0 0 0.08rem;
     padding: 0.1rem 0.2rem;
     font-size: 0.12rem;

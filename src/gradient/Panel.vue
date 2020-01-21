@@ -2,19 +2,19 @@
     <div class="config-wrapper">
         <div class="form-item">
             <label>background-size</label>
-            <input @input="setData('size', $event)" type="text" placeholder="size" />
+            <input @input="setData('size', $event)" :value="data.size" type="text" placeholder="size" />
         </div>
         <div class="form-item">
             <label>background-position</label>
-            <input @input="setData('pos', $event)" type="text" placeholder="position" />
+            <input @input="setData('pos', $event)" :value="data.pos" type="text" placeholder="position" />
         </div>
         <div class="form-item" v-if="data.type === 'radial'">
             <label>shape</label>
-            <input @input="setData('shape', $event)" type="text" placeholder="circle | ellipse | x y | x% y%" />
+            <input @input="setData('shape', $event)" :value="data.shape" type="text" placeholder="circle | ellipse | x y | x% y%" />
         </div>
         <div class="form-item" v-else>
             <label>angle</label>
-            <input @input="setData('angle', $event)" type="number" placeholder="n" />
+            <input @input="setData('angle', $event)" :value="data.angle" type="number" placeholder="n" />
         </div>
     </div>
 </template>
@@ -41,7 +41,8 @@ export default createComponent({
 </script>
 <style scoped lang="scss">
 .config-wrapper{
-    margin: .2rem 0;
+    margin: 0 0 .2rem;
+    padding: 0 .2rem;
 }
 .form-item{
     height: .5rem;

@@ -1,15 +1,18 @@
 <template>
     <div class="wrapper">
-        <a class="clear-btn" @click="clearCache">clear cache...</a>
         <div class="transparent">
-            <div class="preview" :style="state.previewCss"></div>
+            <Preview :style="state.previewCss" :list="state.list" @change="handleChange" />
         </div>
         <div class="add-btnbox">
             Add:
             <a v-for="(item, type) in gradientMap" :key="type" @click="add(type)">{{item.text}}</a>
+            Or:
+            <a @click="clearCache">clear all</a>
         </div>
-        <Bar class="bar" :class="{selected: state.selected === index}" @click.native="select(index, $event)" v-for="(data, index) in state.list" :key="index" @change="handleChange($event, index)" @remove="remove(index)" :data="data"></Bar>
-        <Panel v-if="state.list[state.selected]" :data="state.list[state.selected]" @change="handleChange($event, state.selected)" />
+        <template v-for="(data, index) in state.list">
+            <Bar class="bar" :key="`bar${index}`" :class="{selected: state.selected === index}" @click.native="select(index, $event)" @change="handleChange($event, index)" @remove="remove(index)" :data="data"></Bar>
+            <Panel class="panel" :key="`panel${index}`" v-if="state.selected === index && state.list[index]" :data="state.list[index]" @change="handleChange($event, index)" />
+        </template>
         <TextValue :value="state.previewCss" />
     </div>
 </template>
@@ -18,6 +21,7 @@ import { createComponent, reactive, computed, watch, onMounted } from '@vue/comp
 import Bar from './Bar';
 import Panel from './Panel';
 import TextValue from './TextValue';
+import Preview from './Preview';
 import gradientMap from './gradientMap';
 import { clearCache, setCache, getCache } from './utils';
 
@@ -25,7 +29,8 @@ export default createComponent({
     components: {
         Bar,
         Panel,
-        TextValue
+        TextValue,
+        Preview,
     },
     setup(props, context) {
         const state = reactive({
@@ -73,7 +78,7 @@ export default createComponent({
         function add(type) {
             const data = {
                 type,
-                position: [0, 0],
+                pos: `50% 50%`,
                 angle: 0,
                 colorList: []
             };
@@ -91,7 +96,10 @@ export default createComponent({
             select,
             gradientMap,
             handleChange,
-            clearCache
+            clearCache() {
+                clearCache();
+                state.list = [];
+            }
         };
     }
 });
@@ -107,11 +115,6 @@ body {
     min-height: 100vh;
     padding: 0 0.3rem 0.2rem;
     margin: auto;
-}
-.preview {
-    box-sizing: border-box;
-    height: 40vh;
-    border: 1px solid #ccc;
 }
 .transparent {
     background: conic-gradient(#fff 0.25turn, #ddd 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #ddd 0.75turn) top left /
@@ -141,12 +144,10 @@ body {
         height: 100%;
     }
 }
-.clear-btn {
-    position: fixed;
-    bottom: 0;
-    right: 0;
+.panel {
+    background: #fff;
 }
 .selected {
-    outline: 3px solid #f90;
+    background: #fff;
 }
 </style>
