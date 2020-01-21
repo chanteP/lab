@@ -1,0 +1,26 @@
+{
+  "name": "lab",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node ./build/genPage.js "
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chanteP/lab.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/chanteP/lab/issues"
+  },
+  "homepage": "https://github.com/chanteP/lab#readme",
+  "dependencies": {
+    "@vue/composition-api": "^0.3.4",
+    "glob": "^7.1.6",
+    "vue": "^2.6.11",
+    "vue-color": "^2.7.0"
+  }
+}
