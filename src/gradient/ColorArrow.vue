@@ -1,9 +1,9 @@
 <template>
-    <div class="color-arrow-wrapper" tabindex="99" @blur="hide">
+    <div class="color-arrow-wrapper" tabindex="99" ref="wrapper">
         <div class="color-arrow" @click.stop="show" @mousedown="handleMoveStart">
             <div class="color-arrow-preview" :style="{backgroundColor: state.value}"></div>
         </div>
-        <ColorPicker class="color-picker" :value="state.value" @input="emit" v-if="state.focus" />
+        <ColorPicker class="color-picker" :value="state.value" ref="picker" @input="emit" v-if="state.focus" />
     </div>
 </template>
 <script>
@@ -70,11 +70,26 @@ export default createComponent({
             state.isActive = false;
             context.emit('moveend');
         }
+        function handleClick(e) {
+            const target = e.target;
+            const wrapper = context.refs.wrapper;
+            const picker = context.refs.picker && context.refs.picker.$el;
+            console.log(picker)
+            if (
+                wrapper !== target &&
+                !wrapper.contains(target) &&
+                (!picker || (target !== picker && !picker.contains(target)))
+            ) {
+                hide();
+            }
+        }
         onMounted(() => {
+            document.documentElement.addEventListener('click', handleClick, true);
             document.documentElement.addEventListener('mousemove', handleMove);
             document.documentElement.addEventListener('mouseup', handleMoveEnd);
         });
         onBeforeUnmount(() => {
+            document.documentElement.removeEventListener('click', handleClick, true);
             document.documentElement.removeEventListener('mousemove', handleMove);
             document.documentElement.removeEventListener('mouseup', handleMoveEnd);
         });

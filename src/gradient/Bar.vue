@@ -1,9 +1,11 @@
 <template>
     <div>
-        <div class="color-view" :class="{disabled: state.disabled}" ref="preview" :style="`background-image: ${state.css};`" @click="handleClick">
-            <div class="btn-box">
-                <span class="toggle-btn" @click.stop="toggle">{{state.disabled ? 'show' : 'hide'}}</span>
-                <span class="delete-btn" @click.stop="$emit('remove')">×</span>
+        <div class="transparent">
+            <div class="color-view" :class="{disabled: state.disabled}" ref="preview" :style="`background-image: ${state.css};`" @click="handleClick">
+                <div class="btn-box">
+                    <span class="toggle-btn" @click.stop="toggle">{{state.disabled ? 'show' : 'hide'}}</span>
+                    <span class="delete-btn" @click.stop="$emit('remove')">×</span>
+                </div>
             </div>
         </div>
         <div class="color-stop-list">
@@ -69,7 +71,7 @@ export default createComponent({
             colorStop.removeReady && state.colorList.splice(index, 1);
         }
         function calcStop(e) {
-            return +((e.clientX - context.refs.preview.offsetLeft) / context.refs.preview.clientWidth).toFixed(2);
+            return +((e.pageX - context.refs.preview.getBoundingClientRect().left) / context.refs.preview.clientWidth).toFixed(2);
         }
         function findNearColor(currentStop, exclude = null) {
             let i = 0;
@@ -98,7 +100,7 @@ export default createComponent({
         function calcLeft(value) {
             return value < 0 ? 0 : value > 100 ? 100 : value;
         }
-        function toggle(){
+        function toggle() {
             state.disabled = !state.disabled;
         }
         return {
@@ -162,7 +164,7 @@ $delete-btn-size: 0.36rem;
     height: 0.5rem;
     transition: all 0.2s ease;
 }
-.disabled{
-    opacity: .5;
+.disabled {
+    opacity: 0.5;
 }
 </style>

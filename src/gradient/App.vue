@@ -1,8 +1,8 @@
 <template>
     <div class="wrapper">
         <a class="clear-btn" @click="clearCache">clear cache...</a>
-        <div class="preview" :style="state.previewCss">
-
+        <div class="transparent">
+            <div class="preview" :style="state.previewCss"></div>
         </div>
         <div class="add-btnbox">
             Add:
@@ -63,7 +63,7 @@ export default createComponent({
             state.previewCss = [
                 `background-image: ${backgroundImage}`,
                 `background-size: ${backgroundSize}`,
-                `background-position: ${backgroundPosition}`,
+                `background-position: ${backgroundPosition}`
             ].join(';\n');
             console.log(state.previewCss);
         }
@@ -96,20 +96,26 @@ export default createComponent({
     }
 });
 </script>
-<style scoped lang="scss">
+<style lang="scss">
+body {
+    background: #f0f0f0 left top/.1rem 0.1rem repeat;
+    background-image: linear-gradient(0deg, #ffffff00 0% 75%, #dddddd66 75% 100%),
+        linear-gradient(90deg, #ffffff00 0% 75%, #dddddd66 75% 100%);
+}
 .wrapper {
     max-width: 960px;
     min-height: 100vh;
     padding: 0 0.3rem 0.2rem;
     margin: auto;
-    background: transparent left top/.1rem 0.1rem repeat;
-    background-image: linear-gradient(0deg, #ffffff00 0% 75%, #dddddd66 75% 100%),
-        linear-gradient(90deg, #ffffff00 0% 75%, #dddddd66 75% 100%);
 }
 .preview {
     box-sizing: border-box;
     height: 40vh;
     border: 1px solid #ccc;
+}
+.transparent {
+    background: conic-gradient(#fff 0.25turn, #ddd 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #ddd 0.75turn) top left /
+        0.6rem 0.6rem repeat;
 }
 .add-btnbox {
     margin-top: 0.2rem;
