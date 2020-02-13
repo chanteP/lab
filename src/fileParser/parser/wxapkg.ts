@@ -9,11 +9,11 @@ export default `
 
 #[\${fileCount}]index
 +nameLength,>4
--name,\${nameLength}
+-fileName,\${nameLength}
 +offset,>4
 +size,>4
 ##fileContent
--content,[\${offset}, \${offset + size }]
+-content,[\${offset}, \${offset + size}]
 
 #data
 `

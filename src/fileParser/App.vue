@@ -1,7 +1,7 @@
 <template>
   <div class="wrapper">
-    <FileDrop @change="handleChange" />
-    <ParserTable :file="state.file" />
+    <FileDrop @change="handleChange" :progress="state.fileProgress" />
+    <ParserTable :file="state.file" @progress="handleProgress" />
   </div>
 </template>
 <script>
@@ -17,17 +17,25 @@ export default createComponent({
     setup(props, context) {
         const state = reactive({
             file: null,
+            fileProgress: 0,
         });
         return {
             state,
             handleChange(file){
                 state.file = file;
-            }
+            },
+            handleProgress({loaded, total}){
+                state.fileProgress = loaded / total;
+            },
         };
     },
 });
 </script>
-<style lang="scss">
+<style>
+body{
+    /* background: #fefefe left top/.05rem 0.05rem repeat; */
+    /* background-image: linear-gradient(0deg, #ffffff00 0% 90%, #aaaaaa66 90% 100%), linear-gradient(90deg, #ffffff00 0% 90%, #aaaaaa66 90% 100%); */
+}
 .wrapper {
     overflow: hidden;
 }

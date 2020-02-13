@@ -141,10 +141,12 @@ function convertValue(buffer: ArrayBuffer, order: 0 | 1): ArrayBuffer {
     return rs.buffer;
 }
 
-export async function parseFile(formatter: Record[], file: File): Promise<Record[]> {
+export async function parseFile(formatter: Record[], file: File, progressCallback?: (loaded: number, total: number) => void): Promise<Record[]> {
     const result: Record[] = [];
     let offset = 0;
     const valueMap: Map<string, string> = new Map;
+    const total = file.size;
+    let loaded = 0;
     await parseFormatter(formatter, {
         result,
         async handleField(field, opts) {
@@ -181,6 +183,8 @@ export async function parseFile(formatter: Record[], file: File): Promise<Record
                     length,
                     offset: resultOffset,
                 });
+                loaded += length;
+                progressCallback && progressCallback(loaded, total);
             }
         },
         async handleGroup(group, opts) {
@@ -193,6 +197,7 @@ export async function parseFile(formatter: Record[], file: File): Promise<Record
             }
         }
     });
+    progressCallback && progressCallback(total, total);
     return result;
 
     function parseValueAsNumber(text: string | number): number {
@@ -210,12 +215,21 @@ export function fitHeight(textarea: HTMLElement) {
     if (!textarea) {
         return;
     }
+    textarea.style.height = '0';
     textarea.style.height = textarea.scrollHeight + 'px';
 }
 export function genColorFromString(text: string) {
     return text
         .split('')
         .reduce((d, s) => (d += s.charCodeAt(0)), 0)
+}
+
+export function parseJson(json: string) {
+    try {
+        return JSON.parse(json);
+    } catch (e) {
+        console.warn(e);
+    }
 }
 
 export const tips = `
