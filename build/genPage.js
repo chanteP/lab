@@ -1,31 +1,48 @@
 const glob = require('glob');
-const { existsSync, readFileSync, writeFileSync } = require('fs');
+const { existsSync, readFileSync, writeFileSync, ensureFileSync } = require('fs-extra');
 const { exec } = require('child_process');
 
-const template = readFileSync('./public/index.html', 'utf8');
+const program = require('commander');
+
+program
+    .option('-w, --watch', 'watch js')
+    .option('-p, --project <project>', 'watch js');
+program.parse(process.argv);
 
 // node ./build/genPage.js projectName watch
-const projectName = process.argv[2];
-const watch = process.argv[3];
+const projectName = program.project;
+const watch = program.watch;
 
-if(!projectName){
+if (!projectName) {
     throw `projectName is needed`;
 }
+
 genProject(projectName, watch);
 
 function genProject(projectName, watch = false) {
-    const projectPath = `./src/${projectName}`
-    let html = template;
+    const projectPath = `./src/${projectName}`;
+    let html = readFileSync('./public/index.html', 'utf8');
     html = replaceTemplate(html, 'title', projectName);
-    html = replaceTemplate(html, 'content', existsSync(`${projectPath}/index.html`) && readFileSync(`${projectPath}/index.html`, 'utf8'));
-    if(existsSync(`${projectPath}/index.js`)){
-        exec(`pack ./src/${projectName}/index.js -o ./dist/${projectName}/index.js ${watch ? '--watch' : ''}`);
+    html = replaceTemplate(
+        html,
+        'content',
+        existsSync(`${projectPath}/index.html`) && readFileSync(`${projectPath}/index.html`, 'utf8')
+    );
+    let entry;
+    if (existsSync(`${projectPath}/index.js`)) {
+        entry = `./src/${projectName}/index.js`;
+    }
+    if (existsSync(`${projectPath}/index.ts`)) {
+        entry = `./src/${projectName}/index.ts`;
+    }
+    if (entry) {
+        exec(`pack ${entry} -o ./dist/${projectName}/index.js ${watch ? '--watch' : ''}`);
         html = replaceTemplate(html, 'script', `<script src="./index.js"></script>`);
     }
+    ensureFileSync(`./dist/${projectName}/index.html`);
     writeFileSync(`./dist/${projectName}/index.html`, html);
 }
 
 function replaceTemplate(template, key, content) {
     return template.replace('${' + key + '}', content || '');
 }
-
