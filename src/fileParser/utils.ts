@@ -237,6 +237,8 @@ export const tips = `
 
 2. 字段Field, \${} 部分支持变量
 fieldName,byteLength     // 以16进制读取
+fieldName,[offsetStart, offsetEnd]     // 以offset读取（下个字段不会往前推进）
+fieldName,[\${offsetStart}, \${offsetEnd}]     // 以offset变量读取（下个字段不会往前推进）
 fieldName,>byteLength    // 以大端序读取
 fieldName,<byteLength    // 以小端序读取
 -fieldName,byteLength    // 以文本读取

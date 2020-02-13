@@ -48,7 +48,6 @@ export default createComponent({
         file: Blob,
     },
     setup(props, context) {
-        console.log(parser);
         const state = reactive({
             format: localStorage.getItem(cacheKey) || '',
             formatter: [],
