@@ -38,7 +38,7 @@
 </template>
 <script>
 import { createComponent, reactive, computed, watch, onMounted } from '@vue/composition-api';
-import { fitHeight, parseText, getValue, parseFormatter, parseFile, parseBlank, tips } from './utils';
+import { fitHeight, parseText, getValue, parseFormatter, parseFile, parseBlank, tips, genColorFromString } from './utils';
 import parser from './parser';
 const cacheKey = 'lab.fileParser.textarea';
 
@@ -108,11 +108,9 @@ export default createComponent({
                 window.currentField = info;
                 console.log('window.currentField = ', info);
             },
-            getColor(gen) {
-                if (gen) {
-                    color = `hsl(${gen
-                        .split('')
-                        .reduce((d, s) => (d += s.charCodeAt()), 0)}, 70%, 95%)`;
+            getColor(text) {
+                if (text) {
+                    color = `hsl(${genColorFromString(text)}, 70%, 95%)`;
                 }
                 return color;
             },

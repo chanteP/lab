@@ -212,6 +212,11 @@ export function fitHeight(textarea: HTMLElement) {
     }
     textarea.style.height = textarea.scrollHeight + 'px';
 }
+export function genColorFromString(text: string) {
+    return text
+        .split('')
+        .reduce((d, s) => (d += s.charCodeAt(0)), 0)
+}
 
 export const tips = `
 支持的语法：
