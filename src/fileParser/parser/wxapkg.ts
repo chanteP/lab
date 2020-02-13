@@ -14,4 +14,6 @@ export default `
 +size,>4
 ##fileContent
 -content,[\${offset}, \${offset + size }]
+
+#data
 `
