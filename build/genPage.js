@@ -36,7 +36,9 @@ function genProject(projectName, watch = false) {
         entry = `./src/${projectName}/index.ts`;
     }
     if (entry) {
-        exec(`pack ${entry} -o ./dist/${projectName}/index.js ${watch ? '--watch' : ''}`);
+        const command = `pack ${entry} -o ./dist/${projectName}/index.js ${watch ? '--watch' : ''}`;
+        console.log(command);
+        exec(command);
         html = replaceTemplate(html, 'script', `<script src="./index.js"></script>`);
     }
     ensureFileSync(`./dist/${projectName}/index.html`);
