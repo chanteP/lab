@@ -36,7 +36,7 @@ function genProject(projectName, watch = false) {
         entry = `./src/${projectName}/index.ts`;
     }
     if (entry) {
-        const command = `pack ${entry} -o ./dist/${projectName}/index.js ${watch ? '--watch' : ''}`;
+        const command = `pack ${entry} -o ./dist/${projectName}/index.js ${watch ? '--watch' : '--mode production'}`;
         console.log(command);
         exec(command);
         html = replaceTemplate(html, 'script', `<script src="./index.js"></script>`);
