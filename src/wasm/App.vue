@@ -93,8 +93,8 @@ export default createComponent({
 .wrapper div {
     margin: 10px;
 }
-input{
-    width:100px;
+input {
+    width: 100px;
     height: 50px;
     line-height: 50px;
 }
