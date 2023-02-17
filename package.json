@@ -20,13 +20,15 @@
   },
   "homepage": "https://github.com/chanteP/lab#readme",
   "dependencies": {
-    "@vue/composition-api": "^0.3.4",
+    "@types/antlr4": "4.11",
+    "antlr4": "4.11",
     "commander": "^4.1.1",
     "fs-extra": "^8.1.0",
     "gl-matrix": "^3.4.3",
     "glob": "^7.1.6",
+    "naive-ui": "^2.34.3",
     "ts-node": "^10.7.0",
-    "vue": "^2.6.11",
+    "vue": "3",
     "vue-color": "^2.7.0"
   },
   "devDependencies": {
