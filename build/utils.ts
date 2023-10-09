@@ -12,7 +12,7 @@ export function genHTML({ title = '', content = '', script = '' }) {
 
 export function genIndex() {
     const projects = glob.sync('*/index.html', {
-        cwd: path.resolve(__dirname, '../dist/'),
+        cwd: path.resolve(__dirname, '../docs/'),
     });
 
     console.log(projects);
@@ -23,5 +23,5 @@ export function genIndex() {
         content: `<ul>${content}</ul>`,
     });
 
-    writeFileSync(`./dist/index.html`, html);
+    writeFileSync(`./docs/index.html`, html);
 }

@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "ts-node ./build/genPage.ts --watch -p ",
         "build": "ts-node ./build/genPage.ts -p ",
-        "serve": "static ./dist -a",
+        "serve": "static ./docs -a",
         "genIndex": "ts-node ./build/genIndex.ts"
     },
     "repository": {

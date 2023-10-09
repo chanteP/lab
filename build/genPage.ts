@@ -34,7 +34,7 @@ async function genProject(projectName, watch = false) {
         process.exit(1);
     }
 
-    const command = `pack ./src/${projectName}/${entry} -o ./dist/${projectName}/index.js ${
+    const command = `pack ./src/${projectName}/${entry} -o ./docs/${projectName}/index.js ${
         watch ? '--watch' : '--mode production'
     }`;
     console.log(command);
@@ -42,7 +42,7 @@ async function genProject(projectName, watch = false) {
     exec(command);
 
     script = `<script src="./index.js"></script>`;
-    ensureFileSync(`./dist/${projectName}/index.html`);
+    ensureFileSync(`./docs/${projectName}/index.html`);
 
     const html = genHTML({
         title,
@@ -50,7 +50,7 @@ async function genProject(projectName, watch = false) {
         script,
     });
 
-    writeFileSync(`./dist/${projectName}/index.html`, html);
+    writeFileSync(`./docs/${projectName}/index.html`, html);
 
     open
 }
