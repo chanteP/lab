@@ -19,7 +19,7 @@ const props = defineProps<{
                 <div class="col">Value</div>
             </div>
             <template v-for="item in props.result">
-                <DataTableItem :item="item" />
+                <DataTableItem :item="item" :file="props.result" />
             </template>
         </div>
     </div>

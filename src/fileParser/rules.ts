@@ -10,27 +10,15 @@ fieldName, [offsetStart, offsetEnd]
 fieldName, length, dataFormat | dataFormat
 
 \${fieldValueWithDataFormat}
-\${fieldValueWithDataFormat + offset}
-\${fieldValueWithDataFormat - offset}
 
-while(byteValue): # group
-if(var, matchData): # group
-loop(numberValue): # group
+while(matchData)# group
+if(data, equalValue)# group
+loop(count)# group
 
-while(byteValue): # field...
-if(var, matchData): # field...
-loop(numberValue): # field...
+back(byte)
+backWhile(byte)
 
-back(numberValue)
-next(numberValue)
-goto(numberValue)
-find(byteValue)
-backFind(byteValue)
-
-stringValue: 'string' "string"
-byteValue: [00 0F AF]
-numberValue: 123
+loop(count)fieldName, ...
 
 // comment
-/* comment */
 `;

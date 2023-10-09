@@ -37,6 +37,9 @@ import {
     VarExprContext,
     StringValueContext,
     CalcExprContext,
+    ElseIfCommandContext,
+    ElseCommandContext,
+    EndifCommandContext,
 } from './FileDescParser';
 import { inMultiMatchDataValue, isMultiByteValueWithOffset, isOddFilter } from '../utils';
 
@@ -85,6 +88,15 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
     private parseStatus: ParseAction = ParseAction.COLLECT;
     private get isCollecting() {
         return this.parseStatus === ParseAction.COLLECT;
+    }
+
+    // if condition, 简单写一个stack维护
+    private ifConditionStack: boolean[] = [];
+    get hasIfCondition() {
+        return this.ifConditionStack.length;
+    }
+    get lastIfConditionResult() {
+        return this.ifConditionStack[this.ifConditionStack.length - 1];
     }
 
     constructor(fileData: FileData) {
@@ -193,6 +205,7 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
         this.parseStatus = ParseAction.PARSE;
         await this.visitCollectContextChildren(ctx);
 
+        this.file.end();
         this.file.ready.resolve();
     }
     // line ----------------------------------------------------------------
@@ -224,6 +237,12 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
                 level,
                 name: name ?? '',
                 content: [],
+                offset: this.file.pointer,
+                end: this.file.pointer,
+                file: this.file.getFile(),
+                get data() {
+                    return this.file.slice(groupData.offset, groupData.end);
+                },
             };
             // 得先push再操作command。command依赖group栈处理
             this.file.push(groupData);
@@ -328,8 +347,10 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
                 return this.visitNextCommand(childCommand);
             case childCommand instanceof BackFindCommandContext:
                 return this.visitBackFindCommand(childCommand);
+            case childCommand instanceof EndifCommandContext:
+                return this.visitEndIfCommand(childCommand);
             default:
-                console.error(`invalid command: ${childCommand.getText()}`);
+                console.error(`unknown command: ${childCommand.getText()}`);
                 return;
         }
     }
@@ -349,8 +370,17 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
             case commandContext instanceof IfCommandContext:
                 await this.visitIfCommand(commandContext, execRecord);
                 break;
+            case commandContext instanceof ElseIfCommandContext:
+                await this.visitElseIfCommand(commandContext, execRecord);
+                break;
+            case commandContext instanceof ElseCommandContext:
+                await this.visitElseCommand(commandContext, execRecord);
+                break;
             case commandContext instanceof LoopCommandContext:
                 await this.visitLoopCommand(commandContext, execRecord);
+                break;
+            default:
+                console.error(`unknown scopeCommand: ${ctx.getText()}`);
                 break;
         }
     }
@@ -393,10 +423,62 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
             return inMultiMatchDataValue(data, expectValue);
         };
 
-        if (condition()) {
+        const result = condition();
+
+        this.ifConditionStack.push(result);
+
+        if (result) {
             const group = await execRecord();
             group.optional = true;
         }
+    }
+
+    // Visit a parse tree produced by FileDescParser#ifCommand.
+    async visitElseIfCommand(ctx: ElseIfCommandContext, execRecord: ScopeCommandFunction<GroupRecord | FieldRecord>) {
+        const condition = () => {
+            if (!this.file.hasFile()) {
+                return true;
+            }
+            const [ifMark, lb, varValue, isMark, expectValue, rb] = this.visitChildren(ctx);
+            const data = this.file.getVar(varValue);
+            return inMultiMatchDataValue(data, expectValue);
+        };
+
+        if (!this.hasIfCondition) {
+            console.error('error elseif', ctx.getText());
+            return;
+        }
+        if (this.file.hasFile() && this.lastIfConditionResult === true) {
+            return;
+        }
+
+        const result = condition();
+        this.ifConditionStack[this.ifConditionStack.length - 1] = result;
+
+        if (result) {
+            const group = await execRecord();
+            group.optional = true;
+        }
+    }
+
+    // Visit a parse tree produced by FileDescParser#ifCommand.
+    async visitElseCommand(ctx: ElseCommandContext, execRecord: ScopeCommandFunction<GroupRecord | FieldRecord>) {
+        if (!this.hasIfCondition) {
+            console.error('error else', ctx.getText());
+            return;
+        }
+        if (this.file.hasFile() && this.lastIfConditionResult === true) {
+            return;
+        }
+        this.ifConditionStack[this.ifConditionStack.length - 1] = true;
+
+        const group = await execRecord();
+        group.optional = true;
+    }
+
+    // Visit a parse tree produced by FileDescParser#ifCommand.
+    async visitEndIfCommand(ctx: EndifCommandContext) {
+        this.ifConditionStack.pop();
     }
 
     // Visit a parse tree produced by FileDescParser#loopCommand.

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref, type Ref, computed } from 'vue';
-import type { FileRecords } from '../parser';
+import { pipeDataFormatter, type FileRecords } from '../parser';
 import { getHSLColor } from '../utils';
 
 import DataTableItem from './DataTableItem.vue';
 
 const props = defineProps<{
     item: FileRecords;
+    file: FileRecords[];
 }>();
 
 const showContent = ref(false);
@@ -17,6 +18,23 @@ const lastFormatter = computed(() => {
     }
     return null;
 });
+
+const showType = computed(() => {
+    if (!lastFormatter.value) {
+        return 'byte';
+    }
+    if (lastFormatter.value === 'image' || lastFormatter.value === 'png') {
+        return 'html';
+    }
+    return 'text';
+});
+
+function getValue(item: FileRecords) {
+    if (item.type === 'field') {
+        return pipeDataFormatter(item, item.formatter, props.file);
+    }
+    return '';
+}
 
 function log() {
     console.log(props.item);
@@ -57,7 +75,7 @@ onMounted(() => {
         </div>
 
         <template v-for="item in props.item.content">
-            <DataTableItem :item="item" />
+            <DataTableItem :item="item" :file="props.file" />
         </template>
     </div>
 
@@ -78,23 +96,13 @@ onMounted(() => {
                 <span class="offset">{{ props.item.offset }} - {{ props.item.end }}</span>
             </template>
         </div>
-        <div class="col col-wrap">
+        <div class="col col-content" @click="copy(props.item.value)">
             <template v-if="showContent">
-                <div
-                    class="cell-content"
-                    @click="copy(props.item.value)"
-                    v-if="!lastFormatter"
-                    style="word-break: break-all"
-                >
+                <div class="cell-content" v-if="showType === 'byte'" style="word-break: break-all">
                     {{ props.item.value }}
                 </div>
-                <div
-                    class="cell-content"
-                    @click="copy(props.item.value)"
-                    v-else-if="lastFormatter === 'image' || lastFormatter === 'png'"
-                    v-html="props.item.value"
-                ></div>
-                <pre class="cell-content" @click="copy(props.item.value)" v-else>{{ props.item.value }}</pre>
+                <div class="cell-content" v-else-if="showType === 'html'" v-html="getValue(props.item)"></div>
+                <pre class="cell-content" v-else-if="showType === 'text'">{{ props.item.value }}</pre>
             </template>
         </div>
     </div>
@@ -106,7 +114,7 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
-.col-wrap {
+.col-content {
     display: flex;
     flex-direction: column;
     justify-content: center;

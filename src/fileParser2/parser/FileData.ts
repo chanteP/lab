@@ -5,6 +5,10 @@ export interface GroupRecord {
     level: number;
     name: string;
     content: FileRecords[];
+    offset: number | string;
+    end: number | string;
+    file: File;
+    data: ArrayBuffer | null;
 
     optional?: boolean;
     loop?: boolean;
@@ -41,7 +45,7 @@ export interface CommandRecord {
 export type FileRecords = GroupRecord | FieldRecord | CommandRecord;
 export type FieldValue = string | number | ArrayBuffer | null | undefined;
 
-export type DataFormatter = (data: FieldValue, field: FieldRecord) => FieldValue;
+export type DataFormatter = (data: FieldValue, field: FieldRecord, file: FileRecords[]) => FieldValue;
 
 const dataFormatterMap: Map<string, DataFormatter> = new Map();
 
@@ -70,11 +74,16 @@ export class FileData {
     private popTo(level: number) {
         while (this.currentScope) {
             if (this.currentScope.level >= level) {
-                this.groupStack.pop();
+                const group = this.groupStack.pop();
+                group.end = this.pointer;
             } else {
                 break;
             }
         }
+    }
+
+    end() {
+        this.popTo(1);
     }
 
     // record ------------------------------------------------------------
@@ -105,6 +114,9 @@ export class FileData {
         return this.hasFile() && this.pointer >= this.size;
     }
 
+    getFile() {
+        return this.file;
+    }
     setFile(file?: File) {
         this.file = file;
         this.cacheFileData = undefined;
@@ -132,16 +144,7 @@ export class FileData {
     }
 
     pipeDataFormatter(field: FieldRecord, dataFormatterKeys: string[]): FieldValue {
-        let rs: FieldValue = field.data;
-        (dataFormatterKeys.length ? dataFormatterKeys : ['default']).forEach((key) => {
-            const formatter = dataFormatterMap.get(key);
-            if (!formatter) {
-                console.warn(`formatter '${key}' lost`);
-                return;
-            }
-            rs = formatter(rs, field);
-        });
-        return rs;
+        return pipeDataFormatter(field, dataFormatterKeys, this.data);
     }
 
     getVar(name: string, defaultValue = 0) {
@@ -188,4 +191,30 @@ export function registerDataFormatter(name: string, formatter: DataFormatter) {
 
 export function getDataFormatterList() {
     return [...dataFormatterMap.keys()];
+}
+
+export function pipeDataFormatter(
+    field: FieldRecord,
+    dataFormatterKeys: string[] = field.formatter,
+    fileData: FileRecords[] = [],
+): FieldValue {
+    let rs: FieldValue = field.data;
+    (dataFormatterKeys.length ? dataFormatterKeys : ['default']).forEach((key) => {
+        const formatter = dataFormatterMap.get(key);
+        if (!formatter) {
+            console.warn(`formatter '${key}' lost`);
+            return;
+        }
+        rs = formatter(rs, field, fileData);
+    });
+    return rs;
+}
+
+export function hasGroupContains(group: GroupRecord, fieldKey: string, value: FieldValue) {
+    return group.content.some((field) => {
+        if (field.type !== 'field') {
+            return false;
+        }
+        return field.name === fieldKey && field.value === value;
+    });
 }
