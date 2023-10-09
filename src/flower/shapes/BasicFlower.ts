@@ -1,10 +1,10 @@
 import { Flower } from './Flower';
-import { random } from '../utils/math';
+import { generateNormalDistribution, random } from '../utils/math';
 
 export class BasicFlower extends Flower {
     size = random(40, 20);
 
-    petals = 5;
+    petals = generateNormalDistribution(5, 1);
     color = `hsl(${random(120) - 60}, 70%, 70%)`;
 
     paintPetal(t: number, dir: number, dirIndex: number) {
