@@ -51,8 +51,6 @@ async function genProject(projectName, watch = false) {
     });
 
     writeFileSync(`./docs/${projectName}/index.html`, html);
-
-    open
 }
 
 function ensureEntry(root: string) {

@@ -57,7 +57,7 @@ onMounted(render);
 
 <template>
     <div>
-        <canvas ref="$canvas" class="canvas" @click="click"></canvas>
+        <canvas ref="$canvas" class="canvas" @click.prevent="click" @touchmove.prevent></canvas>
     </div>
 </template>
 
