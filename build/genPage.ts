@@ -34,7 +34,7 @@ async function genProject(projectName, watch = false) {
         process.exit(1);
     }
 
-    const command = `pack ./src/${projectName}/${entry} -o ./docs/${projectName}/index.js ${
+    const command = `pack ./src/${projectName}/${entry} -o ./docs/${projectName}/index.js --raw .glsl ${
         watch ? '--watch' : '--mode production'
     }`;
     console.log(command);
