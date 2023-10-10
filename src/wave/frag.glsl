@@ -13,13 +13,8 @@ vec2 random2(vec2 p){
     return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);
 }
 
-void main(){
-    vec2 st=gl_FragCoord.xy/u_resolution.xy;
-    st.x*=u_resolution.x/u_resolution.y;
-    vec4 color=vec4(.0);
-    
-    // Scale
-    st*=3.;
+float dist(vec2 st){
+    float change_speed=u_time/1.8;
     
     // Tile the space
     vec2 i_st=floor(st);
@@ -32,7 +27,7 @@ void main(){
         for(int i=-1;i<=1;i++){
             vec2 neighbor=vec2(float(i),float(j));
             vec2 point=random2(i_st+neighbor);
-            point=.5+.5*sin(u_time+6.2831*point);
+            point=.5+.5*sin(change_speed+6.2831*point);
             vec2 diff=neighbor+point-f_st;
             float dist=length(diff);
             
@@ -42,10 +37,28 @@ void main(){
             }
         }
     }
+    return m_dist;
+}
+
+void main(){
+    vec2 st=gl_FragCoord.xy/u_resolution.xy;
+    st.x*=u_resolution.x/u_resolution.y;
+    vec4 color=vec4(.0);
+    
+    // Scale
+    st*=2.4;
+    st.y=st.y+sin(u_time/2.);
+    
+    float m_dist=dist(st);
+    
+    vec2 bottom=st-vec2(2.2,.5);
+    float bottom_dist=dist(bottom);
     
     // Assign a color using the closest point position
     // color += dot(m_point,vec2(.5,.5));
-    color=vec4(1.,1.,1.,min(.8, m_dist*m_dist*m_dist));
+    float alpha=.8*m_dist*m_dist*m_dist+.7*bottom_dist*bottom_dist*bottom_dist;
+    
+    color=vec4(1.,1.,1.,alpha);
     // color=vec4(m_dist, m_dist, m_dist, 1.);
     // color=vec4(1.,0.,0.,0.);
     

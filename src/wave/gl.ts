@@ -117,7 +117,7 @@ export function useInjectGlData(
 }
 
 export function createGlContext(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext('webgl', {
+    const gl = canvas.getContext('webgl2', {
         alpha: true,
         depth: true,
         premultipliedAlpha: false,
