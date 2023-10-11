@@ -10,7 +10,7 @@ uniform vec2 u_resolution;
 uniform float u_time;
 
 vec2 random2(vec2 p){
-    return fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453);
+    return fract(sin(vec2(dot(p,vec2(0.720,0.260)),dot(p,vec2(-0.610,0.840)) / 400.))*57.601);
 }
 
 float dist(vec2 st){
@@ -46,21 +46,22 @@ void main(){
     vec4 color=vec4(.0);
     
     // Scale
-    st*=2.4;
-    st.y=st.y+sin(u_time/2.);
+    st*=1.4;
+    st.y*=log(st.y) * 4. + 1.;
+
+    vec2 bottom=st-vec2(12.2,7.5);
+
+    st.y=st.y+sin(u_time/1.3);
+    bottom.y=bottom.y+sin(u_time/1.7);
     
     float m_dist=dist(st);
-    
-    vec2 bottom=st-vec2(2.2,.5);
     float bottom_dist=dist(bottom);
     
     // Assign a color using the closest point position
     // color += dot(m_point,vec2(.5,.5));
-    float alpha=.8*m_dist*m_dist*m_dist+.7*bottom_dist*bottom_dist*bottom_dist;
+    float alpha=m_dist*m_dist*m_dist+.7*bottom_dist*bottom_dist*bottom_dist;
     
     color=vec4(1.,1.,1.,alpha);
-    // color=vec4(m_dist, m_dist, m_dist, 1.);
-    // color=vec4(1.,0.,0.,0.);
     
     // Add distance field to closest point center
     // color.g = m_dist;
