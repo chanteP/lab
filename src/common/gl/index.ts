@@ -52,6 +52,44 @@ function injectVert(gl: WebGLRenderingContext, program: WebGLProgram) {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 }
 
+type InjectableMethod = keyof WebGLRenderingContext & `uniform${string}`;
+type Tail<T extends any[]> = T extends [any, ...infer U] ? U : never;
+function injectUniform<M extends InjectableMethod>(
+    gl: WebGLRenderingContext,
+    program: WebGLProgram,
+    name: string,
+    method: M,
+    ...value: Tail<Parameters<WebGLRenderingContext[M]>>
+) {
+    const n = gl.getUniformLocation(program, name);
+    // @ts-expect-error
+    gl[method](n, ...value);
+}
+
+function injectTexture(
+    gl: WebGLRenderingContext,
+    program: WebGLProgram,
+    name: string,
+    index: number = 0,
+    img: HTMLImageElement,
+) {
+    const texture = gl.createTexture();
+    const sampler = gl.getUniformLocation(program, name);
+
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.activeTexture(gl[`TEXTURE${index}`]);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(sampler, index);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+}
+
 export function useInjectGlData(
     gl: WebGLRenderingContext,
     program: WebGLProgram,
@@ -117,7 +155,7 @@ export function useInjectGlData(
 }
 
 export function createGlContext(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext('webgl2', {
+    const gl = canvas.getContext('webgl', {
         alpha: true,
         depth: true,
         premultipliedAlpha: true,
@@ -149,10 +187,17 @@ export function createProgram(gl: WebGLRenderingContext, shader?: { vert?: strin
     // 加载并使用链接好的程序
     gl.useProgram(program);
 
+    const message = gl.getShaderInfoLog(fShader);
+    if (message.length > 0) {
+        /* message may be an error or a warning */
+        throw message;
+    }
+
     return program;
 }
 
 export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string; frag?: string; ratio?: number }) {
+    ensureCanvas(canvas);
     const gl = createGlContext(canvas);
 
     const program = createProgram(gl, options);
@@ -176,6 +221,16 @@ export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string;
 
     return {
         gl,
+        inject: <M extends InjectableMethod>(
+            name: string,
+            method: M,
+            ...value: Tail<Parameters<WebGLRenderingContext[M]>>
+        ) => {
+            injectUniform(gl, program, name, method, ...value);
+        },
+        injectTexture: (name: string, index: number, img: HTMLImageElement) => {
+            injectTexture(gl, program, name, index, img);
+        },
         play: renderTick,
         stop: () => {
             cancelAnimationFrame(timer);

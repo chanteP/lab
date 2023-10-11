@@ -1,4 +1,4 @@
-import { createGlContext, ensureCanvas, setBlend, simpleInit } from './gl';
+import { createGlContext, ensureCanvas, setBlend, simpleInit } from '../common/gl';
 import frag from './frag.glsl';
 
 const ratio = 2;
