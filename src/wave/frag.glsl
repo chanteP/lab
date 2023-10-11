@@ -46,13 +46,14 @@ void main(){
     vec4 color=vec4(.0);
     
     // Scale
-    st*=1.4;
-    st.y*=log(st.y) * 4. + 1.;
+    // st*=1.4;
+    st*=3.;
+    st.y= pow(st.y,1.2);
 
     vec2 bottom=st-vec2(12.2,7.5);
 
-    st.y=st.y+sin(u_time/1.3);
-    bottom.y=bottom.y+sin(u_time/1.7);
+    st.y=st.y-sin(u_time / 1.3);
+    bottom.y=bottom.y-sin(u_time/1.7);
     
     float m_dist=dist(st);
     float bottom_dist=dist(bottom);
