@@ -38,7 +38,7 @@ export function setBlend(gl: WebGLRenderingContext, blendMode: 'normal' | 'add' 
         case 'normal':
         default:
             gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD);
-            gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
             break;
     }
 }
@@ -120,9 +120,10 @@ export function createGlContext(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl2', {
         alpha: true,
         depth: true,
-        premultipliedAlpha: false,
+        premultipliedAlpha: true,
     });
     setBlend(gl, 'normal');
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     return gl;
 }
 
@@ -164,7 +165,7 @@ export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string;
 
     function renderTick() {
         gl.clearColor(0.0, 0.0, 0.0, 0.0); // 使用透明的黑色清除颜色
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
         inject();
 
