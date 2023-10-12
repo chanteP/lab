@@ -39,7 +39,9 @@ async function genProject(projectName, watch = false) {
     }`;
     console.log(command);
 
-    exec(command);
+    const child = exec(command);
+    child.stdout.pipe(process.stdout);
+    child.stderr.pipe(process.stderr);
 
     script = `<script src="./index.js"></script>`;
     ensureFileSync(`./docs/${projectName}/index.html`);

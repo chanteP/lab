@@ -68,17 +68,22 @@ function injectUniform<M extends InjectableMethod>(
     gl[method](n, ...value);
 }
 
+interface TextureOptions {
+    flip?: false;
+}
+
 function injectTexture(
     gl: WebGLRenderingContext,
     program: WebGLProgram,
     name: string,
     index: number = 0,
     img: HTMLImageElement,
+    options?: TextureOptions,
 ) {
     const texture = gl.createTexture();
     const sampler = gl.getUniformLocation(program, name);
 
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, options?.flip ?? 1 ? 1 : 0);
     gl.activeTexture(gl[`TEXTURE${index}`]);
     gl.bindTexture(gl.TEXTURE_2D, texture);
 
@@ -231,8 +236,8 @@ export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string;
         ) => {
             injectUniform(gl, program, name, method, ...value);
         },
-        injectTexture: (name: string, index: number, img: HTMLImageElement) => {
-            injectTexture(gl, program, name, index, img);
+        injectTexture: (name: string, index: number, img: HTMLImageElement, options?: TextureOptions) => {
+            injectTexture(gl, program, name, index, img, options);
         },
         play: renderTick,
         stop: () => {
