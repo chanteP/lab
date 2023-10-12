@@ -18,7 +18,9 @@ void main(){
 
 `;
 
-export function ensureCanvas(canvas: HTMLCanvasElement, ratio = 2) {
+const DEFAULT_RATIO = Math.min(window.devicePixelRatio ?? 1, 2);
+
+export function ensureCanvas(canvas: HTMLCanvasElement, ratio = DEFAULT_RATIO) {
     canvas.width = canvas.clientWidth * ratio;
     canvas.height = canvas.clientHeight * ratio;
 }
@@ -112,7 +114,7 @@ export function useInjectGlData(
         gl.uniform2f(uMouseLocation, ...lastMousePosition);
 
         const uResolution = gl.getUniformLocation(program, 'u_resolution');
-        gl.uniform2f(uResolution, canvas.clientWidth, canvas.clientHeight);
+        gl.uniform2f(uResolution, canvas.clientWidth * options.ratio, canvas.clientHeight * options.ratio);
 
         // 为 u_date 提供值
         const uDateLocation = gl.getUniformLocation(program, 'u_date');
@@ -197,12 +199,13 @@ export function createProgram(gl: WebGLRenderingContext, shader?: { vert?: strin
 }
 
 export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string; frag?: string; ratio?: number }) {
-    ensureCanvas(canvas);
+    const ratio = options.ratio ?? DEFAULT_RATIO;
+    ensureCanvas(canvas, ratio);
     const gl = createGlContext(canvas);
 
     const program = createProgram(gl, options);
 
-    const { inject, destroy } = useInjectGlData(gl, program, canvas, { ratio: options.ratio ?? 2 });
+    const { inject, destroy } = useInjectGlData(gl, program, canvas, { ratio });
     injectVert(gl, program);
     inject();
 
