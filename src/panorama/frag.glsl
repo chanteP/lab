@@ -1,13 +1,13 @@
 precision mediump float;
 
-// 分辨率，全景图和旋转矩阵
+// 分辨率，全景图和欧拉角
 uniform vec2 u_resolution;
 uniform sampler2D u_image;
 uniform mat3 u_rotation;
 
 void main() {
-    // 获取当前像素的坐标（-1到1）
-    vec2 xy = (gl_FragCoord.xy / u_resolution - 0.5) * 2.0;
+    // 获取当前像素的坐标（-1到1），并根据画布的宽高比例进行调整
+    vec2 xy = (gl_FragCoord.xy / u_resolution.y - vec2(u_resolution.x / u_resolution.y * 0.5, 0.5)) * 2.0;
 
     // 将2D坐标转换为3D坐标
     vec3 direction = normalize(vec3(xy, -1.0));

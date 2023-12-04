@@ -53,8 +53,8 @@ function changeByTouch(e: TouchEvent) {
 function bindDeviceOrientation() {
     window.addEventListener("deviceorientation", function (event) {
         instance.inject('u_rotation', 'uniformMatrix3fv', false, calcRotateMat([
-            rad(event.alpha),
             rad(event.beta),
+            rad(event.alpha),
             rad(event.gamma),
         ])
         );
@@ -65,6 +65,7 @@ async function setImage(url: string) {
     const image = await loadImage(url);
     instance.injectTexture('u_image', 0, image);
     instance.inject('u_rotation', 'uniformMatrix3fv', false, calcRotateMat([0, 0, 0]));
+    instance.inject('u_imageResolution', 'uniform2f', image.naturalWidth, image.naturalHeight);
 }
 
 async function initCanvas() {
@@ -102,6 +103,10 @@ function chooseImageFile(e: InputEvent) {
     setImageByFile(e.dataTransfer.files[0]);
 }
 
+function checkPermission() {
+    DeviceMotionEvent.requestPermission?.()
+}
+
 
 onMounted(async () => {
     await initCanvas();
@@ -112,11 +117,11 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="container" @touchstart.prevent @dragover.prevent @drop="dropImage">
+    <div class="container" @touchstart.prevent="checkPermission" @dragover.prevent @drop="dropImage">
         <canvas ref="$canvas" class="canvas" @mousemove="changeByMouse" @touchmove="changeByTouch"></canvas>
         <label class="choose">
             CHOOSE IMAGE
-            <input type="file" accept="image/*" hidden />
+            <input type="file" accept="image/*" @change="chooseImageFile" hidden />
         </label>
     </div>
 </template>
@@ -141,9 +146,9 @@ onMounted(async () => {
     left: 12px;
     right: 12px;
     box-sizing: border-box;
-    border: 8px dashed rgba(0, 0, 0, .3);
+    border: 8px dashed rgba(0, 0, 0, .12);
     border-radius: 8px;
-    color: rgba(0, 0, 0, .3);
+    color: rgba(0, 0, 0, .12);
     text-align: center;
     font-size: 60px;
     font-weight: 700;
@@ -151,6 +156,7 @@ onMounted(async () => {
     transition: opacity 300ms ease 0s;
     cursor: pointer;
 }
+
 .choose:hover {
     opacity: 1;
 }
