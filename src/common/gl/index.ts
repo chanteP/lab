@@ -203,8 +203,13 @@ export function createProgram(gl: WebGLRenderingContext, shader?: { vert?: strin
     return program;
 }
 
-export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string; frag?: string; ratio?: number }) {
+export function simpleInit(
+    canvas: HTMLCanvasElement,
+    options?: { fps?: number; vert?: string; frag?: string; ratio?: number },
+) {
     const ratio = options.ratio ?? DEFAULT_RATIO;
+    const fps = options.fps ?? 40;
+
     ensureCanvas(canvas, ratio);
     const gl = createGlContext(canvas);
 
@@ -215,14 +220,21 @@ export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string;
     inject();
 
     let timer = 0;
+    let lastRender = Date.now();
+    const tickDuration = 1000 / fps;
 
     function renderTick() {
-        gl.clearColor(0.0, 0.0, 0.0, 0.0); // 使用透明的黑色清除颜色
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        const now = Date.now();
+        if (now - lastRender >= tickDuration) {
+            lastRender = now;
 
-        inject();
+            gl.clearColor(0.0, 0.0, 0.0, 0.0); // 使用透明的黑色清除颜色
+            gl.clear(gl.COLOR_BUFFER_BIT);
 
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            inject();
+
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
 
         timer = requestAnimationFrame(renderTick);
     }
@@ -239,7 +251,10 @@ export function simpleInit(canvas: HTMLCanvasElement, options?: { vert?: string;
         injectTexture: (name: string, index: number, img: HTMLImageElement, options?: TextureOptions) => {
             injectTexture(gl, program, name, index, img, options);
         },
-        play: renderTick,
+        play: () => {
+            cancelAnimationFrame(timer);
+            renderTick();
+        },
         stop: () => {
             cancelAnimationFrame(timer);
         },

@@ -40,7 +40,7 @@ vec2 mapToSphere(vec2 uv,float offset){
     float xp=center.x-normalizedPos.x;
     float theta=acos(xp/rTheta);
     
-    pos.x=(theta/(2. * PI));
+    // pos.x=(theta/(2. * PI));
     // pos.y = normalizedPos.y / 2.;
     return pos;
 }
