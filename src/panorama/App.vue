@@ -80,8 +80,8 @@ function bindDeviceOrientation() {
         }
 
         instance.inject('u_rotation', 'uniformMatrix3fv', false, calcRotateMat([
-            rad(event.beta),
-            rad(event.alpha),
+            rad(90 - event.beta),
+            rad(360 - event.alpha),
             rad(event.gamma),
         ])
         );
@@ -131,17 +131,25 @@ function chooseImageFile(e: InputEvent) {
 }
 
 function checkPermission() {
-    window.DeviceMotionEvent?.requestPermission?.().then(permissionState => {
-        // if (permissionState === 'granted') {
-        bindDeviceOrientation();
-        // }
-    })
+    try {
+
+        window.DeviceMotionEvent?.requestPermission?.().then(permissionState => {
+            // if (permissionState === 'granted') {
+            bindDeviceOrientation();
+            // }
+        }) ?? bindDeviceOrientation();
+    }
+    catch (e) {
+        console.error(e)
+    }
 }
 
 
 onMounted(async () => {
     await initCanvas();
     setImage(getImageByURL() ?? ImageDemo);
+
+    checkPermission();
 });
 
 </script>
@@ -212,7 +220,7 @@ onMounted(async () => {
     opacity: .3;
 }
 
-.icon.enable{
+.icon.enable {
     opacity: .6;
 }
 </style>
