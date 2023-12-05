@@ -4,6 +4,9 @@ import { simpleInit } from '../common/gl';
 import frag from './frag.glsl'
 import { loadImage } from '../common/image';
 import { canvas } from '../webgl/gl';
+import { useDragUtils } from '../common/dragUtils';
+import IconCompass from '@vicons/ionicons5/Compass'
+import IconImage from '@vicons/ionicons5/Image'
 
 const ImageDemo = '/public/assets/panorama_demo.png';
 
@@ -13,6 +16,19 @@ let height = 0;
 let instance: ReturnType<typeof simpleInit> = undefined;
 
 const hasTouch = 'ontouchstart' in window;
+const touchMoveXY = [0, 0];
+const enableOrientation = ref(true);
+const { bindTouchEnd, bindTouchMove, bindTouchStart } = useDragUtils({
+    enable: () => hasTouch,
+    onMove: (x, y) => {
+        enableOrientation.value = false;
+        changeEuler((touchMoveXY[0] - x) / width, (touchMoveXY[1] - y) / height)
+    },
+    onEnd: (x, y) => {
+        touchMoveXY[0] -= x;
+        touchMoveXY[1] -= y;
+    },
+});
 
 function rad(value: number) {
     return value * Math.PI / 180;
@@ -36,10 +52,10 @@ function calcRotateMat(angles: [number, number, number]) {
     ];
 }
 
-function changeEuler(pageX: number, pageY: number) {
+function changeEuler(y: number, x: number) {
     instance.inject('u_rotation', 'uniformMatrix3fv', false, calcRotateMat([
-        radOfPercent((pageY - height / 2) / (height)),
-        radOfPercent((pageX - width / 2) / (width)),
+        radOfPercent(x),
+        radOfPercent(y),
         0,
     ]));
 }
@@ -48,18 +64,21 @@ function changeByMouse(e: MouseEvent) {
     if (hasTouch) {
         return;
     }
-    changeEuler(e.pageX, e.pageY)
+    changeEuler((e.pageX - width / 2) / (width), (e.pageY - height / 2) / (height))
 }
 
-function changeByTouch(e: TouchEvent) {
-    if (!hasTouch) {
-        return;
-    }
-    changeEuler(e.touches[0].pageX, e.touches[0].pageY)
+function resetCompass() {
+    enableOrientation.value = true;
+    touchMoveXY[0] = 0;
+    touchMoveXY[1] = 0;
 }
 
 function bindDeviceOrientation() {
     window.addEventListener("deviceorientation", function (event) {
+        if (!enableOrientation.value) {
+            return;
+        }
+
         instance.inject('u_rotation', 'uniformMatrix3fv', false, calcRotateMat([
             rad(event.beta),
             rad(event.alpha),
@@ -112,26 +131,33 @@ function chooseImageFile(e: InputEvent) {
 }
 
 function checkPermission() {
-    console.log(123)
-    window.DeviceMotionEvent?.requestPermission?.()
+    window.DeviceMotionEvent?.requestPermission?.().then(permissionState => {
+        // if (permissionState === 'granted') {
+        bindDeviceOrientation();
+        // }
+    })
 }
 
 
 onMounted(async () => {
     await initCanvas();
     setImage(getImageByURL() ?? ImageDemo);
-    bindDeviceOrientation();
 });
 
 </script>
 
 <template>
-    <div class="container" @click="checkPermission" @dragover.prevent @drop="dropImage">
-        <canvas ref="$canvas" class="canvas" @mousemove="changeByMouse" @touchmove="changeByTouch"></canvas>
-        <label class="choose">
-            CHOOSE IMAGE
-            <input type="file" accept="image/*" @change="chooseImageFile" hidden />
-        </label>
+    <div class="container" @click="checkPermission" @dragover.prevent @drop.prevent="dropImage">
+        <canvas ref="$canvas" class="canvas" @mousemove="changeByMouse" @touchend="bindTouchEnd" @touchmove="bindTouchMove"
+            @touchstart="bindTouchStart"></canvas>
+
+        <div class="tools">
+            <label>
+                <IconImage class="icon" />
+                <input type="file" accept="image/*" @change="chooseImageFile" hidden />
+            </label>
+            <IconCompass class="icon" :class="{ enable: enableOrientation }" @click="resetCompass" />
+        </div>
     </div>
 </template>
 
@@ -141,12 +167,14 @@ onMounted(async () => {
     width: 100vw;
     height: 100vh;
     font-family: fot-klee-pro;
+    user-select: none;
 }
 
 .canvas {
     display: block;
     width: 100%;
     height: 100%;
+    touch-action: none;
 }
 
 .choose {
@@ -168,5 +196,23 @@ onMounted(async () => {
 
 .choose:hover {
     opacity: 1;
+}
+
+.tools {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    width: 80px;
+    font-size: 80px;
+    color: #fff;
+}
+
+.icon {
+    padding: 16px;
+    opacity: .3;
+}
+
+.icon.enable{
+    opacity: .6;
 }
 </style>
