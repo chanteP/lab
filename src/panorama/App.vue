@@ -12,6 +12,7 @@ let width = 0;
 let height = 0;
 let instance: ReturnType<typeof simpleInit> = undefined;
 
+const hasTouch = 'ontouchstart' in window;
 
 function rad(value: number) {
     return value * Math.PI / 180;
@@ -44,9 +45,16 @@ function changeEuler(pageX: number, pageY: number) {
 }
 
 function changeByMouse(e: MouseEvent) {
+    if (hasTouch) {
+        return;
+    }
     changeEuler(e.pageX, e.pageY)
 }
+
 function changeByTouch(e: TouchEvent) {
+    if (!hasTouch) {
+        return;
+    }
     changeEuler(e.touches[0].pageX, e.touches[0].pageY)
 }
 
@@ -104,7 +112,8 @@ function chooseImageFile(e: InputEvent) {
 }
 
 function checkPermission() {
-    DeviceMotionEvent.requestPermission?.()
+    console.log(123)
+    window.DeviceMotionEvent?.requestPermission?.()
 }
 
 
@@ -117,7 +126,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="container" @touchstart.prevent="checkPermission" @dragover.prevent @drop="dropImage">
+    <div class="container" @click="checkPermission" @dragover.prevent @drop="dropImage">
         <canvas ref="$canvas" class="canvas" @mousemove="changeByMouse" @touchmove="changeByTouch"></canvas>
         <label class="choose">
             CHOOSE IMAGE
