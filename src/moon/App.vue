@@ -9,12 +9,15 @@ import frag from './frag.glsl';
 
 const $canvas = ref<HTMLCanvasElement>()
 
+console.dir(ImageMoon)
+
 onMounted(async () => {
-    const { gl, play, injectTexture } = simpleInit($canvas.value!, {
+    const { gl, play, injectTexture, inject } = simpleInit($canvas.value!, {
         frag,
     });
-
-    injectTexture('iChannel0', 0, await loadImage(ImageMoon));
+    const moon = await loadImage(ImageMoon);
+    injectTexture('iChannel0', 0, moon);
+    inject('moonSize', 'uniform2f', moon.naturalWidth, moon.naturalHeight);
     play()
 });
 </script>

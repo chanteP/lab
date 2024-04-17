@@ -6,66 +6,57 @@ precision mediump float;
 uniform vec2 u_resolution;
 uniform float u_time;
 uniform sampler2D iChannel0;
+uniform vec2 moonSize;
 
 #define PI 3.141592653589793
+#define PI_OVER_2 1.5707963267948966
+#define SPEED 0.1
 
-vec2 normalizeVec2(vec2 value,vec2 rangeMin,vec2 rangeMax){
-    vec2 normalizedValue;
-    vec2 range=rangeMax-rangeMin;
+vec2 getLatLon(vec2 pos,vec2 center,float r,float offsetLong){
+    float lat=asin((pos.y-center.y)/r);
     
-    normalizedValue.x=(value.x-rangeMin.x)/range.x;
-    normalizedValue.y=(value.y-rangeMin.y)/range.y;
+    float r1=cos(lat)*r;
+    float lon=acos((center.x-pos.x)/r1)+offsetLong;
     
-    return normalizedValue;
+    return vec2(lat/PI*2.,fract(lon/2./PI));
 }
 
-// 将纹理坐标转换为球体表面坐标
-// 2:1贴图
-// offset [0, 1]
-vec2 mapToSphere(vec2 uv,float offset){
-    // 转换输入的uv值使原点位于中心，范围是[-1, 1]
-    // 换算map尺寸为4:2，半径1的圆
-    vec2 center=vec2(offset+.5,1.);
-    vec2 normalizedPos=vec2(
-        uv.x*4.,
-        2.*uv.y-1.
-    );
-    
-    vec2 pos=vec2(1.);
-    
-    float phi=normalizedPos.y/PI;
-    pos.y=sin(phi)+.5;
-    
-    float rTheta=sin(PI/2.-phi);
-    float xp=center.x-normalizedPos.x;
-    float theta=acos(xp/rTheta);
-    
-    // pos.x=(theta/(2. * PI));
-    // pos.y = normalizedPos.y / 2.;
-    return pos;
+vec2 moonCoordFromLatlon(vec2 latlon){
+    float x=latlon.y;
+    float y=latlon.x/2.+.5;
+    // float y=sin(latlon.x)/2.+.5;
+    return vec2(x,y);
 }
 
-vec4 readMoon(vec2 st){
-    // vec2 uv=st;
-    vec2 uv=mapToSphere(st,0.);
-    
-    return vec4(uv.x,0.,0.,uv.y);
-    // vec4 pixel=texture2D(iChannel0,uv);
-    // return pixel;
+vec4 moonShadow(vec2 latlon,float offset){
+    float shadowValue=cos((offset-latlon.y)*2.*PI)/2.+.5;
+    return vec4(max(shadowValue,.2),shadowValue,shadowValue,1.);
 }
 
 void main(){
     vec4 pixel=vec4(0.);
     
-    vec2 center=vec2(u_resolution.xy)/2.;
-    float size=u_resolution.x/2.;
-    
-    vec2 o=center-size/2.;
-    vec2 e=center+size/2.;
     vec2 pos=gl_FragCoord.xy;
+    vec2 center=vec2(u_resolution.xy)/2.;
+    float r=min(u_resolution.x,u_resolution.y)/1.5/2.;
     
-    if(distance(pos,center)<=size/2.){
-        pixel=readMoon(normalizeVec2(pos,o,e));
+    vec2 vec=pos/u_resolution;
+    
+    if(distance(pos,center)<=r){
+        vec2 latlon=getLatLon(pos,center,r,1.8+u_time*SPEED);
+        vec2 moonCoord=moonCoordFromLatlon(latlon);
+        // pixel.r=abs(latlon.x);
+        // pixel.b=latlon.y;
+        // pixel.a=1.;
+        pixel=texture2D(iChannel0,moonCoord);
+        vec4 shadow=moonShadow(latlon,(u_time*SPEED));
+        pixel=pixel*shadow;
+        // pixel=shadow;
+        
+        // pixel=moonShadow(vec, (u_time/SPEED));
+        // pixel.b=latlon.y;
+        // pixel.r=fract(u_time);
+        pixel.a=1.;
     }
     
     gl_FragColor=vec4(pixel);
