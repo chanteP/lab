@@ -10,7 +10,8 @@ uniform vec2 moonSize;
 
 #define PI 3.141592653589793
 #define PI_OVER_2 1.5707963267948966
-#define SPEED 0.1
+#define PI_2 6.283185307179586
+#define SPEED.1
 
 vec2 getLatLon(vec2 pos,vec2 center,float r,float offsetLong){
     float lat=asin((pos.y-center.y)/r);
@@ -29,8 +30,11 @@ vec2 moonCoordFromLatlon(vec2 latlon){
 }
 
 vec4 moonShadow(vec2 latlon,float offset){
-    float shadowValue=cos((offset-latlon.y)*2.*PI)/2.+.5;
-    return vec4(max(shadowValue,.2),shadowValue,shadowValue,1.);
+    float scale=6.;
+    float shadowValue=cos((offset-latlon.y)*2.*PI)*scale/2.+.5;
+    shadowValue = clamp(shadowValue, 0., 1.2);
+    
+    return vec4(shadowValue,shadowValue,shadowValue,1.);
 }
 
 void main(){
@@ -49,8 +53,10 @@ void main(){
         // pixel.b=latlon.y;
         // pixel.a=1.;
         pixel=texture2D(iChannel0,moonCoord);
-        vec4 shadow=moonShadow(latlon,(u_time*SPEED));
-        pixel=pixel*shadow;
+        
+        float shadowTime=u_time*SPEED/2.;
+        vec4 shadow=moonShadow(latlon,shadowTime);
+        pixel=pixel*shadow*vec4(1.,.9765,.8706,1.);
         // pixel=shadow;
         
         // pixel=moonShadow(vec, (u_time/SPEED));
