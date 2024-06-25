@@ -1,29 +1,13 @@
-import { createGlContext, ensureCanvas, setBlend, simpleInit } from '../common/gl';
+import { createGlContext, ensureCanvas, setBlend, renderFullScreenCanvas } from '../common/gl';
 import frag from './frag.glsl';
 
-const ratio = 2;
-
-const canvas = setupCanvas();
-
-const { gl, play } = simpleInit(canvas, {
-    frag,
-});
-
-// setBlend(gl, 'add');
-
-play();
-
-function setupCanvas() {
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = ['display:block', 'width: 100vw', 'height: 100vh'].join(';');
-
-    // document.body.style.background = `linear-gradient(135deg, #66d8ff, #80e6b3)`;
+async function main() {
     document.body.style.background = `linear-gradient(180deg, rgb(255 244 208), rgb(84 203 177))`;
-    // document.body.style.background = `#fff`;
-    // `background:linear-gradient(135deg, #00bfff, #00ff7f)`
-    document.getElementById('app').appendChild(canvas);
 
-    ensureCanvas(canvas, ratio);
-
-    return canvas;
+    const { gl, play } = renderFullScreenCanvas({
+        frag,
+        autoPlay: true,
+    });
 }
+
+main();

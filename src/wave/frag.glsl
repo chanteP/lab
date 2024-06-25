@@ -1,10 +1,11 @@
+#version 300 es
 
-// Author: @patriciogv
-// Title: Simple Voronoi
+// 指定默认精度为 highp
+precision highp float;
+precision highp sampler2D;// 指定精度和 sampler2D 类型
 
-#ifdef GL_ES
-precision mediump float;
-#endif
+in vec2 v_texCoord;// 从顶点着色器传入的纹理坐标
+out vec4 fragColor;// 片段颜色输出
 
 uniform vec2 u_resolution;
 uniform float u_time;
@@ -41,7 +42,7 @@ float dist(vec2 st){
 }
 
 void main(){
-    vec2 st=gl_FragCoord.xy/u_resolution.xy;
+    vec2 st=v_texCoord.xy * 2.;
     st.x*=u_resolution.x/u_resolution.y;
     vec4 color=vec4(.0);
     
@@ -63,6 +64,7 @@ void main(){
     float alpha=m_dist*m_dist*m_dist+.7*bottom_dist*bottom_dist*bottom_dist;
     
     color=vec4(1.,1.,1.,alpha);
+
     
     // Add distance field to closest point center
     // color.g = m_dist;
@@ -75,6 +77,6 @@ void main(){
     
     // Draw grid
     // color.r += step(.98, f_st.x) + step(.98, f_st.y);
-    
-    gl_FragColor=vec4(color);
+
+    fragColor=vec4(color);
 }
