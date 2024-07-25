@@ -1,3 +1,5 @@
+import noiseBase64 from './noise.base64';
+
 export const DEFAULT_GL1_VERT = `
 attribute vec2 a_position;
 varying vec2 v_texCoord;
@@ -29,8 +31,8 @@ void main(){
     gl_FragColor=vec4(0.);
 }
 `;
-export const DEFAULT_GL2_FRAG = `
-#version 300 es
+
+const simpleFragHeader = `#version 300 es
 
 // 指定默认精度为 highp
 precision highp float;
@@ -41,12 +43,17 @@ out vec4 fragColor; // 片段颜色输出
 
 uniform vec2 u_resolution;
 uniform float u_time;
+uniform vec3 iResolution;
+uniform vec2 iMouse;
+uniform float iTime;
+
+#define fragCoord vec2(v_texCoord * iResolution.xy)
+
+`;
+export const DEFAULT_GL2_FRAG = `${simpleFragHeader}
 
 void main(){
-    vec2 st=v_texCoord.xy/u_resolution.xy;
-    st.x*=u_resolution.x/u_resolution.y;
-
-    fragColor=vec4(0.5);
+    fragColor = vec4(fragCoord.x / iResolution.x , 0., 0., 1.);
 }
 
 `;
@@ -119,20 +126,24 @@ function injectTexture(
     const sampler = gl.getUniformLocation(program, name);
 
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, options?.flip ?? 1 ? 1 : 0);
-    gl.activeTexture(gl[`TEXTURE${index}`]);
+    gl.activeTexture(gl[`TEXTURE${index}` as 'TEXTURE0']);
     gl.bindTexture(gl.TEXTURE_2D, texture);
 
-    if (!options?.mipmap) {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, options?.texParameteri?.[gl.TEXTURE_MIN_FILTER] ?? gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, options?.texParameteri?.[gl.TEXTURE_MAG_FILTER] ?? gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options?.texParameteri?.[gl.TEXTURE_WRAP_S] ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options?.texParameteri?.[gl.TEXTURE_WRAP_T] ?? gl.CLAMP_TO_EDGE);
-    } else {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, options?.texParameteri?.[gl.TEXTURE_MIN_FILTER] ?? gl.LINEAR_MIPMAP_LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, options?.texParameteri?.[gl.TEXTURE_MAG_FILTER] ?? gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options?.texParameteri?.[gl.TEXTURE_WRAP_S] ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options?.texParameteri?.[gl.TEXTURE_WRAP_T] ?? gl.CLAMP_TO_EDGE);
-    }
+    const defaultMinFilter = !options?.mipmap ? gl.NEAREST : gl.LINEAR_MIPMAP_LINEAR;
+    const defaultMaxFilter = !options?.mipmap ? gl.LINEAR : gl.LINEAR;
+
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MIN_FILTER,
+        options?.texParameteri?.[gl.TEXTURE_MIN_FILTER] ?? defaultMinFilter,
+    );
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MAG_FILTER,
+        options?.texParameteri?.[gl.TEXTURE_MAG_FILTER] ?? defaultMaxFilter,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options?.texParameteri?.[gl.TEXTURE_WRAP_S] ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options?.texParameteri?.[gl.TEXTURE_WRAP_T] ?? gl.CLAMP_TO_EDGE);
 
     gl.uniform1i(sampler, index);
 
@@ -157,25 +168,28 @@ export function useInjectGlData(
     function inject() {
         const now = new Date();
         // 为 u_time 提供值
+        const time = (now.getTime() - start) / 1000;
         const uTimeLocation = gl.getUniformLocation(program, 'u_time');
-        gl.uniform1f(uTimeLocation, (now.getTime() - start) / 1000);
+        gl.uniform1f(uTimeLocation, time);
+        const iTimeLocation = gl.getUniformLocation(program, 'iTime');
+        gl.uniform1f(iTimeLocation, time);
 
         // 为 u_mouse 提供值
-        const uMouseLocation = gl.getUniformLocation(program, 'u_mouse');
+        const uMouseLocation = gl.getUniformLocation(program, 'iMouse');
         gl.uniform2f(uMouseLocation, ...lastMousePosition);
 
         const uResolution = gl.getUniformLocation(program, 'u_resolution');
         gl.uniform2f(uResolution, canvas.clientWidth * options.ratio, canvas.clientHeight * options.ratio);
+        const iResolution = gl.getUniformLocation(program, 'iResolution');
+        gl.uniform3f(iResolution, canvas.clientWidth * options.ratio, canvas.clientHeight * options.ratio, 0);
 
-        // 为 u_date 提供值
-        const uDateLocation = gl.getUniformLocation(program, 'u_date');
-        gl.uniform4f(
-            uDateLocation,
-            now.getFullYear(),
-            now.getMonth() + 1,
-            now.getDate(),
-            now.getHours() + now.getMinutes() / 60,
-        );
+        // gl.uniform4f(
+        //     uDateLocation,
+        //     now.getFullYear(),
+        //     now.getMonth() + 1,
+        //     now.getDate(),
+        //     now.getHours() + now.getMinutes() / 60,
+        // );
 
         // 为 u_camera 提供值
         // const uCameraLocation = gl.getUniformLocation(program, 'u_camera');
@@ -270,9 +284,27 @@ export function createProgram(gl: WebGL2RenderingContext, shader?: { vert?: stri
     return program;
 }
 
+interface ShaderOptions {
+    vert?: string;
+    frag?: string;
+    main?: string;
+}
+
+function getFinalShaderConfig(options?: ShaderOptions) {
+    return {
+        vert: options?.vert,
+        frag: options?.frag ?? (options?.main ? `${simpleFragHeader}${options.main}` : undefined),
+    };
+}
+
 export function simpleInit(
     canvas: HTMLCanvasElement,
-    options?: { fps?: number; vert?: string; frag?: string; ratio?: number; autoPlay?: boolean },
+    options?: {
+        fps?: number;
+        ratio?: number;
+        autoPlay?: boolean;
+        postProcess?: ShaderOptions[];
+    } & ShaderOptions,
 ) {
     const ratio = options?.ratio ?? DEFAULT_RATIO;
     const fps = options?.fps ?? 40;
@@ -280,11 +312,15 @@ export function simpleInit(
     ensureCanvas(canvas, ratio);
     const gl = createGlContext(canvas);
 
-    const program = createProgram(gl, options);
+    const program = createProgram(gl, getFinalShaderConfig(options));
 
     const { inject, destroy } = useInjectGlData(gl, program, canvas, { ratio });
     injectVert(gl, program);
     inject();
+
+    // if(options?.postProcess){
+    //     const postPostPrograms = options.postProcess?.map(shaderOptions => createProgram(gl, getFinalShaderConfig(shaderOptions)));
+    // }
 
     let timer = 0;
     let lastRender = Date.now();
@@ -352,4 +388,8 @@ export async function loadImage(src?: string, sourceImage?: HTMLImageElement) {
         img.onerror = rej;
         img.src = src!;
     });
+}
+
+export async function getNoiseImg() {
+    return loadImage(noiseBase64);
 }

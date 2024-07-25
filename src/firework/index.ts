@@ -1,4 +1,16 @@
-import { mountVue } from '../common/vue';
-import App from './App.vue';
+import { getNoiseImg, renderFullScreenCanvas } from '../common/gl';
+import frag from './frag.glsl';
 
-mountVue(App);
+document.documentElement.style.background = `linear-gradient(180deg, #060015, rgb(24, 0, 67))`;
+
+async function main() {
+    const noise = await getNoiseImg();
+    const { gl, injectTexture } = renderFullScreenCanvas({
+        main: frag,
+        autoPlay: true,
+    });
+
+    injectTexture('noise', 0, noise);
+}
+
+main();
