@@ -77,8 +77,8 @@ async function loadFont(url: string, filename: string) {
 onMounted(async () => {
     bindDrop();
 
-    addFont(await loadFont(FontPingFang, 'PingFang') as File);
-    addFont(await loadFont(FontArial, 'Arial') as File);
+    addFont(await loadFont(FontPingFang, 'PingFang.ttf') as File);
+    addFont(await loadFont(FontArial, 'Arial.ttf') as File);
 });
 
 </script>
