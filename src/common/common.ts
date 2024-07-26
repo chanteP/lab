@@ -23,3 +23,27 @@ export function saveParseJSON<T>(json?: string, defaultValue?: T): T | undefined
 export function getValueWithDefault<T>(value: T | undefined, defaultValue: T): T {
     return value ?? defaultValue;
 }
+
+export function download(file: File): void {
+    // 创建一个 Blob 对象
+    const blob = new Blob([file], { type: file.type });
+
+    // 创建一个 URL 对象，以便可以在浏览器中使用
+    const url = URL.createObjectURL(blob);
+
+    // 创建一个 <a> 标签用于下载
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = file.name; // 使用文件原名作为下载文件名
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+
+    // 释放内存
+    URL.revokeObjectURL(url);
+    downloadLink.remove();
+}
+
+export function sleep(ms: number = 0): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
