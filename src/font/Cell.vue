@@ -217,6 +217,7 @@ onMounted(() => {
     position: absolute;
     font-size: 10px;
     text-shadow: #fff 0 0 2px;
+    font-family: initial;
 }
 
 .name {
@@ -233,7 +234,7 @@ onMounted(() => {
     display: none;
     position: absolute;
     font-size: 12px;
-    font-family: arial;
+    font-family: initial;
     cursor: pointer;
 }
 
