@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import { simpleInit } from '../common/gl';
-import { loadImage } from '../common/image';
+import { loadImage } from '../common/loader';
 // import ImageNoise from '../common/gl/noise.base64';
 import ImageMoon from './moon.jpg';
 

@@ -1,4 +1,6 @@
-import { type Component, createApp } from 'vue';
+import { type Component, createApp, ref, watch, createVNode } from 'vue';
+import { saveParseJSON } from './common';
+import NaiveUIContainer from '../common/NaiveUIContainer.vue';
 
 function getWrapper() {
     if (document.getElementById('app')) {
@@ -10,6 +12,32 @@ function getWrapper() {
     return div;
 }
 
-export function mountVue(App: Component) {
-    return createApp(App).mount(getWrapper());
+export function mountVue(App: Component, withUI = false) {
+    if (withUI) {
+        const root = {
+            functional: true,
+            render: (context) => {
+                return createVNode(NaiveUIContainer, {}, [createVNode(App)]);
+            },
+        };
+        const app = createApp(root).mount(getWrapper());
+        return app;
+    } else {
+        return createApp(App).mount(getWrapper());
+    }
+}
+
+export function cachedRef<T = undefined>(key: string, defaultValue?: T) {
+    const stringValue = localStorage.getItem(key);
+
+    const refData = stringValue === null ? ref<T>(defaultValue) : ref<T>(saveParseJSON(stringValue));
+
+    watch(
+        () => refData.value,
+        () => {
+            localStorage.setItem(key, JSON.stringify(refData.value));
+        },
+    );
+
+    return refData;
 }

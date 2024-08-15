@@ -1,7 +1,7 @@
 import { renderFullScreenCanvas } from '../common/gl';
 import frag from './frag.glsl';
 import bg from './bg.png';
-import { loadImage } from '../common/image';
+import { loadImage } from '../common/loader';
 
 async function main() {
     const background = await loadImage(bg);

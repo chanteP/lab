@@ -2,7 +2,7 @@
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import { simpleInit } from '../common/gl';
 import frag from './frag.glsl'
-import { loadImage } from '../common/image';
+import { loadImage } from '../common/loader';
 import { canvas } from '../webgl/gl';
 import { useDragUtils } from '../common/dragUtils';
 import IconCompass from '@vicons/ionicons5/Compass'
