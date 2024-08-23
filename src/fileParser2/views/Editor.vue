@@ -39,7 +39,6 @@ function setFormat(value: string) {
 watch(
     () => currentFormat.value,
     () => {
-        console.error('change----')
         localStorage.setItem(localCacheKey, currentFormat.value);
         emit('update:format', currentFormat.value);
     },

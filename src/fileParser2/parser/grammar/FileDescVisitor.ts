@@ -390,6 +390,8 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
         let once = 1;
         let maxLoopLimit = this.file.maxLoopLimit;
 
+        let lastMatch = 0;
+
         const condition = async () => {
             if (!this.file.hasFile()) {
                 return once--;
@@ -402,10 +404,16 @@ export default class FileDescVisitor extends antlr4.tree.ParseTreeVisitor {
             const [whileMark, lb, expectValue, rb] = this.visitChildren(ctx);
 
             const fileData = await this.file.getFileData();
-            return isMultiByteValueWithOffset(fileData!, this.file.pointer, expectValue) !== false;
+            const matchByte = isMultiByteValueWithOffset(fileData!, this.file.pointer, expectValue);
+            if(matchByte === false){
+                return false;
+            }
+            lastMatch = matchByte;
+            return matchByte;
         };
 
         while (await condition()) {
+            this.file.moveTo(lastMatch);
             const group = await execRecord();
             group.loop = true;
             group.optional = true;
