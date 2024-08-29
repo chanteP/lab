@@ -102,7 +102,7 @@ function draw() {
 function parse(sync = false) {
     if (sync) {
         try {
-            info.value = opentype.parse(fontUrl.value);
+            info.value = Object.seal(opentype.parse(fontUrl.value));
             draw();
         } catch (e) {
             error.value = e;
@@ -117,7 +117,7 @@ function parse(sync = false) {
                 return;
             }
             // console.log(fontUrl.value, font)
-            info.value = font;
+            info.value = Object.seal(font);
             draw();
         });
     }
@@ -128,6 +128,9 @@ async function reset() {
     parse();
 }
 
+function logInfo() {
+    console.log(fontName.value, info.value);
+}
 
 async function move(isAscender: boolean, offset: number) {
     if (!info.value) { return; }
@@ -153,8 +156,9 @@ onMounted(() => {
         <slot></slot>
         <canvas ref="$canvas" class="canvas"></canvas>
 
-        <div class="info name">{{ fontName }}</div>
-        <div class="info height"><span style="color:#090;">{{ halfHeight }}px</span><span style="color:#900;">{{ baselinePx }}px</span></div>
+        <div class="info name" @click="logInfo">{{ fontName }}</div>
+        <div class="info height"><span style="color:#090;">{{ halfHeight }}px</span><span style="color:#900;">{{
+                baselinePx }}px</span></div>
 
         <div class="control c-ascender">
 

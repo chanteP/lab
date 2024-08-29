@@ -1,4 +1,4 @@
 import { mountVue } from '../common/vue';
 import App from './App.vue';
 
-mountVue(App);
+mountVue(App, true);

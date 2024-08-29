@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed, shallowRef } from 'vue';
-import { NButton, NDivider, NImage, NImageGroup, NInput, NSelect, NTag } from 'naive-ui';
-import NaiveUIContainer from '../common/NaiveUIContainer.vue';
+import { NButton, NDivider, NImage, NImageGroup, NInput, NSelect, NTag, useMessage } from 'naive-ui';
 import Cell from './Cell.vue';
 
 import FontPingFang from './PingFang-SC-Regular.ttf';
@@ -9,6 +8,8 @@ import FontArial from './Arial.ttf';
 
 const input = ref('字Ay');
 const align = ref('baseline');
+
+const message = useMessage();
 
 const options = [
     /* Keyword values */
@@ -69,7 +70,9 @@ function bindDrop() {
 }
 
 async function loadFont(url: string, filename: string) {
+    const loader = message.loading(`${filename} 加载中...`);
     const blob = await fetch(url).then(res => res.blob());
+    loader.destroy();
     return new File([blob], filename);
 }
 
@@ -84,19 +87,18 @@ onMounted(async () => {
 </script>
 
 <template>
-    <NaiveUIContainer>
-        <NInput v-model:value="input" />
-        <NSelect v-model:value="align" :options="options" />
-        <div>
-            <NTag v-for="(font) in fonts" :key="font.name" type="info" closable @close="remove(font)">
-                {{ font.name }}
-            </NTag>
-        </div>
+    <NInput v-model:value="input" />
+    <NSelect v-model:value="align" :options="options" />
+    <div>
+        <NTag v-for="(font) in fonts" :key="font.name" type="info" closable @close="remove(font)">
+            {{ font.name }}
+        </NTag>
+    </div>
 
-        <div class="line">
-            <Cell v-for="font in fonts" :key="font.name" class="font" :file="font" :style="{ verticalAlign: align }">{{ input }}</Cell>
-        </div>
-    </NaiveUIContainer>
+    <div class="line">
+        <Cell v-for="font in fonts" :key="font.name" class="font" :file="font" :style="{ verticalAlign: align }">{{
+            input }}</Cell>
+    </div>
 </template>
 
 <style>
