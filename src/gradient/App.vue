@@ -1,153 +1,151 @@
+<script setup lang="ts">
+import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
+import { parse as cssTreeParse, walk as cssTreeWalk, generate as cssGenerate } from 'css-tree';
+
+import { NButton, NInputNumber, NSpace, NSelect, NDivider, NImage, NImageGroup, NInput, useMessage } from 'naive-ui';
+
+import Gradient from './Gradient.vue';
+import { cachedRef } from '../common/vue';
+import { string } from 'css-tree';
+
+const message = useMessage();
+
+const input = cachedRef<string>('gradientInput', 'linear-gradient(33deg, #000 0%, #424F3D52 27.4896%, #E6050552 100%)');
+const inputError = ref(false);
+const displayInput = ref<string[]>([]);
+
+const backgroundColor = ref<string>('');
+const gradients = ref<{ type: string; stringValue: string }[]>([]);
+
+function reset() {
+    backgroundColor.value = '';
+    gradients.value = [];
+    displayInput.value = [];
+}
+
+function refreshShowInput() {
+    input.value = displayInput.value.join(', ');
+
+    nextTick(() => {
+        inputUpdateFlag = false;
+    });
+}
+
+
+function addGradient(css = 'linear-gradient(0deg, #000, #fff)', type = 'linear-gradient') {
+    gradients.value.push({
+        type,
+        stringValue: css,
+    });
+    displayInput.value.push(css);
+    refreshShowInput();
+}
+
+function parseInputCSS(isDeclaration = false) {
+    try {
+        const cssInput = input.value.toLowerCase();
+        const ast = cssTreeParse(cssInput, {
+            context: isDeclaration ? 'declaration' : 'value'
+        });
+
+        cssTreeWalk(ast, {
+            enter(node) {
+                if (node.type === 'Function' && node.name.endsWith('-gradient')) {
+                    const css = cssGenerate(node);
+                    addGradient(css, node.name);
+                    return this.skip
+                }
+            }
+        })
+        inputError.value = false;
+    } catch (e) {
+        // 不确定输入会不会带完整属性名，默认使用value，解析失败再试试declaration，再不行就是输入问题了
+        if (!isDeclaration) {
+            return parseInputCSS(true);
+        }
+    }
+}
+
+function updateGradient(index: number, value: string) {
+    inputUpdateFlag = true;
+    displayInput.value[index] = value;
+    refreshShowInput();
+};
+
+function removeGradient(index: number) {
+    gradients.value.splice(index, 1);
+    displayInput.value.splice(index, 1);
+    refreshShowInput();
+}
+
+let inputUpdateFlag = false;
+
+watch(() => input.value, () => {
+    if (inputUpdateFlag) { return; }
+    reset();
+    try {
+        parseInputCSS()
+    } catch (e) {
+        console.error(e);
+        inputError.value = true;
+    }
+}, {
+    immediate: true,
+});
+
+
+</script>
+
 <template>
-    <div class="wrapper">
-        <div class="transparent">
-            <Preview :style="state.previewCss" :list="state.list" @change="handleChange" />
+    <div class="wrap">
+        <div class="content">
+            <NInput type="textarea" v-model:value="input" :status="inputError ? 'error' : ''" autosize
+                placeholder="input">
+                <template #prefix>
+                    <div class="head">background-image:</div>
+                </template>
+            </NInput>
+            <NSpace class="flexbox">
+                <NButton type="success" @click="addGradient()">Add Gradient</NButton>
+                <!-- <NButton type="info">copy</NButton> -->
+            </NSpace>
+            <template v-for="(gradient, index) in gradients">
+                <Gradient :stringValue="gradient.stringValue" :type="gradient.type"
+                    @update="updateGradient(index, $event)" @remove="removeGradient(index)">
+                </Gradient>
+            </template>
         </div>
-        <div class="add-btnbox">
-            Add:
-            <a v-for="(item, type) in gradientMap" :key="type" @click="add(type)">{{item.text}}</a>
-            Or:
-            <a @click="clearCache">clear all</a>
-        </div>
-        <template v-for="(data, index) in state.list">
-            <Bar class="bar" :key="`bar${index}`" :class="{selected: state.selected === index}" @click.native="select(index, $event)" @change="handleChange($event, index)" @remove="remove(index)" :data="data"></Bar>
-            <Panel class="panel" :key="`panel${index}`" v-if="state.selected === index && state.list[index]" :data="state.list[index]" @change="handleChange($event, index)" />
-        </template>
-        <TextValue :value="state.previewCss" />
+        <div class="preview" :style="{ backgroundColor, backgroundImage: input }"></div>
+
     </div>
 </template>
-<script>
-import { createComponent, reactive, computed, watch, onMounted } from '@vue/composition-api';
-import Bar from './Bar';
-import Panel from './Panel';
-import TextValue from './TextValue';
-import Preview from './Preview';
-import gradientMap from './gradientMap';
-import { clearCache, setCache, getCache } from './utils';
-
-export default createComponent({
-    components: {
-        Bar,
-        Panel,
-        TextValue,
-        Preview,
-    },
-    setup(props, context) {
-        const state = reactive({
-            list: getCache([]),
-            selected: null,
-            previewCss: ''
-        });
-        watch(
-            () => state.list,
-            () => {
-                combineCss();
-            },
-            { deep: true }
-        );
-
-        function handleChange(data, index) {
-            Object.assign(state.list[index], data);
-            // TODO
-            combineCss();
-        }
-        function combineCss() {
-            setCache(state.list);
-
-            const backgroundImage = [];
-            const backgroundSize = [];
-            const backgroundPosition = [];
-            state.list
-                .filter(data => !data.disabled)
-                .map(data => {
-                    backgroundImage.push(gradientMap[data.type].css(data));
-                    backgroundSize.push(data.size);
-                    backgroundPosition.push(data.pos);
-                })
-                .join(',\n');
-            state.previewCss = [
-                `background-image: ${backgroundImage}`,
-                `background-size: ${backgroundSize}`,
-                `background-position: ${backgroundPosition}`
-            ].join(';\n');
-            console.log(state.previewCss);
-        }
-        function remove(index) {
-            state.list.splice(index, 1);
-        }
-        function add(type) {
-            const data = {
-                type,
-                pos: `50% 50%`,
-                angle: 0,
-                colorList: []
-            };
-            gradientMap[type].format(data);
-            state.list.push(data);
-        }
-        function select(index, e) {
-            state.selected = index;
-        }
-        return {
-            state,
-            combineCss,
-            add,
-            remove,
-            select,
-            gradientMap,
-            handleChange,
-            clearCache() {
-                clearCache();
-                state.list = [];
-            }
-        };
-    }
-});
-</script>
-<style lang="scss">
-body {
-    background: #f0f0f0 left top/.1rem 0.1rem repeat;
-    background-image: linear-gradient(0deg, #ffffff00 0% 75%, #dddddd66 75% 100%),
-        linear-gradient(90deg, #ffffff00 0% 75%, #dddddd66 75% 100%);
+<style>
+.n-input,
+.n-base-selection {
+    --n-color: rgba(255, 255, 255, .5) !important;
 }
-.wrapper {
-    max-width: 960px;
+</style>
+<style scoped>
+.wrap {
+    display: flex;
+    box-sizing: border-box;
+    width: 100vw;
     min-height: 100vh;
-    padding: 0 0.3rem 0.2rem;
-    margin: auto;
+    flex-direction: column;
 }
-.transparent {
-    background: conic-gradient(#fff 0.25turn, #ddd 0.25turn 0.5turn, #fff 0.5turn 0.75turn, #ddd 0.75turn) top left /
-        0.6rem 0.6rem repeat;
-}
-.add-btnbox {
-    margin-top: 0.2rem;
-    margin-bottom: 0.3rem;
-    font-size: 0.52rem;
-    a {
-        display: inline-block;
-        padding: 0 0.1rem;
-        font-size: 0.26rem;
-        &:hover {
-            text-decoration: underline;
-        }
-    }
-}
-.bar {
-    position: relative;
-    &:before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -0.3rem;
-        right: -0.3rem;
-        height: 100%;
-    }
-}
-.panel {
+
+.content {
+    padding: 50px 20px;
     background: #fff;
+    box-shadow: rgba(0, 0, 0, .4) 0 0 12px;
 }
-.selected {
-    background: #fff;
+
+.head {
+    height: 100%;
+}
+
+.preview {
+    flex: 1;
+    min-height: 600px;
 }
 </style>
