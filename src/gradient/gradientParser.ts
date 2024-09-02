@@ -4,7 +4,12 @@ const matcher = {
     gradientFunction: /(?:\-(?:webkit|o|ms|moz)\-)?([\w-]+-gradient)\(([\s\S]+)\)/i,
     angleValue: /([\d\.]+)(deg|grad|rad|turn)/i,
     // 30deg | to top | to top left
-    sideOrCornerValue: /to\s+(top|left|right|bottom)(?:\s+(top|left|right|bottom))?/i,
+    linearSideOrCornerValue: /to\s+(top|left|right|bottom)(?:\s+(top|left|right|bottom))?/i,
+    // (shape | size)? (at position)?
+    radialShape:
+        /((?:circle|ellipse)|(?:closest-corner|closest-side|farthest-corner|farthest-side|))?\s*(?:at\s+([\w\s\-\.%]+)\s*)?/i,
+    // (from 0deg)? (at position)? | method
+    conicShape: /(?:from\s+((?:[\d\.]+)(?:deg|grad|rad|turn)))?\s*(?:at\s+([\w\s\-\.%]+)\s*)?/i,
     // color | color 20% | color 20% 80%
     colorStopValue: /\s*([\w\-]+\([^\)]+\)|\#[0-9a-f]+|[\w\-]+)?(?:\s+([\d\.]+[%\w]*))?(?:\s+([\d\.]+[%\w]*))?/i,
     // 0.1% | 222px
@@ -45,7 +50,7 @@ const dirMap = {
     'left top': 315, // 'left top' 和 'top left' 可以视为相同
 };
 function parseDir(string: string): number {
-    const [match, dir1, dir2] = matcher.sideOrCornerValue.exec(string) ?? [];
+    const [match, dir1, dir2] = matcher.linearSideOrCornerValue.exec(string) ?? [];
     if (!match) {
         return;
     }
@@ -66,7 +71,7 @@ function easyParse(value: string) {
 /**
  * 粗糙的解析，网上找到多多少少有些不支持
  * On是不可能On的了，麻烦
- * 
+ *
  * TODO conic的角度和位置兼容
  * TODO radial的位置
  */
@@ -85,6 +90,9 @@ export function parseGradient(gradient: string) {
     const part: string[] = [];
 
     let direction: number = 0;
+    let decorator: string = '';
+    let shape: string = '';
+    let position: string = '';
     let lastColor: string | undefined = undefined;
     const colorStops: { color: string; value: number }[] = [];
 
@@ -124,16 +132,50 @@ export function parseGradient(gradient: string) {
             }
         });
     }
-    function parseDirection(partValue: string | undefined, i: number, arr: unknown[]): void {
+    function parseDirection(partValue: string, i: number, arr: unknown[]): boolean {
+        const dir = parseDir(partValue) ?? parseAngle(partValue);
+        if (dir === undefined) {
+            return false;
+        }
+        direction = dir;
+        return true;
+    }
+    function parseShape(partValue: string, i: number, arr: unknown[]): boolean {
+        const [match, shapeString, positionString] = matcher.radialShape.exec(partValue) ?? [];
+        if (!match) {
+            return false;
+        }
+        decorator = match?.trim() || '';
+        shape = shapeString;
+        position = positionString || 'center';
+        return true;
+    }
+    function parseConic(partValue: string, i: number, arr: unknown[]): boolean {
+        const all = matcher.conicShape.exec(partValue) ?? [];
+        const [match, fromDeg, positionString] = all;
+        if (!match) {
+            return false;
+        }
+        decorator = match?.trim() || '';
+        direction = parseAngle(partValue);
+        position = positionString || 'center';
+        return true;
+    }
+
+    function parseFirstPart(type: string, partValue: string | undefined, i: number, arr: unknown[]) {
         if (!partValue) {
             return;
         }
-        const dir = parseDir(partValue) ?? parseAngle(partValue);
-        if (dir === undefined) {
-            parseColorStop(partValue, i, arr);
+        if (type.includes('linear-gradient') && parseDirection(partValue, i, arr)) {
             return;
         }
-        direction = dir;
+        if (type.includes('radial-gradient') && parseShape(partValue, i, arr)) {
+            return;
+        }
+        if (type.includes('conic-gradient') && parseConic(partValue, i, arr)) {
+            return;
+        }
+        parseColorStop(partValue, i, arr);
     }
 
     function checkStop(color: string, stopValue: string) {
@@ -192,10 +234,10 @@ export function parseGradient(gradient: string) {
         throw new Error(`syntax error`);
     }
 
-    parseDirection(part[0], 0, part);
+    parseFirstPart(type, part[0], 0, part);
     part.slice(1).forEach(parseColorStop);
 
     checkColorStop();
 
-    return { type, direction, content, colorStops, part };
+    return { type, direction, decorator, shape, position, content, colorStops, part };
 }

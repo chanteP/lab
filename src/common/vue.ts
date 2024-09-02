@@ -27,10 +27,10 @@ export function mountVue(App: Component, withUI = false) {
     }
 }
 
-export function cachedRef<T = undefined>(key: string, defaultValue?: T) {
+export function cachedRef<T = undefined>(key: string, defaultValue?: T, wideDefault = false) {
     const stringValue = localStorage.getItem(key);
 
-    const refData = stringValue === null ? ref<T>(defaultValue) : ref<T>(saveParseJSON(stringValue));
+    const refData = (wideDefault ? (!stringValue || stringValue === '""') : stringValue === null) ? ref<T>(defaultValue) : ref<T>(saveParseJSON(stringValue));
 
     watch(
         () => refData.value,

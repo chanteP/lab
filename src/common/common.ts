@@ -45,5 +45,13 @@ export function download(file: File): void {
 }
 
 export function sleep(ms: number = 0): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function copy(value: string) {
+    try {
+        navigator.clipboard?.writeText(value);
+    } catch (e) {
+        console.error(e);
+    }
 }
