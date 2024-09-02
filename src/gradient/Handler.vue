@@ -34,6 +34,7 @@ useEventListener('pointercancel', bindTouchEnd);
 
 <style scoped>
 .handler {
+    flex: none;
     position: relative;
     width: 30px;
     height: 30px;

@@ -1,4 +1,4 @@
-import { genHTML, genIndex } from './utils';
+import { genHTML, genIndex, genMeta } from './utils';
 import glob from 'glob';
 import { existsSync, readFileSync, writeFileSync, ensureFileSync } from 'fs-extra';
 import { exec, spawn, spawnSync } from 'child_process';
@@ -34,6 +34,10 @@ async function genProject(projectName, watch = false) {
         process.exit(1);
     }
 
+    const meta: Record<string, string> = existsSync(`${projectPath}/meta.json`)
+        ? JSON.parse(readFileSync(`${projectPath}/meta.json`, 'utf8'))
+        : null;
+
     const command = `pack ./src/${projectName}/${entry} -o ./docs/${projectName}/index.js ${
         watch ? '--watch' : '--mode production'
     }`;
@@ -47,7 +51,8 @@ async function genProject(projectName, watch = false) {
     ensureFileSync(`./docs/${projectName}/index.html`);
 
     const html = genHTML({
-        title,
+        title: meta?.title ?? title,
+        meta: genMeta(meta),
         content,
         script,
     });

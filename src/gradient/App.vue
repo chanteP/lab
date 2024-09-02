@@ -7,6 +7,7 @@ import { NButton, NFlex, NSpace, NSelect, NDivider, NImage, NImageGroup, NInput,
 import Gradient from './Gradient.vue';
 import { cachedRef } from '../common/vue';
 import { copy } from '../common/common';
+import GithubLink from '../common/GithubLink.vue';
 
 const message = useMessage();
 
@@ -134,21 +135,19 @@ onMounted(() => {
     <div class="wrap">
         <div class="content">
             <NInputGroup class="info-group">
-                <NInput type="textarea" v-model:value="input" :status="inputError ? 'error' : ''" autosize
-                    placeholder="input">
+                <NInput type="textarea" v-model:value="input" :status="inputError ? 'error' : ''"
+                    :autosize="{ minRows: 3, maxRows: 5 }" placeholder="input">
                     <template #prefix>
                         <div class="head">background-image:</div>
                     </template>
                 </NInput>
-                <NFlex>
-                    <NButton type="success" size="large" style="width: 85%;" @click="addGradient()">Add Gradient
+                <div class="button-box">
+                    <NButton class="button-main" type="success" @click="addGradient()">Add Gradient
                     </NButton>
-                    <NFlex style="width: 100%;">
-                        <NButton type="info" style="width: 40%;" @click="copy(`background-image: ${input}`)">copy
-                        </NButton>
-                        <NButton type="info" style="width: 40%;" @click="save">save</NButton>
-                    </NFlex>
-                </NFlex>
+                    <NButton class="button-sub" type="info" @click="copy(`background-image: ${input}`)">copy
+                    </NButton>
+                    <NButton class="button-sub" type="info" @click="save">save</NButton>
+                </div>
             </NInputGroup>
 
             <div ref="$gradientContent" class="gradient-detail-group">
@@ -164,6 +163,7 @@ onMounted(() => {
 
         </div>
         <div class="preview" :style="{ backgroundColor, backgroundImage: input }"></div>
+        <GithubLink />
     </div>
 </template>
 <style>
@@ -191,16 +191,58 @@ onMounted(() => {
 }
 
 .info-group {
+    box-sizing: border-box;
     padding: 10px 20px;
 }
 
+.button-box {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+}
+
+.button-main {
+    display: flex;
+    width: 100%;
+    height: calc(50% - 1px);
+}
+.button-sub {
+    display: flex;
+    width: calc(50% - 1px);
+    height: calc(50% - 1px);
+}
+
+@media screen and (width <=500px) {
+    .info-group {
+        flex-direction: column;
+    }
+    .button-box {
+        height: 40px;
+    }
+    .button-main {
+        width: 50%;
+        height: 100%;
+    }
+    .button-sub{
+        width: calc(25% - 1px);
+        height: 100%;
+    }
+}
+
+
 .gradient-detail-group {
     padding: 0 20px;
-    max-height: 35vh;
+    max-height: 30vh;
     overflow-y: auto;
     background: #f0f0f0;
     box-shadow: inset rgba(0, 0, 0, .4) 0 0 8px;
     counter-reset: gradient-counter;
+}
+
+@media screen and (width <=500px) {
+    .gradient-detail-group {
+        max-height: 25vh;
+    }
 }
 
 .gradient {
@@ -223,6 +265,14 @@ onMounted(() => {
     flex: 1;
     min-height: 600px;
 }
+
+@media screen and (width <=500px) {
+    .preview {
+        min-height: 30vh;
+    }
+}
+
+
 
 .divider {
     --n-color: rgb(219, 219, 219) !important;

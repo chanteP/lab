@@ -6,8 +6,12 @@ import path from 'path';
 const templatePath = resolve(__dirname, '../public/index.html');
 const html = readFileSync(templatePath, 'utf8');
 
-export function genHTML({ title = '', content = '', script = '' }) {
-    return html.replace('${title}', title).replace('${script}', script).replace('${content}', content);
+export function genHTML({ title = '', content = '', script = '', meta = '' }) {
+    return html
+        .replace('${title}', title)
+        .replace('${meta}', meta)
+        .replace('${script}', script)
+        .replace('${content}', content);
 }
 
 export function genIndex() {
@@ -24,4 +28,13 @@ export function genIndex() {
     });
 
     writeFileSync(`./docs/index.html`, html);
+}
+
+export function genMeta(meta?: Record<string, string> | null) {
+    return Object.keys(meta)
+        .map((key) => {
+            const desc = meta[key];
+            return `    <meta content="${desc}" name="${key}">`;
+        })
+        .join('\n');
 }
