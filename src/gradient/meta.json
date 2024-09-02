@@ -1,7 +1,7 @@
 {
     "title": "CSS Gradient Generator - Create and Preview Custom Gradients",
     "description": "A powerful tool for generating custom CSS gradients. Easily create, edit, and preview linear and radial gradients with our intuitive interface. Experiment with color stops, angles, and more to design the perfect gradient for your project.",
-    "keywords": "CSS gradient generator, linear gradient, radial gradient, gradient preview, gradient editor",
+    "keywords": "CSS gradient generator, linear gradient, radial gradient, conic gradient, gradient preview, gradient editor",
     "author": "chanteP",
     "robots": "index, follow",
     "canonical": "https://lab.neetproject.com/gradient/index.html",
