@@ -57,7 +57,6 @@ export function triggerOrientation(o?: Partial<Orientation>) {
 }
 
 function updateOrientationInWebContext(event: DeviceOrientationEvent): void {
-    console.log(123123)
     triggerOrientation({
         alpha: event.alpha ?? 0,
         beta: event.beta ?? 0,
