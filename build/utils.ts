@@ -31,6 +31,9 @@ export function genIndex() {
 }
 
 export function genMeta(meta?: Record<string, string> | null) {
+    if (!meta) {
+        return '';
+    }
     return Object.keys(meta)
         .map((key) => {
             const desc = meta[key];
