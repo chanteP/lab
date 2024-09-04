@@ -57,6 +57,7 @@ export function triggerOrientation(o?: Partial<Orientation>) {
 }
 
 function updateOrientationInWebContext(event: DeviceOrientationEvent): void {
+    console.log(123123)
     triggerOrientation({
         alpha: event.alpha ?? 0,
         beta: event.beta ?? 0,
@@ -76,7 +77,15 @@ async function getPermission() {
         if (res !== 'granted') {
             throw new Error('Permission denied');
         }
-    }
+    } 
+    // else if (context.ScreenOrientation) {
+    //     boundType = 'ScreenOrientation';
+    //     screen.orientation.addEventListener('change', (event) => {
+    //         const type = event.target.type;
+    //         const angle = event.target.angle;
+    //         console.log(`ScreenOrientation change: ${type}, ${angle} degrees.`);
+    //     });
+    // }
 }
 /**
  * bind deviceorientation in web context
@@ -85,14 +94,14 @@ export function bindDeviceOrientation() {
     if (hasBound) {
         return;
     }
-    if ('ondeviceorientation' in context) {
+    // if ('ondeviceorientation' in context) {
         getPermission().then(() => {
             hasBound = true;
 
             boundType = 'deviceorientation';
             context.addEventListener('deviceorientation', updateOrientationInWebContext);
         });
-    }
+    // }
 }
 
 export function unbindDeviceOrientation() {

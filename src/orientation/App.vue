@@ -8,6 +8,7 @@ const orientation = ref<Orientation>({ alpha: 0, beta: 90, gamma: 0 });
 
 const transformO = ref<string>('');
 // const transformQ = ref<string>('');
+bindDeviceOrientation();
 
 useDeviceOrientation((o, q) => {
     orientation.value = o;
@@ -18,9 +19,9 @@ watch(
     () => {
         const o = orientation.value;
 
-        transformO.value = `perspective(800px) rotateX(${o.beta - 90 - 180}deg) rotateY(${
-            -o.gamma
-        }deg) rotateZ(${o.alpha}deg)`;
+        transformO.value = `perspective(800px) rotateX(${o.beta - 90 - 180}deg) rotateY(${o.gamma}deg) rotateZ(${
+            o.alpha
+        }deg)`;
 
         // const quaternion = calculateQuaternion(o.beta + 270, -o.gamma, o.alpha);
         // const matrix = quaternionToCSSMatrix3D(quaternion);
@@ -39,7 +40,7 @@ watch(
 </template>
 
 <style scoped>
-.perspective{
+.perspective {
     height: 100vh;
     overflow: hidden;
 }
