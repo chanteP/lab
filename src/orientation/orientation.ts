@@ -67,25 +67,30 @@ function updateOrientationInWebContext(event: DeviceOrientationEvent): void {
 let hasBound = false;
 let boundType: 'deviceorientation' | 'orientationchange' | 'ScreenOrientation' | undefined = undefined;
 const context = typeof window !== 'undefined' ? window : globalThis;
+
+async function getPermission() {
+    // @ts-expect-error
+    if (window.DeviceOrientationEvent?.requestPermission) {
+        // @ts-expect-error
+        const res = await window.DeviceOrientationEvent.requestPermission();
+        if (res !== 'granted') {
+            throw new Error('Permission denied');
+        }
+    }
+}
 /**
  * bind deviceorientation in web context
  */
-export function bindDeviceOrientation(options?: { type?: typeof boundType }) {
+export function bindDeviceOrientation() {
     if (hasBound) {
         return;
     }
-    hasBound = true;
-    const forceType = options?.type;
+    if ('ondeviceorientation' in context) {
+        getPermission().then(() => {
+            hasBound = true;
 
-    if (forceType === 'deviceorientation' || 'ondeviceorientation' in context) {
-        boundType = 'deviceorientation';
-        context.addEventListener('deviceorientation', updateOrientationInWebContext);
-    } else if (forceType === 'ScreenOrientation' || context.ScreenOrientation) {
-        boundType = 'ScreenOrientation';
-        screen.orientation.addEventListener('change', (event) => {
-            const type = event.target.type;
-            const angle = event.target.angle;
-            console.log(`ScreenOrientation change: ${type}, ${angle} degrees.`);
+            boundType = 'deviceorientation';
+            context.addEventListener('deviceorientation', updateOrientationInWebContext);
         });
     }
 }
