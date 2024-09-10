@@ -3,7 +3,21 @@ import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import QRCode from 'qrcode';
 
 import NaiveUIContainer from '../common/NaiveUIContainer.vue';
-import { NSlider, NInputNumber, NSpace, NSelect, NDivider, NImage, NImageGroup, NInput, useMessage } from 'naive-ui';
+import {
+    NSlider,
+    NInputNumber,
+    NSpace,
+    NSelect,
+    NDivider,
+    NImage,
+    NImageGroup,
+    NInput,
+    useMessage,
+    NIcon,
+} from 'naive-ui';
+
+import FileDrop from '../common/FileDrop.vue';
+import { convertToBase64 } from '../common/common';
 
 const message = useMessage();
 
@@ -25,7 +39,7 @@ function decode() {
     string.value = decodeURIComponent(s);
 }
 
-function translate(fn: () => unknown, statusRef: Ref<string>) {
+async function translate(fn: () => unknown, statusRef: Ref<string>) {
     if (lockFlag) {
         return;
     }
@@ -33,29 +47,49 @@ function translate(fn: () => unknown, statusRef: Ref<string>) {
     base64Status.value = undefined;
     lockFlag = true;
     try {
-        fn();
+        await fn();
     } catch (e) {
         statusRef.value = 'error';
         message.error(e.message);
     }
-    nextTick(() => { lockFlag = false });
+    nextTick(() => {
+        lockFlag = false;
+    });
 }
 
-watch(() => string.value, () => {
-    translate(encode, stringStatus)
-});
-watch(() => base64.value, () => {
-    translate(decode, base64Status)
-});
+async function dropFile(files: File[]) {
+    const file = files[0];
+    translate(async () => {
+        base64.value = await convertToBase64(file);
+    }, stringStatus);
+}
 
-
+watch(
+    () => string.value,
+    () => {
+        translate(encode, stringStatus);
+    },
+);
+watch(
+    () => base64.value,
+    () => {
+        translate(decode, base64Status);
+    },
+);
 </script>
 
 <template>
     <div class="wrap">
-        <NInput type="textarea" v-model:value="string" :status="stringStatus" placeholder="input"><template #prefix><div class="head">string</div></template></NInput>
+        <FileDrop class="img-upload" @drop-file="dropFile">
+            <img v-if="base64.startsWith('data:image/')" class="preview-image" :src="base64" />
+        </FileDrop>
+        <NInput type="textarea" v-model:value="string" :status="stringStatus" placeholder="input"
+            ><template #prefix><div class="head">string</div></template></NInput
+        >
 
-        <NInput type="textarea" v-model:value="base64" :status="base64Status" placeholder="input"><template #prefix><div class="head">base64</div></template></NInput>
+        <NInput type="textarea" v-model:value="base64" :status="base64Status" placeholder="input"
+            ><template #prefix><div class="head">base64</div></template></NInput
+        >
     </div>
 </template>
 
@@ -63,11 +97,16 @@ watch(() => base64.value, () => {
 .wrap {
     padding: 100px 0;
 }
-.head{
+.head {
     color: #aaa;
     font-size: 12px;
     width: 6em;
     height: 100%;
     padding: 4px 0 0;
+}
+.preview-image{
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 </style>

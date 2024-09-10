@@ -55,3 +55,18 @@ export function copy(value: string) {
         console.error(e);
     }
 }
+
+export async function convertToBase64(file: File) {
+    return new Promise<string>((res, rej) => {
+        if (!file) {
+            res('');
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64String = e.target.result;
+            res(base64String as string);
+        };
+        reader.onerror = rej;
+        reader.readAsDataURL(file); // 读取文件并转换为Data URL
+    });
+}

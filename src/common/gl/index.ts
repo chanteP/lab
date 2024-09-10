@@ -235,11 +235,14 @@ export function createGlContext(canvas: HTMLCanvasElement) {
     return gl;
 }
 
-function checkShader(gl: WebGL2RenderingContext, shader: WebGLShader) {
+function checkShader(gl: WebGL2RenderingContext, shader: WebGLShader, source: string) {
     const compiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
     if (!compiled) {
-        var error = gl.getShaderInfoLog(shader);
+        const error = gl.getShaderInfoLog(shader);
         console.error('Shader compile error: ' + error);
+
+        const [match, file, line] = /ERROR: ([\d]+):([\d]+)/.exec(error) ?? [];
+        console.error('error line: ', source.split('\n')[+line - 1]);
     }
 }
 
@@ -256,15 +259,18 @@ export function createProgram(gl: WebGL2RenderingContext, shader?: { vert?: stri
     if (!vShader || !fShader) {
         throw new Error(`shader create failed`);
     }
+
+    const finalVert = shader?.vert ?? DEFAULT_GL2_VERT;
+    const finalFrag = shader?.frag ?? DEFAULT_GL2_FRAG;
     // shader容器与着色器绑定
-    gl.shaderSource(vShader, shader?.vert ?? DEFAULT_GL2_VERT);
-    gl.shaderSource(fShader, shader?.frag ?? DEFAULT_GL2_FRAG);
+    gl.shaderSource(vShader, finalVert);
+    gl.shaderSource(fShader, finalFrag);
     // 将GLSE语言编译成浏览器可用代码
     gl.compileShader(vShader);
     gl.compileShader(fShader);
 
-    checkShader(gl, vShader);
-    checkShader(gl, fShader);
+    checkShader(gl, vShader, finalVert);
+    checkShader(gl, fShader, finalFrag);
     // 将着色器添加到程序上
     gl.attachShader(program, vShader);
     gl.attachShader(program, fShader);
@@ -390,6 +396,17 @@ export async function loadImage(src?: string, sourceImage?: HTMLImageElement) {
     });
 }
 
-export async function getNoiseImg() {
+async function getNoise(size: 256 | 512 | 1024 = 256) {
+    if (size === 512) {
+        return import('./noise512.png');
+    }
+    if (size === 1024) {
+        return import('./noise1024.png');
+    }
+    return import('./noise.png');
+}
+
+export async function getNoiseImg(size: 256 | 512 | 1024 = 256) {
+    const src = (await getNoise(size)).default;
     return loadImage(noiseBase64);
 }
