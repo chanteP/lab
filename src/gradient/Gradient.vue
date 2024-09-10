@@ -27,9 +27,27 @@ const emit = defineEmits<{
 
 const $band = ref<HTMLElement>();
 
-const typeOptions = ['linear-gradient', 'radial-gradient', 'conic-gradient', 'repeating-linear-gradient', 'repeating-radial-gradient', 'repeating-conic-gradient'].map(t => ({ label: t, key: t, value: t }));
-const radialShapeOrSizeOptions = ['circle', 'ellipse', 'closest-corner', 'farthest-corner', 'closest-side', 'farthest-side'].map(t => ({ label: t, key: t, value: t }));
-const radialPositionOptions = ['top', 'left', 'center', 'bottom', 'right', 'top left', '0% 0%'].map(t => ({ label: t, key: t, value: t }));
+const typeOptions = [
+    'linear-gradient',
+    'radial-gradient',
+    'conic-gradient',
+    'repeating-linear-gradient',
+    'repeating-radial-gradient',
+    'repeating-conic-gradient',
+].map((t) => ({ label: t, key: t, value: t }));
+const radialShapeOrSizeOptions = [
+    'circle',
+    'ellipse',
+    'closest-corner',
+    'farthest-corner',
+    'closest-side',
+    'farthest-side',
+].map((t) => ({ label: t, key: t, value: t }));
+const radialPositionOptions = ['top', 'left', 'center', 'bottom', 'right', 'top left', '0% 0%'].map((t) => ({
+    label: t,
+    key: t,
+    value: t,
+}));
 
 const gradientType = ref<string>(props.type ?? typeOptions[0].value);
 
@@ -46,17 +64,19 @@ const calcGradientType = computed(() => {
 let colorStopId = 1;
 
 const colorString = computed(() => {
-    return colorStops.value.map(stop => `${stop.color} ${fixNumber(stop.value, 4)}%`).join(',');
+    return colorStops.value.map((stop) => `${stop.color} ${fixNumber(stop.value, 4)}%`).join(',');
 });
 const firstPartString = computed(() => {
     if (calcGradientType.value === 'linear') {
         decorator.value = `${direction.value}deg`;
-    }
-    else if (calcGradientType.value === 'radial') {
-        decorator.value = `${shapeOrSizeSelection.value ?? ''}${positionSelection.value ? ' at ' : ''}${positionSelection.value}`;
-    }
-    else if (calcGradientType.value === 'conic') {
-        decorator.value = `from ${direction.value}deg${positionSelection.value ? ' at ' : ''}${positionSelection.value}`;
+    } else if (calcGradientType.value === 'radial') {
+        decorator.value = `${shapeOrSizeSelection.value ?? ''}${positionSelection.value ? ' at ' : ''}${
+            positionSelection.value
+        }`;
+    } else if (calcGradientType.value === 'conic') {
+        decorator.value = `from ${direction.value}deg${positionSelection.value ? ' at ' : ''}${
+            positionSelection.value
+        }`;
     }
     return decorator.value ? `${decorator.value}, ` : '';
 });
@@ -74,9 +94,11 @@ function formatColorStop() {
 function addColorStop(e: MouseEvent) {
     const x = e.offsetX;
     const total = $band.value?.clientWidth ?? 0;
-    const percent = Math.round(x / total * 100);
+    const percent = Math.round((x / total) * 100);
 
-    const color = (colorStops.value.find(s => s.value > percent) ?? colorStops.value[colorStops.value.length - 1]).color ?? '#000';
+    const color =
+        (colorStops.value.find((s) => s.value > percent) ?? colorStops.value[colorStops.value.length - 1]).color ??
+        '#000';
 
     colorStops.value.push({
         color,
@@ -91,7 +113,7 @@ function removeColorStop(index: number) {
 
 function parseInput(value: string) {
     const content = parseGradient(value);
-    console.log(content)
+    console.log(content);
     if (!content) {
         return;
     }
@@ -99,60 +121,89 @@ function parseInput(value: string) {
     decorator.value = content.decorator;
     shapeOrSizeSelection.value = content.shape;
     positionSelection.value = content.position;
-    colorStops.value = (content.colorStops as { color: string; value: number; id: number }[]).map(stop => {
-        if (/^[\w\-]+$/.test(stop.color)) {
-            try {
-                const rgb = keyword.rgb(stop.color);
-                if (rgb) {
-                    stop.color = `rgb(${rgb.join(',')})`;
+    colorStops.value = (content.colorStops as { color: string; value: number; id: number }[])
+        .map((stop) => {
+            if (/^[\w\-]+$/.test(stop.color)) {
+                try {
+                    const rgb = keyword.rgb(stop.color);
+                    if (rgb) {
+                        stop.color = `rgb(${rgb.join(',')})`;
+                    }
+                } catch (e) {
+                    console.error(`unknown color ${stop.color}`, e);
                 }
-            } catch (e) {
-                console.error(`unknown color ${stop.color}`, e);
             }
-        }
-        return stop;
-    }).map(stop => {
-        stop.id = colorStopId++;
-        return stop;
-    });
+            return stop;
+        })
+        .map((stop) => {
+            stop.id = colorStopId++;
+            return stop;
+        });
 }
 
 watch(() => colorStops.value, formatColorStop, {
     deep: true,
 });
 
-watch(() => props.type, () => {
-    gradientType.value = props.type;
-}, { immediate: true });
-watch(() => props.stringValue, () => {
-    parseInput(props.stringValue);
-}, { immediate: true });
+watch(
+    () => props.type,
+    () => {
+        gradientType.value = props.type;
+    },
+    { immediate: true },
+);
+watch(
+    () => props.stringValue,
+    () => {
+        parseInput(props.stringValue);
+    },
+    { immediate: true },
+);
 
-watch(() => [finalValue.value, gradientType.value], () => {
-    emit('update', finalValue.value);
-});
-
+watch(
+    () => [finalValue.value, gradientType.value],
+    () => {
+        emit('update', finalValue.value);
+    },
+);
 </script>
 <template>
     <div class="gradient">
         <NInputGroup>
+            <div class="preview-icon" :style="{ backgroundImage: finalValue }"></div>
+
             <NSelect class="select-type" v-model:value="gradientType" :options="typeOptions" />
 
             <template v-if="calcGradientType === 'linear'">
                 <Handler v-model:direction="direction" />
             </template>
             <template v-else-if="calcGradientType === 'radial'">
-                <NSelect class="select-type" v-model:value="shapeOrSizeSelection" filterable tag
-                    :options="radialShapeOrSizeOptions" />
+                <NSelect
+                    class="select-type"
+                    v-model:value="shapeOrSizeSelection"
+                    filterable
+                    tag
+                    :options="radialShapeOrSizeOptions"
+                />
                 <NInputGroupLabel>at</NInputGroupLabel>
-                <NSelect class="select-type" v-model:value="positionSelection" filterable tag
-                    :options="radialPositionOptions"></NSelect>
+                <NSelect
+                    class="select-type"
+                    v-model:value="positionSelection"
+                    filterable
+                    tag
+                    :options="radialPositionOptions"
+                ></NSelect>
             </template>
             <template v-else-if="calcGradientType === 'conic'">
                 <Handler v-model:direction="direction" />
                 <NInputGroupLabel>at</NInputGroupLabel>
-                <NSelect class="select-type" v-model:value="positionSelection" filterable tag
-                    :options="radialPositionOptions"></NSelect>
+                <NSelect
+                    class="select-type"
+                    v-model:value="positionSelection"
+                    filterable
+                    tag
+                    :options="radialPositionOptions"
+                ></NSelect>
             </template>
             <div class="flex"></div>
             <NButton :disabled="props.index === 0" @click="emit('up')">
@@ -171,8 +222,12 @@ watch(() => [finalValue.value, gradientType.value], () => {
         <div ref="$band" class="color-band" :style="{ backgroundImage: previewValue }" @click="addColorStop"></div>
         <div class="picker-band">
             <template v-for="(stop, index) in colorStops" :key="stop.id">
-                <ColorStop v-model:percent="stop.value" v-model:color="stop.color" :index="index"
-                    @remove="removeColorStop(index)" />
+                <ColorStop
+                    v-model:percent="stop.value"
+                    v-model:color="stop.color"
+                    :index="index"
+                    @remove="removeColorStop(index)"
+                />
             </template>
         </div>
         <NInput class="line-value" :value="finalValue" disabled @click.native="copy(finalValue)" />
@@ -192,6 +247,20 @@ watch(() => [finalValue.value, gradientType.value], () => {
     flex: 1;
 }
 
+.preview-icon {
+    position: relative;
+    width: 50px;
+    margin-right: 4px;
+    transform-origin: left top;
+    z-index: 9;
+    transition: transform 500ms ease, box-shadow 500ms ease;
+}
+
+.preview-icon:hover {
+    transform: scale(4);
+    box-shadow: rgba(0,0,0,.8) 0 0 50px 40px;
+}
+
 .select-type {
     width: 20em;
     margin-right: 10px;
@@ -203,7 +272,7 @@ watch(() => [finalValue.value, gradientType.value], () => {
     background: transparent top left no-repeat;
     background-size: 100% 100%;
     border: 1px solid #fff;
-    box-shadow: rgba(0, 0, 0, .4) 0 0 8px;
+    box-shadow: rgba(0, 0, 0, 0.4) 0 0 8px;
     cursor: copy;
 }
 
