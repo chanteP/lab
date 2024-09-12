@@ -1,4 +1,5 @@
-import { getNoiseImg, renderFullScreenCanvas } from '../common/gl';
+import { renderFullScreenCanvas } from '../common/gl';
+import { getNoiseImg } from '../common/gl/getNoise';
 import frag from './frag.glsl';
 
 document.documentElement.style.background = `linear-gradient(180deg, #060015, rgb(24, 0, 67))`;

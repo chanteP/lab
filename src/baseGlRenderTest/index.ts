@@ -1,4 +1,4 @@
-import { createInjectAttrGroup, getNoiseImg, renderFullScreenCanvas } from '../common/gl';
+import { createInjectAttrGroup, renderFullScreenCanvas } from '../common/gl';
 
 const triangleWithColor = createInjectAttrGroup();
 
@@ -31,7 +31,6 @@ const { gl, play, injectTexture } = renderFullScreenCanvas({
     void main() {
         vec2 p = position.xy;
         p.y = p.y * iResolution.x / iResolution.y;
-        
 
         gl_Position = vec4(p.xy, 0.0, 1.0);
         v_texCoord = (p + 1.0) * 0.5;

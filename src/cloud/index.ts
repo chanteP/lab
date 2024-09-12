@@ -1,4 +1,5 @@
-import { getNoiseImg, renderFullScreenCanvas } from '../common/gl';
+import { renderFullScreenCanvas } from '../common/gl';
+import { getNoiseImg } from '../common/gl/getNoise';
 import frag from './frag.glsl';
 
 const { gl, play, injectTexture } = renderFullScreenCanvas({

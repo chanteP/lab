@@ -1,6 +1,3 @@
-import { inject } from 'vue';
-import noiseBase64 from './noise.base64';
-
 export const DEFAULT_GL1_VERT = `
 attribute vec2 a_position;
 varying vec2 v_texCoord;
@@ -106,7 +103,7 @@ function injectAttr(gl: WebGL2RenderingContext, program: WebGLProgram, value: nu
         const { name, length } = field;
         const positionAttributeLocation = gl.getAttribLocation(program, name);
 
-        if(positionAttributeLocation < 0){
+        if (positionAttributeLocation < 0) {
             console.error(`name<${name}> does not found in vertShader`);
         }
         gl.vertexAttribPointer(
@@ -309,11 +306,12 @@ export function useInjectGlData(
     };
 }
 
-export function createGlContext(canvas: HTMLCanvasElement) {
+export function createGlContext(canvas: HTMLCanvasElement, options?: Partial<WebGLContextAttributes>) {
     const gl = canvas.getContext('webgl2', {
         alpha: true,
         depth: true,
         premultipliedAlpha: true,
+        ...options,
     });
     if (!gl) {
         throw new Error(`webgl context create failed`);
@@ -402,6 +400,8 @@ export function simpleInit(
         attr?: ReturnType<typeof createInjectAttrGroup>;
         drawType?: number; // WebGL2RenderingContext.LINE_LOOP | WebGL2RenderingContext.TRIANGLE_STRIP
 
+        preserveDrawingBuffer?: boolean;
+
         postProcess?: ShaderOptions[];
     } & ShaderOptions,
 ) {
@@ -409,7 +409,9 @@ export function simpleInit(
     const fps = options?.fps ?? 40;
 
     ensureCanvas(canvas, ratio);
-    const gl = createGlContext(canvas);
+    const gl = createGlContext(canvas, {
+        preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
+    });
 
     const program = createProgram(gl, getFinalShaderConfig(options));
 
@@ -490,19 +492,4 @@ export async function loadImage(src?: string, sourceImage?: HTMLImageElement) {
         img.onerror = rej;
         img.src = src!;
     });
-}
-
-async function getNoise(size: 256 | 512 | 1024 = 256) {
-    if (size === 512) {
-        return import('./noise512.png');
-    }
-    if (size === 1024) {
-        return import('./noise1024.png');
-    }
-    return import('./noise.png');
-}
-
-export async function getNoiseImg(size: 256 | 512 | 1024 = 256) {
-    const src = (await getNoise(size)).default;
-    return loadImage(noiseBase64);
 }

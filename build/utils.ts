@@ -21,7 +21,12 @@ export function genIndex() {
 
     console.log(projects);
 
-    const content = projects.map((projectRoute) => `<li><a href="${projectRoute}">${projectRoute}</a></li>`).join('\n');
+    const content = projects
+        .map(
+            (projectRoute) =>
+                `<li style="display:block;line-height:50px;padding-left:2em;font-family:monospace;"><a href="${projectRoute}">${projectRoute}</a></li>`,
+        )
+        .join('\n');
     const html = genHTML({
         title: 'index',
         content: `<ul>${content}</ul>`,
