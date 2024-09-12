@@ -1,3 +1,4 @@
+import { inject } from 'vue';
 import noiseBase64 from './noise.base64';
 
 export const DEFAULT_GL1_VERT = `
@@ -8,12 +9,15 @@ void main() {
     v_texCoord = (a_position + 1.0) * 0.5;
 }`;
 
-export const DEFAULT_GL2_VERT = `#version 300 es
+const simpleVertHeader = `#version 300 es
 
-// 顶点位置属性，通常由 WebGL 程序提供
-layout(location = 0) in vec2 a_position;
-// 将纹理坐标传递给片段着色器
 out vec2 v_texCoord;
+
+`;
+
+export const DEFAULT_GL2_VERT = `${simpleVertHeader}
+
+layout(location = 0) in vec2 a_position;
 
 void main() {
     // 计算顶点的最终位置
@@ -84,14 +88,98 @@ export function setBlend(gl: WebGL2RenderingContext, blendMode: 'normal' | 'add'
             break;
     }
 }
-function injectVert(gl: WebGL2RenderingContext, program: WebGLProgram) {
-    const positions = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+
+type AttrField = {
+    name: string;
+    length: number;
+};
+
+function injectAttr(gl: WebGL2RenderingContext, program: WebGLProgram, value: number[], fieldSet: AttrField[]) {
+    const data = new Float32Array(value);
     const vBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
-    const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
-    gl.enableVertexAttribArray(positionAttributeLocation);
-    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+    let startOffset = 0;
+    const totalLen = fieldSet.reduce((d, c) => (d += c.length), 0);
+
+    fieldSet.forEach((field) => {
+        const { name, length } = field;
+        const positionAttributeLocation = gl.getAttribLocation(program, name);
+
+        if(positionAttributeLocation < 0){
+            console.error(`name<${name}> does not found in vertShader`);
+        }
+        gl.vertexAttribPointer(
+            positionAttributeLocation,
+            length,
+            gl.FLOAT,
+            false,
+            data.BYTES_PER_ELEMENT * totalLen,
+            data.BYTES_PER_ELEMENT * startOffset,
+        );
+
+        gl.enableVertexAttribArray(positionAttributeLocation);
+
+        startOffset += length;
+    });
+
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+}
+
+export function createInjectAttrGroup() {
+    const groupData: { name: string; length: number; data: number[][] }[] = [];
+    let currentLen = 0;
+
+    return {
+        addGroup: (name, data: number[][]) => {
+            const length = data[0]?.length ?? 0;
+            if (length <= 0) {
+                console.warn(`no data found in@${name}, received ${data}`);
+            }
+            if (currentLen && data.length !== currentLen) {
+                console.warn(`length not match@${name}, expected ${currentLen}, received ${data.length}`);
+            }
+            currentLen = data.length;
+
+            groupData.push({
+                name,
+                length,
+                data,
+            });
+        },
+        inject: (gl: WebGL2RenderingContext, program: WebGLProgram) => {
+            const value: number[] = [];
+
+            for (let i = 0; i < currentLen; i++) {
+                for (let j = 0; j < groupData.length; j++) {
+                    const currentGroup = groupData[j];
+                    for (let k = 0; k < currentGroup.length; k++) {
+                        value.push(currentGroup.data[i]?.[k] ?? 0);
+                    }
+                }
+            }
+
+            injectAttr(gl, program, value, groupData);
+        },
+        get length() {
+            return currentLen;
+        },
+    };
+}
+
+function injectVert() {
+    const group = createInjectAttrGroup();
+
+    // [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+
+    group.addGroup('a_position', [
+        [-1.0, -1.0],
+        [1.0, -1.0],
+        [-1.0, 1.0],
+        [1.0, 1.0],
+    ]);
+
+    return group;
 }
 
 type InjectableMethod = keyof WebGL2RenderingContext & `uniform${string}`;
@@ -294,11 +382,12 @@ interface ShaderOptions {
     vert?: string;
     frag?: string;
     main?: string;
+    vertMain?: string;
 }
 
 function getFinalShaderConfig(options?: ShaderOptions) {
     return {
-        vert: options?.vert,
+        vert: options?.vert ?? (options?.vertMain ? `${simpleVertHeader}${options.vertMain}` : undefined),
         frag: options?.frag ?? (options?.main ? `${simpleFragHeader}${options.main}` : undefined),
     };
 }
@@ -309,6 +398,10 @@ export function simpleInit(
         fps?: number;
         ratio?: number;
         autoPlay?: boolean;
+
+        attr?: ReturnType<typeof createInjectAttrGroup>;
+        drawType?: number; // WebGL2RenderingContext.LINE_LOOP | WebGL2RenderingContext.TRIANGLE_STRIP
+
         postProcess?: ShaderOptions[];
     } & ShaderOptions,
 ) {
@@ -321,7 +414,10 @@ export function simpleInit(
     const program = createProgram(gl, getFinalShaderConfig(options));
 
     const { inject, destroy } = useInjectGlData(gl, program, canvas, { ratio });
-    injectVert(gl, program);
+
+    const injectGroupData = options.attr ?? injectVert();
+    injectGroupData.inject(gl, program);
+
     inject();
 
     // if(options?.postProcess){
@@ -342,7 +438,7 @@ export function simpleInit(
 
             inject();
 
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            gl.drawArrays(options?.drawType ?? gl.TRIANGLE_STRIP, 0, injectGroupData.length);
         }
 
         timer = requestAnimationFrame(renderTick);
