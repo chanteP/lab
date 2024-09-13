@@ -10,6 +10,10 @@ const props = defineProps<{
     file: File;
 }>();
 
+const emit = defineEmits<{
+    (e: 'select', data: { name: string; file: File }): void;
+}>();
+
 const file = ref<File>(props.file);
 
 const $canvas = ref<HTMLCanvasElement>();
@@ -64,10 +68,14 @@ async function insertCSS() {
 }
 
 function draw() {
-    if (!info.value || !$canvas.value) { return; }
+    if (!info.value || !$canvas.value) {
+        return;
+    }
 
     const ctx = $canvas.value.getContext('2d');
-    if (!ctx) { return; }
+    if (!ctx) {
+        return;
+    }
 
     const node = $canvas.value;
 
@@ -109,8 +117,7 @@ function parse(sync = false) {
             message.error(e.message);
             return;
         }
-    }
-    else {
+    } else {
         opentype.load(fontUrl.value, (err, font) => {
             if (err) {
                 parse(true);
@@ -133,7 +140,9 @@ function logInfo() {
 }
 
 async function move(isAscender: boolean, offset: number) {
-    if (!info.value) { return; }
+    if (!info.value) {
+        return;
+    }
     const data = info.value;
     const key = isAscender ? 'ascender' : 'descender';
     data[key] = data[key] + offset;
@@ -148,7 +157,6 @@ async function move(isAscender: boolean, offset: number) {
 onMounted(() => {
     reset();
 });
-
 </script>
 
 <template>
@@ -157,11 +165,11 @@ onMounted(() => {
         <canvas ref="$canvas" class="canvas"></canvas>
 
         <div class="info name" @click="logInfo">{{ fontName }}</div>
-        <div class="info height"><span style="color:#090;">{{ halfHeight }}px</span><span style="color:#900;">{{
-                baselinePx }}px</span></div>
+        <div class="info height">
+            <span style="color: #090">{{ halfHeight }}px</span><span style="color: #900">{{ baselinePx }}px</span>
+        </div>
 
         <div class="control c-ascender">
-
             <NButton size="tiny">
                 <template #icon>
                     <NIcon @click="move(true, 10)">
@@ -194,8 +202,8 @@ onMounted(() => {
         </div>
         <div class="control download">
             <NButton secondary type="info" size="tiny" @click="download(file)">download</NButton>
+            <NButton tertiary type="info" size="tiny" @click="emit('select', { name: fontName, file })">info</NButton>
         </div>
-
     </span>
 </template>
 
@@ -203,7 +211,7 @@ onMounted(() => {
 .font {
     position: relative;
     padding: 0 10px;
-    background: rgba(0, 0, 0, .1);
+    background: rgba(0, 0, 0, 0.1);
 }
 
 .canvas {

@@ -27,11 +27,23 @@ export function mountVue(App: Component, withUI = false) {
     }
 }
 
-export function cachedRef<T = undefined>(key: string, defaultValue?: T, wideDefault = false) {
+interface CacheRefOptions<T> {
+    // 宽松检测，缓存是‘’也走默认
+    wideDefault?: boolean;
+    // 如果符合这个条件，优先用这个
+    firstCheck?: () => T | undefined;
+}
+
+export function cachedRef<T = undefined>(key: string, defaultValue?: T, options?: CacheRefOptions<T>) {
     const stringValue = localStorage.getItem(key);
 
-    const refData = (wideDefault ? (!stringValue || stringValue === '""') : stringValue === null) ? ref<T>(defaultValue) : ref<T>(saveParseJSON(stringValue));
+    let refDataValue = options?.firstCheck?.() ?? defaultValue;
 
+    if (!(options?.wideDefault ? !stringValue || stringValue === '""' : stringValue === null)) {
+        refDataValue = saveParseJSON(stringValue);
+    }
+
+    const refData = ref<T>(refDataValue as T);
     watch(
         () => refData.value,
         () => {

@@ -87,7 +87,7 @@ onMounted(() => {
             <div v-if="props.item.loop" class="tag loop"></div>
         </div>
         <div class="col offset-content">
-            <template v-if="'length' in props.item">
+            <template v-if="!props.item.end">
                 <span class="length">{{ props.item.length }}</span>
                 <span class="offset">{{ props.item.offset }} - {{ props.item.offset + props.item.length }}</span>
             </template>

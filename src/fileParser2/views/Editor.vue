@@ -2,8 +2,10 @@
 import { onMounted, ref, type Ref, computed, watch } from 'vue';
 import { NForm, NInput, NButton, NSelect } from 'naive-ui';
 import { insetFileFormat } from '../parser';
+import { cachedRef } from '../../common/vue';
 
 const localCacheKey = 'localFileFormat';
+const localCacheKeyType = 'localFileFormatType';
 
 const props = defineProps<{
     filter: string;
@@ -15,38 +17,54 @@ const emit = defineEmits<{
     (e: 'update:format', format: string): void;
 }>();
 
+const formatMap: Record<string, string> = {};
 const fileFormat = [
     {
         type: 'group',
         label: 'inset',
         children: insetFileFormat.map((fileFormat) => {
+            formatMap[fileFormat.name] = fileFormat.format;
             return {
                 label: fileFormat.name,
-                value: fileFormat.format,
+                value: fileFormat.name,
+                data: fileFormat.format,
             };
         }),
     },
 ];
 
-const currentFormat = ref('');
+const currentFormat = cachedRef(localCacheKey, '');
 const fileFormatList = ref(fileFormat);
-const currentFileFormatSelected = ref();
-
-function setFormat(value: string) {
-    currentFormat.value = value;
-}
+const currentFileFormatSelected = cachedRef(localCacheKeyType, 'byte', {
+    firstCheck: () => {
+        const hashKey = location.hash.slice(1);
+        if (formatMap[hashKey]) {
+            return hashKey;
+        }
+    },
+});
 
 watch(
     () => currentFormat.value,
     () => {
-        localStorage.setItem(localCacheKey, currentFormat.value);
         emit('update:format', currentFormat.value);
     },
+    { immediate: true },
 );
+watch(
+    () => currentFileFormatSelected.value,
+    (v, ov) => {
+        if (!ov && currentFormat.value) {
+            // 有旧输入就不覆盖
+            return;
+        }
+        location.hash = currentFileFormatSelected.value;
 
-onMounted(() => {
-    currentFormat.value = localStorage.getItem(localCacheKey) ?? '';
-});
+        const formatContent = formatMap[currentFileFormatSelected.value] ?? '';
+        currentFormat.value = formatContent;
+    },
+    { immediate: true },
+);
 </script>
 
 <template>
@@ -57,7 +75,6 @@ onMounted(() => {
                 v-model:value="currentFileFormatSelected"
                 :options="fileFormatList"
                 placeholder="file format"
-                @change="setFormat"
             />
             <NButton>saveAs</NButton>
             <div class="flex1"></div>

@@ -18,7 +18,7 @@ const props = defineProps<{
                 <div class="col">Length</div>
                 <div class="col">Value</div>
             </div>
-            <template v-for="item in props.result">
+            <template v-for="(item, index) in props.result" :key="`${item.type}_${index}_${item.name}`">
                 <DataTableItem :item="item" :file="props.result" />
             </template>
         </div>
