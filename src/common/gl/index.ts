@@ -59,7 +59,7 @@ void main(){
 
 `;
 
-const DEFAULT_RATIO = Math.min(window.devicePixelRatio ?? 1, 2);
+const DEFAULT_RATIO = Math.min(globalThis.window?.devicePixelRatio ?? 1, 2);
 
 export function ensureCanvas(canvas: HTMLCanvasElement, ratio = DEFAULT_RATIO) {
     canvas.width = canvas.clientWidth * ratio;
@@ -123,12 +123,21 @@ function injectAttr(gl: WebGL2RenderingContext, program: WebGLProgram, value: nu
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
 }
 
+function createUBO(gl: WebGL2RenderingContext, program: WebGLProgram, index: number = 0, value: number[] = []) {
+    const ubo = gl.createBuffer();
+    const data = Float32Array.from(value);
+
+    gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+    gl.bufferData(gl.UNIFORM_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, index, ubo);
+}
+
 export function createInjectAttrGroup() {
     const groupData: { name: string; length: number; data: number[][] }[] = [];
     let currentLen = 0;
 
     return {
-        addGroup: (name, data: number[][]) => {
+        addGroup: (name: string, data: number[][]) => {
             const length = data[0]?.length ?? 0;
             if (length <= 0) {
                 console.warn(`no data found in@${name}, received ${data}`);
@@ -196,7 +205,13 @@ function injectUniform<M extends InjectableMethod>(
 interface TextureOptions {
     flip?: false;
     mipmap?: boolean;
-    texParameteri?: Record<number, number>;
+    texParameteri?: {
+        [key: number]: number;
+        TEXTURE_MIN_FILTER?: number;
+        TEXTURE_MAG_FILTER?: number;
+        TEXTURE_WRAP_S?: number;
+        TEXTURE_WRAP_T?: number;
+    };
 }
 
 function injectTexture(
@@ -217,18 +232,28 @@ function injectTexture(
     const defaultMinFilter = !options?.mipmap ? gl.NEAREST : gl.LINEAR_MIPMAP_LINEAR;
     const defaultMaxFilter = !options?.mipmap ? gl.LINEAR : gl.LINEAR;
 
+    const texParameteri = options?.texParameteri;
+
     gl.texParameteri(
         gl.TEXTURE_2D,
         gl.TEXTURE_MIN_FILTER,
-        options?.texParameteri?.[gl.TEXTURE_MIN_FILTER] ?? defaultMinFilter,
+        texParameteri?.[gl.TEXTURE_MIN_FILTER] ?? texParameteri?.['TEXTURE_MIN_FILTER'] ?? defaultMinFilter,
     );
     gl.texParameteri(
         gl.TEXTURE_2D,
         gl.TEXTURE_MAG_FILTER,
-        options?.texParameteri?.[gl.TEXTURE_MAG_FILTER] ?? defaultMaxFilter,
+        texParameteri?.[gl.TEXTURE_MAG_FILTER] ?? texParameteri?.['TEXTURE_MAG_FILTER'] ?? defaultMaxFilter,
     );
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options?.texParameteri?.[gl.TEXTURE_WRAP_S] ?? gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options?.texParameteri?.[gl.TEXTURE_WRAP_T] ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_WRAP_S,
+        texParameteri?.[gl.TEXTURE_WRAP_S] ?? texParameteri?.['TEXTURE_WRAP_S'] ?? gl.CLAMP_TO_EDGE,
+    );
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_WRAP_T,
+        texParameteri?.[gl.TEXTURE_WRAP_T] ?? texParameteri?.['TEXTURE_WRAP_T'] ?? gl.CLAMP_TO_EDGE,
+    );
 
     gl.uniform1i(sampler, index);
 
@@ -327,7 +352,7 @@ function checkShader(gl: WebGL2RenderingContext, shader: WebGLShader, source: st
         const error = gl.getShaderInfoLog(shader);
         console.error('Shader compile error: ' + error);
 
-        const [match, file, line] = /ERROR: ([\d]+):([\d]+)/.exec(error) ?? [];
+        const [match, file, line] = /ERROR: ([\d]+):([\d]+)/.exec(error ?? '') ?? [];
         console.error('error line: ', source.split('\n')[+line - 1]);
     }
 }
@@ -410,14 +435,14 @@ export function simpleInit(
 
     ensureCanvas(canvas, ratio);
     const gl = createGlContext(canvas, {
-        preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
+        preserveDrawingBuffer: options?.preserveDrawingBuffer ?? false,
     });
 
     const program = createProgram(gl, getFinalShaderConfig(options));
 
     const { inject, destroy } = useInjectGlData(gl, program, canvas, { ratio });
 
-    const injectGroupData = options.attr ?? injectVert();
+    const injectGroupData = options?.attr ?? injectVert();
     injectGroupData.inject(gl, program);
 
     inject();
@@ -458,6 +483,14 @@ export function simpleInit(
         injectTexture: (name: string, index: number, img: HTMLImageElement, options?: TextureOptions) => {
             injectTexture(gl, program, name, index, img, options);
         },
+        createUBO: (index: number, value: number[]) => {
+            // layout(std140) uniform UBO
+            // {
+            //     vec2 data[100];
+            // } ubo;
+            // ubo.data[i];
+            return createUBO(gl, program, index, value);
+        },
         play: () => {
             cancelAnimationFrame(timer);
             renderTick();
@@ -481,15 +514,4 @@ export function renderFullScreenCanvas(options?: Parameters<typeof simpleInit>[1
     ensureCanvas(canvas);
 
     return simpleInit(canvas, options);
-}
-
-export async function loadImage(src?: string, sourceImage?: HTMLImageElement) {
-    return new Promise<HTMLImageElement>((res, rej) => {
-        const img = sourceImage ?? new Image();
-
-        img.crossOrigin = 'anonymous';
-        img.onload = () => res(img);
-        img.onerror = rej;
-        img.src = src!;
-    });
 }
