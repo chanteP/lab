@@ -4,6 +4,7 @@ import { BaseParser } from './format/base';
 import { cachedRef } from '../common/vue';
 import { NButton, NInput, NTag, useMessage } from 'naive-ui';
 import { download } from '../common/common';
+import { alphabet, hanzi3500, quotes } from './textMap';
 
 const props = defineProps<{
     fontName: string;
@@ -45,6 +46,13 @@ async function clipFile() {
 
 watch(() => props.file, parseFile, { immediate: true });
 
+function addQuick(text: string){
+    if(clipText.value){
+        clipText.value += '\n';
+    }
+    clipText.value += text;
+}
+
 function log(e: any) {
     console.log(e);
 }
@@ -53,8 +61,15 @@ function log(e: any) {
 <template>
     <div class="list-wrap">
         <NTag class="tag" type="info">{{ props.fontName }}</NTag>
+
+        <div class="quick-font">
+            <NTag class="quick-text" checkable @click="addQuick(alphabet)">abc123</NTag>
+            <NTag class="quick-text" checkable @click="addQuick(quotes)">#@%^</NTag>
+            <NTag class="quick-text" checkable @click="addQuick(hanzi3500)">汉字简</NTag>
+        </div>
+        
         <div class="flexbox">
-            <NInput class="clip-input flex" type="textarea" v-model:value="clipText" placeholder="要裁剪的字集" />
+            <NInput class="clip-input flex" type="textarea" v-model:value="clipText" show-count clearable placeholder="要裁剪的字集" />
             <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
         </div>
         <div class="char-list" :style="`font-family:'${props.fontName}';`">
@@ -78,6 +93,16 @@ function log(e: any) {
     position: absolute;
     top: -26px;
     left: 10px;
+    cursor: pointer;
+}
+
+.quick-font{
+    position: absolute;
+    top: -26px;
+    right: 10px;
+}
+.quick-text{
+    cursor: pointer;
 }
 
 .flexbox {
