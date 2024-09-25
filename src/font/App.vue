@@ -148,7 +148,7 @@ onMounted(async () => {
         >
     </div>
 
-    <!-- <FontList v-if="currentSelect" :font-name="currentSelect.name" :file="currentSelect.file" /> -->
+    <FontList v-if="currentSelect" :font-name="currentSelect.name" :file="currentSelect.file" />
 </template>
 
 <style>

@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import { BaseParser } from './format/base';
-import { getParser } from './format';
+import { cachedRef } from '../common/vue';
+import { NButton, NInput, NTag, useMessage } from 'naive-ui';
+import { download } from '../common/common';
 
 const props = defineProps<{
     fontName: string;
     file: File;
 }>();
 
+const message = useMessage();
+
 let parser: BaseParser = undefined;
+const clipText = cachedRef('font-clip-text', '');
 
 const fontList = ref<string[]>([]);
 
@@ -16,18 +21,32 @@ async function parseFile() {
     if (!props.file) {
         return;
     }
-    parser = new (getParser(props.file))(props.file);
+    parser = new BaseParser(props.file);
     await parser.parse();
     fontList.value = parser.getFontList();
+}
+
+async function clipFile() {
+    const loading = message.loading('处理中...', { duration: 9999999 });
+    const file = await parser.clip(clipText.value, {familyName: props.fontName});
+    loading.destroy();
+
+    download(file);
 }
 
 watch(() => props.file, parseFile, { immediate: true });
 </script>
 
 <template>
-    <div class="list-wrap"></div>
-    <div :style="`font-family:${props.fontName};`">
-        <div v-for="item in fontList" :key="item">{{ item }}</div>
+    <div class="list-wrap">
+        <NTag class="tag" type="info">{{ props.fontName }}</NTag>
+        <div class="flexbox">
+            <NInput class="clip-input flex" type="textarea" v-model:value="clipText" placeholder="要裁剪的字集" />
+            <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
+        </div>
+        <div class="char-list" :style="`font-family:'${props.fontName}';`">
+            <div v-for="item in fontList" :key="item" class="char">{{ item }}</div>
+        </div>
     </div>
 </template>
 
@@ -41,5 +60,38 @@ watch(() => props.file, parseFile, { immediate: true });
     border-radius: 8px 8px 0 0;
     height: 50vh;
     box-shadow: rgba(0, 0, 0, 0.4) 0 0 28px;
+}
+.tag{
+    position: absolute;
+    top: -26px;
+    left: 10px;
+}
+
+.flexbox{
+    display: flex;
+}
+.flex{
+    flex: 1;
+}
+.clip-button{
+    width: 10em;
+    height: 100px;
+}
+.clip-input{
+    height: 100px;
+}
+
+.char-list {
+    display: flex;
+    flex-wrap: wrap;
+    height: calc(100% - 100px);
+    overflow: auto;
+    user-select: auto;
+}
+.char {
+    width: 30px;
+    font-size: 30px;
+    text-align: center;
+    line-height: 30px;
 }
 </style>

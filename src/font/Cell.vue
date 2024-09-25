@@ -161,7 +161,7 @@ onMounted(() => {
 
 <template>
     <span v-if="!error" ref="$font" class="font" :style="{ fontFamily: `'${fontName}'` }">
-        <slot></slot>
+        <span @click="emit('select', { name: fontName, file })"><slot></slot></span>
         <canvas ref="$canvas" class="canvas"></canvas>
 
         <div class="info name" @click="logInfo">{{ fontName }}</div>
@@ -202,7 +202,7 @@ onMounted(() => {
         </div>
         <div class="control download">
             <NButton secondary type="info" size="tiny" @click="download(file)">download</NButton>
-            <NButton tertiary type="info" size="tiny" @click="emit('select', { name: fontName, file })">info</NButton>
+            <!-- <NButton tertiary type="info" size="tiny" @click="emit('select', { name: fontName, file })">info</NButton> -->
         </div>
     </span>
 </template>
