@@ -46,8 +46,8 @@ async function clipFile() {
 
 watch(() => props.file, parseFile, { immediate: true });
 
-function addQuick(text: string){
-    if(clipText.value){
+function addQuick(text: string) {
+    if (clipText.value) {
         clipText.value += '\n';
     }
     clipText.value += text;
@@ -60,16 +60,26 @@ function log(e: any) {
 
 <template>
     <div class="list-wrap">
-        <NTag class="tag" type="info">{{ props.fontName }}</NTag>
+        <div class="tag">
+            <NTag type="info">{{ props.fontName }}</NTag>
+            <NTag type="info">{{ fontList.length }}</NTag>
+        </div>
 
         <div class="quick-font">
             <NTag class="quick-text" checkable @click="addQuick(alphabet)">abc123</NTag>
             <NTag class="quick-text" checkable @click="addQuick(quotes)">#@%^</NTag>
             <NTag class="quick-text" checkable @click="addQuick(hanzi3500)">汉字简</NTag>
         </div>
-        
+
         <div class="flexbox">
-            <NInput class="clip-input flex" type="textarea" v-model:value="clipText" show-count clearable placeholder="要裁剪的字集" />
+            <NInput
+                class="clip-input flex"
+                type="textarea"
+                v-model:value="clipText"
+                show-count
+                clearable
+                placeholder="要裁剪的字集"
+            />
             <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
         </div>
         <div class="char-list" :style="`font-family:'${props.fontName}';`">
@@ -93,15 +103,14 @@ function log(e: any) {
     position: absolute;
     top: -26px;
     left: 10px;
-    cursor: pointer;
 }
 
-.quick-font{
+.quick-font {
     position: absolute;
     top: -26px;
     right: 10px;
 }
-.quick-text{
+.quick-text {
     cursor: pointer;
 }
 
@@ -132,7 +141,7 @@ function log(e: any) {
     text-align: center;
     line-height: 30px;
 }
-.char:hover{
-    background: rgba(0,0,0,.1);
+.char:hover {
+    background: rgba(0, 0, 0, 0.1);
 }
 </style>
