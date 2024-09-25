@@ -103,7 +103,7 @@ function bindDrop() {
 }
 
 async function loadFont(url: string, filename: string) {
-    const loader = message.loading(`${filename} 加载中...`);
+    const loader = message.loading(`${filename} 加载中...`, { duration: 99999999 });
     const blob = await fetch(url).then((res) => res.blob());
     loader.destroy();
     return new File([blob], filename);

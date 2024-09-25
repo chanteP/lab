@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, onMounted, ref, type Ref, computed } from 'vue';
+import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import { BaseParser } from './format/base';
 import { cachedRef } from '../common/vue';
 import { NButton, NInput, NTag, useMessage } from 'naive-ui';
@@ -21,20 +21,33 @@ async function parseFile() {
     if (!props.file) {
         return;
     }
-    parser = new BaseParser(props.file);
-    await parser.parse();
-    fontList.value = parser.getFontList();
+    const loading = message.loading('解析中...', { duration: 9999999 });
+
+    try {
+        parser = new BaseParser(props.file);
+        await parser.parse();
+
+        fontList.value = parser.getFontList();
+
+        await nextTick();
+    } finally {
+        loading.destroy();
+    }
 }
 
 async function clipFile() {
     const loading = message.loading('处理中...', { duration: 9999999 });
-    const file = await parser.clip(clipText.value, {familyName: props.fontName});
+    const file = await parser.clip(clipText.value, { familyName: props.fontName });
     loading.destroy();
 
     download(file);
 }
 
 watch(() => props.file, parseFile, { immediate: true });
+
+function log(e: any) {
+    console.log(e);
+}
 </script>
 
 <template>
@@ -45,7 +58,7 @@ watch(() => props.file, parseFile, { immediate: true });
             <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
         </div>
         <div class="char-list" :style="`font-family:'${props.fontName}';`">
-            <div v-for="item in fontList" :key="item" class="char">{{ item }}</div>
+            <div v-for="item in fontList" :key="item" class="char" @click="log(item)">{{ item }}</div>
         </div>
     </div>
 </template>
@@ -61,23 +74,23 @@ watch(() => props.file, parseFile, { immediate: true });
     height: 50vh;
     box-shadow: rgba(0, 0, 0, 0.4) 0 0 28px;
 }
-.tag{
+.tag {
     position: absolute;
     top: -26px;
     left: 10px;
 }
 
-.flexbox{
+.flexbox {
     display: flex;
 }
-.flex{
+.flex {
     flex: 1;
 }
-.clip-button{
+.clip-button {
     width: 10em;
     height: 100px;
 }
-.clip-input{
+.clip-input {
     height: 100px;
 }
 
@@ -93,5 +106,8 @@ watch(() => props.file, parseFile, { immediate: true });
     font-size: 30px;
     text-align: center;
     line-height: 30px;
+}
+.char:hover{
+    background: rgba(0,0,0,.1);
 }
 </style>

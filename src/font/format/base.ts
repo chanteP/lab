@@ -1,4 +1,4 @@
-import { Font, parse } from 'opentype.js';
+import { Font, Glyph, parse } from 'opentype.js';
 
 export class BaseParser {
     file: File;
@@ -35,8 +35,15 @@ export class BaseParser {
 
     async clip(stringList: string, options: { familyName: string }): Promise<File> {
         const notdef = this.font.glyphs.get(0);
-        const glyphs = stringList.split('').map((char) => {
-            return this.font.charToGlyph(char);
+
+        const glyphs: Glyph[] = [];
+        new Set(stringList.split('')).forEach((char) => {
+            const glyph = this.font.charToGlyph(char);
+            if (!glyph) {
+                console.error(`${char} not found`);
+            } else {
+                glyphs.push(glyph);
+            }
         });
 
         console.log(glyphs);
