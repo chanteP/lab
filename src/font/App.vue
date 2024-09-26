@@ -200,10 +200,10 @@ body {
     position: absolute;
     width: 100%;
     text-align: center;
-    top: 300px;
+    top: 120px;
     left: 0;
     font-weight: 700;
-    color: rgba(0,0,0,.05);
+    color: rgba(0,0,0,.03);
     pointer-events: none;
 }
 

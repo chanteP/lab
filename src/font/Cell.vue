@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import opentype from 'opentype.js';
-import { useMessage, NButton, NIcon, NInputGroup, NInputGroupLabel } from 'naive-ui';
+import { useMessage, NButton, NIcon, NInputGroup, NInputGroupLabel, NTooltip } from 'naive-ui';
 import ChevronUp from '@vicons/ionicons5/ChevronUp';
 import ChevronDown from '@vicons/ionicons5/ChevronDown';
+import InformationCircleOutline from '@vicons/ionicons5/InformationCircleOutline';
 import { download, sleep } from '../common/common';
 
 const props = defineProps<{
@@ -38,6 +39,27 @@ const baselinePx = ref(0);
 const info = ref<opentype.Font>();
 let styleElement: HTMLStyleElement | undefined = undefined;
 
+const css = computed(() => {
+    return `
+@font-face {
+    font-family: '${fontName.value}';
+    src: url('${fontUrl.value}');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}`;
+});
+const cssTips = computed(() => {
+    return `
+@font-face {
+    font-family: '${fontName.value}';
+    src: url('./${fontName.value}.otf');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}`;
+});
+
 async function insertCSS() {
     // if (styleElement) {
     //     styleElement.parentNode!.removeChild(styleElement);
@@ -51,17 +73,9 @@ async function insertCSS() {
     }
 
     // 创建 @font-face CSS 规则
-    const css = `
-@font-face {
-    font-family: '${fontName.value}';
-    src: url('${fontUrl.value}');
-    font-weight: normal;
-    font-style: normal;
-    font-display: block;
-}`;
 
     // 将 CSS 规则添加到 style 元素中
-    styleElement.appendChild(document.createTextNode(css));
+    styleElement.appendChild(document.createTextNode(css.value));
 
     // 默认的字体加载慢一点
     await sleep(10);
@@ -169,7 +183,23 @@ onMounted(() => {
             <span style="color: #090">{{ halfHeight }}px</span><span style="color: #900">{{ baselinePx }}px</span>
         </div>
 
-        <div class="control c-ascender">
+        <div class="control left-top top-hide">
+            <NTooltip placement="top-start" trigger="hover">
+                <template #trigger>
+                    <NButton size="tiny">
+                        <template #icon>
+                            <NIcon>
+                                <InformationCircleOutline />
+                            </NIcon>
+                        </template>
+                    </NButton>
+                </template>
+                <pre>
+                    {{ cssTips }}
+                </pre>
+            </NTooltip>
+        </div>
+        <div class="control c-ascender top-hide">
             <NInputGroup>
                 <NInputGroupLabel class="label" size="tiny">Ascender</NInputGroupLabel>
                 <NButton size="tiny">
@@ -188,7 +218,7 @@ onMounted(() => {
                 </NButton>
             </NInputGroup>
         </div>
-        <div class="control c-descender">
+        <div class="control c-descender bottom-hide">
             <NInputGroup>
                 <NInputGroupLabel class="label" size="tiny">Descender</NInputGroupLabel>
                 <NButton size="tiny">
@@ -206,7 +236,7 @@ onMounted(() => {
                 </NButton>
             </NInputGroup>
         </div>
-        <div class="control download">
+        <div class="control download bottom-hide">
             <NButton secondary type="info" size="tiny" @click="download(file)">download</NButton>
             <!-- <NButton tertiary type="info" size="tiny" @click="emit('select', { name: fontName, file })">info</NButton> -->
         </div>
@@ -249,7 +279,7 @@ onMounted(() => {
 }
 
 .control {
-    display: none;
+    /* display: none; */
     position: absolute;
     font-size: 12px;
     font-family: initial;
@@ -258,8 +288,26 @@ onMounted(() => {
 
 .font:hover {
     .control {
-        display: block;
+        opacity: 1;
+        transform: translate(0, 0px);
+        /* display: block; */
     }
+}
+
+.top-hide {
+    opacity: 0;
+    transform: translate(0, -20px);
+    transition: opacity 300ms ease, transform 300ms ease;
+}
+.bottom-hide {
+    opacity: 0;
+    transform: translate(0, 22px);
+    transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.left-top {
+    top: -20px;
+    left: 0;
 }
 
 .c-ascender {
