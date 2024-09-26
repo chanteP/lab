@@ -1,10 +1,23 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed, shallowRef } from 'vue';
-import { NButton, NDivider, NFlex, NImage, NImageGroup, NInput, NSelect, NSpace, NTag, useMessage } from 'naive-ui';
+import {
+    NButton,
+    NDivider,
+    NFlex,
+    NImage,
+    NImageGroup,
+    NInput,
+    NInputGroup,
+    NInputGroupLabel,
+    NSelect,
+    NSpace,
+    NTag,
+    useMessage,
+} from 'naive-ui';
 import Cell from './Cell.vue';
 import FontList from './FontList.vue';
 
-import FontPingFang from './PingFang-SC-Regular.ttf';
+// import FontPingFang from './PingFang-SC-Regular.ttf';
 import FontArial from './Arial.ttf';
 
 const input = ref('字Ay');
@@ -112,7 +125,7 @@ async function loadFont(url: string, filename: string) {
 onMounted(async () => {
     bindDrop();
 
-    addFont((await loadFont(FontPingFang, 'PingFang.ttf')) as File);
+    // addFont((await loadFont(FontPingFang, 'PingFang.ttf')) as File);
     addFont((await loadFont(FontArial, 'Arial.ttf')) as File);
 });
 </script>
@@ -120,15 +133,20 @@ onMounted(async () => {
 <template>
     <NInput v-model:value="input" />
     <NFlex class="select-group">
-        <NSelect class="style-select" v-model:value="align" :options="alignOptions"
-            ><template #header><div class="select-head">vertical-align</div></template></NSelect
-        >
-        <NSelect class="style-select" v-model:value="weight" :options="weightOptions"
-            ><template #header><div class="select-head">font-weight</div></template></NSelect
-        >
-        <NSelect class="style-select" v-model:value="style" :options="styleOptions"
-            ><template #header><div class="select-head">font-style</div></template></NSelect
-        >
+        <NInputGroup>
+            <NInputGroupLabel>vertical-align</NInputGroupLabel>
+            <NSelect class="style-select" v-model:value="align" :options="alignOptions"
+                ><template #header><div class="select-head">vertical-align</div></template></NSelect
+            >
+            <NInputGroupLabel>font-weight</NInputGroupLabel>
+            <NSelect class="style-select" v-model:value="weight" :options="weightOptions"
+                ><template #header><div class="select-head">font-weight</div></template></NSelect
+            >
+            <NInputGroupLabel>font-style</NInputGroupLabel>
+            <NSelect class="style-select" v-model:value="style" :options="styleOptions"
+                ><template #header><div class="select-head">font-style</div></template></NSelect
+            >
+        </NInputGroup>
     </NFlex>
     <div>
         <NTag v-for="font in fonts" :key="font.name" type="info" closable @close="remove(font)">
@@ -148,7 +166,7 @@ onMounted(async () => {
         >
     </div>
 
-    <FontList v-if="currentSelect" :font-name="currentSelect.name" :file="currentSelect.file" />
+    <FontList v-if="currentSelect" :font-name="currentSelect.name" :file="currentSelect.file" @clip="addFont" />
 </template>
 
 <style>
@@ -165,13 +183,28 @@ body {
         repeating-linear-gradient(to bottom, #e9e9e9, #e9e9e9 1px, transparent 1px, transparent 10px);
     height: 100vh;
     /* 设置body的高度至少为视口的100% */
+
+    user-select: auto;
 }
 
 .line {
+    position: relative;
     margin-top: 105px;
     border-top: 1px solid #333;
     font-size: 100px;
     line-height: 1;
+}
+
+.line:after{
+    content:'Drop .ttf HERE';
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    top: 300px;
+    left: 0;
+    font-weight: 700;
+    color: rgba(0,0,0,.05);
+    pointer-events: none;
 }
 
 .line .font {

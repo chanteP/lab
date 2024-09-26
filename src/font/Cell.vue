@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import opentype from 'opentype.js';
-import { useMessage, NButton, NIcon } from 'naive-ui';
+import { useMessage, NButton, NIcon, NInputGroup, NInputGroupLabel } from 'naive-ui';
 import ChevronUp from '@vicons/ionicons5/ChevronUp';
 import ChevronDown from '@vicons/ionicons5/ChevronDown';
 import { download, sleep } from '../common/common';
@@ -170,35 +170,41 @@ onMounted(() => {
         </div>
 
         <div class="control c-ascender">
-            <NButton size="tiny">
-                <template #icon>
-                    <NIcon @click="move(true, 10)">
-                        <ChevronUp />
-                    </NIcon>
-                </template>
-            </NButton>
-            <NButton size="tiny">
-                <template #icon>
-                    <NIcon @click="move(true, -10)">
-                        <ChevronDown />
-                    </NIcon>
-                </template>
-            </NButton>
+            <NInputGroup>
+                <NInputGroupLabel class="label" size="tiny">Ascender</NInputGroupLabel>
+                <NButton size="tiny">
+                    <template #icon>
+                        <NIcon @click="move(true, 10)">
+                            <ChevronUp />
+                        </NIcon>
+                    </template>
+                </NButton>
+                <NButton size="tiny">
+                    <template #icon>
+                        <NIcon @click="move(true, -10)">
+                            <ChevronDown />
+                        </NIcon>
+                    </template>
+                </NButton>
+            </NInputGroup>
         </div>
         <div class="control c-descender">
-            <NButton size="tiny">
-                <template #icon>
-                    <NIcon @click="move(false, 10)">
-                        <ChevronUp />
+            <NInputGroup>
+                <NInputGroupLabel class="label" size="tiny">Descender</NInputGroupLabel>
+                <NButton size="tiny">
+                    <template #icon>
+                        <NIcon @click="move(false, 10)">
+                            <ChevronUp />
+                        </NIcon>
+                    </template>
+                </NButton>
+                <NButton size="tiny">
+                    <template #icon></template>
+                    <NIcon @click="move(false, -10)">
+                        <ChevronDown />
                     </NIcon>
-                </template>
-            </NButton>
-            <NButton size="tiny">
-                <template #icon></template>
-                <NIcon @click="move(false, -10)">
-                    <ChevronDown />
-                </NIcon>
-            </NButton>
+                </NButton>
+            </NInputGroup>
         </div>
         <div class="control download">
             <NButton secondary type="info" size="tiny" @click="download(file)">download</NButton>

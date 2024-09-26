@@ -2,13 +2,17 @@
 import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import { BaseParser } from './format/base';
 import { cachedRef } from '../common/vue';
-import { NButton, NInput, NTag, useMessage } from 'naive-ui';
+import { NButton, NInput, NInputGroup, NTag, useMessage } from 'naive-ui';
 import { download } from '../common/common';
 import { alphabet, hanzi3500, quotes } from './textMap';
 
 const props = defineProps<{
     fontName: string;
     file: File;
+}>();
+
+const emit = defineEmits<{
+    (e: 'clip', f: File): void;
 }>();
 
 const message = useMessage();
@@ -41,6 +45,7 @@ async function clipFile() {
     const file = await parser.clip(clipText.value, { familyName: props.fontName });
     loading.destroy();
 
+    emit('clip', file);
     download(file);
 }
 
@@ -56,13 +61,21 @@ function addQuick(text: string) {
 function log(e: any) {
     console.log(e);
 }
+
+function add(char: string) {
+    if (!clipText.value.includes(char)) {
+        clipText.value += char;
+    }
+    log(char);
+}
 </script>
 
 <template>
     <div class="list-wrap">
         <div class="tag">
-            <NTag type="info">{{ props.fontName }}</NTag>
-            <NTag type="info">{{ fontList.length }}</NTag>
+            <NInputGroup>
+                <NTag type="info">{{ props.fontName }} | {{ fontList.length }}</NTag>
+            </NInputGroup>
         </div>
 
         <div class="quick-font">
@@ -76,6 +89,7 @@ function log(e: any) {
                 class="clip-input flex"
                 type="textarea"
                 v-model:value="clipText"
+                :style="`font-family:'${props.fontName}';`"
                 show-count
                 clearable
                 placeholder="要裁剪的字集"
@@ -83,7 +97,7 @@ function log(e: any) {
             <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
         </div>
         <div class="char-list" :style="`font-family:'${props.fontName}';`">
-            <div v-for="item in fontList" :key="item" class="char" @click="log(item)">{{ item }}</div>
+            <div v-for="item in fontList" :key="item" class="char" @click="add(item)">{{ item }}</div>
         </div>
     </div>
 </template>
@@ -111,6 +125,7 @@ function log(e: any) {
     right: 10px;
 }
 .quick-text {
+    font-size: 12px;
     cursor: pointer;
 }
 
@@ -140,6 +155,7 @@ function log(e: any) {
     font-size: 30px;
     text-align: center;
     line-height: 30px;
+    cursor: pointer;
 }
 .char:hover {
     background: rgba(0, 0, 0, 0.1);
