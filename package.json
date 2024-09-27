@@ -23,7 +23,7 @@
     "homepage": "https://github.com/chanteP/lab#readme",
     "dependencies": {
         "@ffmpeg/core": "^0.11",
-        "@ffmpeg/ffmpeg": "^0.11",
+        "@ffmpeg/ffmpeg": "^0.12.10",
         "@ffmpeg/util": "^0.12.1",
         "@types/antlr4": "4.11",
         "@vicons/ionicons5": "^0.12.0",
@@ -37,6 +37,7 @@
         "gl-matrix": "^3.4.3",
         "glob": "^7.1.6",
         "gradient-parser": "^1.0.2",
+        "mime": "^4.0.4",
         "naive-ui": "^2.39.0",
         "opentype.js": "^1.3.4",
         "qrcode": "^1.5.4",
@@ -46,6 +47,7 @@
     "devDependencies": {
         "@tsconfig/recommended": "^1.0.1",
         "@types/css-tree": "^2.3.8",
+        "@types/mime": "^4.0.0",
         "@types/node": "^17.0.25",
         "@types/opentype.js": "^1.3.8",
         "node-sass": "^9.0.0",
