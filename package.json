@@ -5,7 +5,7 @@
     "main": "index.js",
     "scripts": {
         "dev": "yarn copy-public && yarn serve & ts-node ./build/genPage.ts --watch -p",
-        "build": "yarn copy-public && ts-node ./build/genPage.ts -p && ts-node ./build/sitemap.ts -p",
+        "build": "yarn copy-public && ts-node ./build/sitemap.ts -p && ts-node ./build/genPage.ts -p",
         "serve": "static ./docs -a -p 8501",
         "copy-public": "cp -r ./public/* ./docs/public/",
         "genIndex": "ts-node ./build/genIndex.ts"

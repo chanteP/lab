@@ -160,9 +160,10 @@ onMounted(async () => {
             :key="font.name"
             class="font"
             :file="font"
+            :value="input"
             :style="{ verticalAlign: align, fontWeight: weight, fontStyle: style }"
             @select="currentSelect = $event"
-            >{{ input }}</Cell
+            ></Cell
         >
     </div>
 

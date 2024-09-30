@@ -2,13 +2,17 @@
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import opentype from 'opentype.js';
 import { useMessage, NButton, NIcon, NInputGroup, NInputGroupLabel, NTooltip } from 'naive-ui';
+import { download, sleep } from '../common/common';
+
 import ChevronUp from '@vicons/ionicons5/ChevronUp';
 import ChevronDown from '@vicons/ionicons5/ChevronDown';
 import InformationCircleOutline from '@vicons/ionicons5/InformationCircleOutline';
-import { download, sleep } from '../common/common';
+import CodeSlashSharp from '@vicons/ionicons5/CodeSlashSharp';
+import DownloadOutline from '@vicons/ionicons5/DownloadOutline';
 
 const props = defineProps<{
     file: File;
+    value: string;
 }>();
 
 const emit = defineEmits<{
@@ -168,6 +172,34 @@ async function move(isAscender: boolean, offset: number) {
     reset();
 }
 
+function downloadSVG() {
+    const font = info.value;
+
+    // 设置字体大小
+    const fontSize = 100;
+
+    // 创建一个bounds来获取文本的边界
+    const path = font.getPath(props.value, 0, 0, fontSize);
+    const bounds = path.getBoundingBox();
+
+    // 计算SVG的宽度和高度
+    const svgWidth = bounds.x2 - bounds.x1;
+    const svgHeight = bounds.y2 - bounds.y1;
+
+    // 将路径转换为SVG
+    const svgPath = path.toSVG(4);
+
+    // 创建一个SVG元素，包括适当的视图框
+    const svgElement = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth + 100}" height="${
+        svgHeight + 100
+    }" viewBox="0 -100 ${svgWidth} ${svgHeight + 100}">\n${svgPath}\n</svg>`;
+
+    const blob = new Blob([svgElement]);
+    const file = new File([blob], `${fontName.value}.svg`, { type: 'image/svg+xml' });
+
+    download(file);
+}
+
 onMounted(() => {
     reset();
 });
@@ -175,7 +207,7 @@ onMounted(() => {
 
 <template>
     <span v-if="!error" ref="$font" class="font" :style="{ fontFamily: `'${fontName}'` }">
-        <span @click="emit('select', { name: fontName, file })"><slot></slot></span>
+        <span @click="emit('select', { name: fontName, file })">{{ props.value }}</span>
         <canvas ref="$canvas" class="canvas"></canvas>
 
         <div class="info name" @click="logInfo">{{ fontName }}</div>
@@ -197,6 +229,19 @@ onMounted(() => {
                 <pre>
                     {{ cssTips }}
                 </pre>
+            </NTooltip>
+
+            <NTooltip placement="top-start" trigger="hover">
+                <template #trigger>
+                    <NButton size="tiny" @click="downloadSVG">
+                        <template #icon>
+                            <NIcon>
+                                <CodeSlashSharp />
+                            </NIcon>
+                        </template>
+                    </NButton>
+                </template>
+                download SVG
             </NTooltip>
         </div>
         <div class="control c-ascender top-hide">
@@ -237,7 +282,18 @@ onMounted(() => {
             </NInputGroup>
         </div>
         <div class="control download bottom-hide">
-            <NButton secondary type="info" size="tiny" @click="download(file)">download</NButton>
+            <NTooltip placement="top-start" trigger="hover">
+                <template #trigger>
+                    <NButton secondary type="info" size="tiny" @click="download(file)">
+                        <template #icon>
+                            <NIcon>
+                                <DownloadOutline />
+                            </NIcon>
+                        </template>
+                    </NButton>
+                </template>
+                download
+            </NTooltip>
             <!-- <NButton tertiary type="info" size="tiny" @click="emit('select', { name: fontName, file })">info</NButton> -->
         </div>
     </span>
