@@ -13,6 +13,11 @@ declare module '*.mp4' {
     export default content;
 }
 
+declare module '*.ttf' {
+    const content: string;
+    export default content;
+}
+
 declare module '*.skel?url' {
     const content: string;
     export default content;

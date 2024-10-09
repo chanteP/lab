@@ -104,7 +104,6 @@ function bindDrop() {
         e.preventDefault();
         e.stopPropagation();
 
-        // @ts-expect-error
         const files = [...(e.dataTransfer?.files ?? [])];
         files.forEach((file) => {
             addFont(file);
