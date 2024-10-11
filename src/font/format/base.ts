@@ -38,14 +38,15 @@ export class BaseParser {
 
         // 访问 GSUB 表
         const gsub = this.font.tables.gsub;
-        gsub.lookups?.forEach((lookup) => {
+        gsub?.lookups?.forEach((lookup) => {
             lookup.subtables?.forEach((subTable) => {
-                const head = subTable.coverage.glyphs;
+                const head = subTable.coverage?.glyphs ?? [];
 
                 subTable.ligatureSets?.forEach((ligatureSet, index) => {
                     // console.warn(ligatureSet);
                     ligatureSet?.forEach((set) => {
                         const ids = [head[index], ...set.components]
+                            .filter(d => d !== undefined)
                             .map((component) => this.font.glyphs.get(component))
                             .map((glyph) => String.fromCharCode(glyph.unicode));
                         const target = this.font.glyphs.get(set.ligGlyph);
