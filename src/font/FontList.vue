@@ -2,7 +2,7 @@
 import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import { BaseParser } from './format/base';
 import { cachedRef } from '../common/vue';
-import { NButton, NInput, NInputGroup, NTag, useMessage } from 'naive-ui';
+import { NButton, NInput, NInputGroup, NTabPane, NTabs, NTag, useMessage } from 'naive-ui';
 import { download } from '../common/common';
 import { alphabet, hanzi3500, quotes } from './textMap';
 import { type Glyph } from 'opentype.js';
@@ -73,6 +73,10 @@ function add(char: string) {
     }
     log(char);
 }
+
+function splitCombo(combo: string) {
+    return `${combo.split('').join(' + ')} = ${combo}`;
+}
 </script>
 
 <template>
@@ -83,32 +87,36 @@ function add(char: string) {
             </NInputGroup>
         </div>
 
-        <div class="quick-font">
-            <NTag class="quick-text" checkable @click="addQuick(alphabet)">abc123</NTag>
-            <NTag class="quick-text" checkable @click="addQuick(quotes)">#@%^</NTag>
-            <NTag class="quick-text" checkable @click="addQuick(hanzi3500)">汉字简</NTag>
-        </div>
+        <NTabs type="line" animated class="h100">
+            <NTabPane name="clip" tab="clip" class="h100">
+                <div class="quick-font">
+                    <NTag class="quick-text" checkable @click="addQuick(alphabet)">abc123</NTag>
+                    <NTag class="quick-text" checkable @click="addQuick(quotes)">#@%^</NTag>
+                    <NTag class="quick-text" checkable @click="addQuick(hanzi3500)">汉字简</NTag>
+                </div>
 
-        <div class="flexbox">
-            <NInput
-                class="clip-input flex"
-                type="textarea"
-                v-model:value="clipText"
-                :style="`font-family:'${props.fontName}';`"
-                show-count
-                clearable
-                placeholder="要裁剪的字集"
-            />
-            <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
-        </div>
-        <div class="flexbox char-list-wrap">
-            <div class="char-list" :style="`font-family:'${props.fontName}';`">
-                <div v-for="item in fontList" :key="item" class="char" @click="add(item)">{{ item }}</div>
-            </div>
-            <div v-if="ligatureList.length > 0" class="char-list side" :style="`font-family:'${props.fontName}';`">
-                <div v-for="item in ligatureList" :key="item.combo" class="ligature">{{ item.combo }}</div>
-            </div>
-        </div>
+                <div class="flexbox">
+                    <NInput
+                        class="clip-input flex"
+                        type="textarea"
+                        v-model:value="clipText"
+                        :style="`font-family:'${props.fontName}';`"
+                        show-count
+                        clearable
+                        placeholder="要裁剪的字集"
+                    />
+                    <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
+                </div>
+                <div class="char-list" :style="`font-family:'${props.fontName}';`">
+                    <div v-for="item in fontList" :key="item" class="char" @click="add(item)">{{ item }}</div>
+                </div>
+            </NTabPane>
+            <NTabPane name="ligature" tab="ligature" class="h100">
+                <div v-if="ligatureList.length > 0" class="ligature-list" :style="`font-family:'${props.fontName}';`">
+                    <div v-for="item in ligatureList" :key="item.combo" class="ligature" @click="log(splitCombo(item.combo))">{{ splitCombo(item.combo) }}</div>
+                </div>
+            </NTabPane>
+        </NTabs>
     </div>
 </template>
 
@@ -145,6 +153,10 @@ function add(char: string) {
 .flex {
     flex: 1;
 }
+.h100 {
+    --n-pane-padding-top: 0;
+    height: 100%;
+}
 .clip-button {
     width: 10em;
     height: 100px;
@@ -157,23 +169,33 @@ function add(char: string) {
     font-family: initial;
 }
 
-.char-list-wrap {
-    height: calc(100% - 100px);
+:deep(.n-tabs-nav-scroll-wrapper),
+:deep(.n-tabs-pane-wrapper) {
+    height: 100%;
 }
+:deep(.n-tabs .n-tabs-pane-wrapper){
+    overflow: visible;
+}
+:deep(.n-tabs-nav-scroll-content){
+    margin: 0 12px;
+}
+:deep(.n-tab-pane){
+    height: calc(100% - 42px);
+}
+
 .char-list {
     flex: 1;
     display: flex;
     flex-wrap: wrap;
-    height: 100%;
+    height: calc(100% - 100px);
     overflow: auto;
     user-select: auto;
 }
-.side {
-    display: block;
-    padding-left: 4px;
-    border-left: 1px solid #eee;
-    flex: none;
-    width: 15vw;
+.ligature-list {
+    flex: 1;
+    height: 100%;
+    overflow: auto;
+    user-select: auto;
 }
 .char {
     width: 30px;
@@ -188,12 +210,13 @@ function add(char: string) {
 .ligature {
     max-width: 100%;
     font-size: 30px;
+    padding-left: 1em;
     white-space: nowrap;
     cursor: pointer;
     overflow-x: auto;
 }
 .ligature:hover {
     background: rgba(0, 0, 0, 0.1);
-    font-variant-ligatures: no-common-ligatures;
+    /* font-variant-ligatures: no-common-ligatures; */
 }
 </style>
