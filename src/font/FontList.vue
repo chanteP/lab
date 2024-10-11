@@ -5,6 +5,7 @@ import { cachedRef } from '../common/vue';
 import { NButton, NInput, NInputGroup, NTag, useMessage } from 'naive-ui';
 import { download } from '../common/common';
 import { alphabet, hanzi3500, quotes } from './textMap';
+import { type Glyph } from 'opentype.js';
 
 const props = defineProps<{
     fontName: string;
@@ -21,6 +22,7 @@ let parser: BaseParser = undefined;
 const clipText = cachedRef('font-clip-text', '');
 
 const fontList = ref<string[]>([]);
+const ligatureList = ref<{ combo: string; result: Glyph }[]>([]);
 
 async function parseFile() {
     if (!props.file) {
@@ -33,6 +35,7 @@ async function parseFile() {
         await parser.parse();
 
         fontList.value = parser.getFontList();
+        ligatureList.value = parser.getLigatureList();
 
         await nextTick();
     } finally {
@@ -96,8 +99,13 @@ function add(char: string) {
             />
             <NButton class="clip-button" type="success" @click="clipFile">裁剪</NButton>
         </div>
-        <div class="char-list" :style="`font-family:'${props.fontName}';`">
-            <div v-for="item in fontList" :key="item" class="char" @click="add(item)">{{ item }}</div>
+        <div class="flexbox char-list-wrap">
+            <div class="char-list" :style="`font-family:'${props.fontName}';`">
+                <div v-for="item in fontList" :key="item" class="char" @click="add(item)">{{ item }}</div>
+            </div>
+            <div v-if="ligatureList.length > 0" class="char-list side" :style="`font-family:'${props.fontName}';`">
+                <div v-for="item in ligatureList" :key="item.combo" class="ligature">{{ item.combo }}</div>
+            </div>
         </div>
     </div>
 </template>
@@ -142,13 +150,28 @@ function add(char: string) {
 .clip-input {
     height: 100px;
 }
+.clip-input :deep(.n-input__suffix),
+.clip-input :deep(.n-input-word-count) {
+    font-family: initial;
+}
 
+.char-list-wrap {
+    height: calc(100% - 100px);
+}
 .char-list {
+    flex: 1;
     display: flex;
     flex-wrap: wrap;
-    height: calc(100% - 100px);
+    height: 100%;
     overflow: auto;
     user-select: auto;
+}
+.side {
+    display: block;
+    padding-left: 4px;
+    border-left: 1px solid #eee;
+    flex: none;
+    width: 15vw;
 }
 .char {
     width: 30px;
@@ -159,5 +182,16 @@ function add(char: string) {
 }
 .char:hover {
     background: rgba(0, 0, 0, 0.1);
+}
+.ligature {
+    max-width: 100%;
+    font-size: 30px;
+    white-space: nowrap;
+    cursor: pointer;
+    overflow-x: auto;
+}
+.ligature:hover {
+    background: rgba(0, 0, 0, 0.1);
+    font-variant-ligatures: no-common-ligatures;
 }
 </style>

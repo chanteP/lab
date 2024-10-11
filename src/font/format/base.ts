@@ -33,6 +33,33 @@ export class BaseParser {
         return characters;
     }
 
+    getLigatureList(): { combo: string; result: Glyph }[] {
+        const result: { combo: string; result: Glyph }[] = [];
+
+        // 访问 GSUB 表
+        const gsub = this.font.tables.gsub;
+        gsub.lookups?.forEach((lookup) => {
+            lookup.subtables?.forEach((subTable) => {
+                const head = subTable.coverage.glyphs;
+
+                subTable.ligatureSets?.forEach((ligatureSet, index) => {
+                    // console.warn(ligatureSet);
+                    ligatureSet?.forEach((set) => {
+                        const ids = [head[index], ...set.components]
+                            .map((component) => this.font.glyphs.get(component))
+                            .map((glyph) => String.fromCharCode(glyph.unicode));
+                        const target = this.font.glyphs.get(set.ligGlyph);
+                        console.log(ids.join(' + '), ' = ', target.name);
+
+                        result.push({ combo: ids.join(''), result: target });
+                    });
+                });
+            });
+        });
+
+        return result;
+    }
+
     async clip(stringList: string, options: { familyName: string }): Promise<File> {
         const notdef = this.font.glyphs.get(0);
 
