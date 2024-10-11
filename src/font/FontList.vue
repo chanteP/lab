@@ -30,6 +30,8 @@ async function parseFile() {
     }
     const loading = message.loading('解析中...', { duration: 9999999 });
 
+    fontList.value = [];
+    ligatureList.value = [];
     try {
         parser = new BaseParser(props.file);
         await parser.parse();
