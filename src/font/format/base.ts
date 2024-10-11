@@ -83,7 +83,7 @@ export class BaseParser {
         const subsetFont = new Font({
             familyName: name,
             styleName: this.font.names.fontSubfamily[languageKey],
-            glyphs: [notdef, ...glyphs],
+            glyphs: notdef.name === '.notdef' ? [notdef, ...glyphs]: [...glyphs],
             unitsPerEm: this.font.unitsPerEm,
             ascender: this.font.ascender,
             descender: this.font.descender,
