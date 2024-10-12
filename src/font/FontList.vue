@@ -113,7 +113,14 @@ function splitCombo(combo: string) {
             </NTabPane>
             <NTabPane name="ligature" tab="ligature" class="h100">
                 <div v-if="ligatureList.length > 0" class="ligature-list" :style="`font-family:'${props.fontName}';`">
-                    <div v-for="item in ligatureList" :key="item.combo" class="ligature" @click="log(splitCombo(item.combo))">{{ splitCombo(item.combo) }}</div>
+                    <div
+                        v-for="item in ligatureList"
+                        :key="item.combo"
+                        class="ligature"
+                        @click="log(splitCombo(item.combo))"
+                    >
+                        {{ splitCombo(item.combo) }}
+                    </div>
                 </div>
             </NTabPane>
         </NTabs>
@@ -173,14 +180,17 @@ function splitCombo(combo: string) {
 :deep(.n-tabs-pane-wrapper) {
     height: 100%;
 }
-:deep(.n-tabs .n-tabs-pane-wrapper){
+:deep(.n-tabs .n-tabs-pane-wrapper) {
     overflow: visible;
 }
-:deep(.n-tabs-nav-scroll-content){
+:deep(.n-tabs-nav-scroll-content) {
     margin: 0 12px;
 }
-:deep(.n-tab-pane){
+:deep(.n-tab-pane) {
     height: calc(100% - 42px);
+}
+:deep(textarea) {
+    font-variant-ligatures: no-common-ligatures;
 }
 
 .char-list {
