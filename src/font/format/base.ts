@@ -46,13 +46,18 @@ export class BaseParser {
                     // console.warn(ligatureSet);
                     ligatureSet?.forEach((set) => {
                         const ids = [head[index], ...set.components]
-                            .filter(d => d !== undefined)
+                            .filter((d) => d !== undefined)
                             .map((component) => this.font.glyphs.get(component))
                             .map((glyph) => String.fromCharCode(glyph.unicode));
-                        const target = this.font.glyphs.get(set.ligGlyph);
-                        console.log(ids.join(' + '), ' = ', target.name);
 
-                        result.push({ combo: ids.join(''), result: target });
+                        try {
+                            const target = this.font.glyphs.get(set.ligGlyph);
+                            console.log(ids.join(' + '), ' = ', target.name);
+
+                            result.push({ combo: ids.join(''), result: target });
+                        } catch (e) {
+                            console.error(e);
+                        }
                     });
                 });
             });
@@ -60,6 +65,9 @@ export class BaseParser {
 
         return result;
     }
+
+    // clip之后连字会报错，先关了
+    copyLigature = false;
 
     async clip(stringList: string, options: { familyName: string }): Promise<File> {
         const notdef = this.font.glyphs.get(0);
@@ -74,6 +82,14 @@ export class BaseParser {
             }
         });
 
+        if (this.copyLigature) {
+            // 复制连字
+            const ligatureList = this.getLigatureList();
+            ligatureList.forEach((ligature) => {
+                glyphs.push(ligature.result);
+            });
+        }
+
         console.log(glyphs);
 
         const languageKey = 'en' in this.font.names.fontFamily ? 'en' : Object.keys(this.font.names.fontFamily)[0];
@@ -83,11 +99,16 @@ export class BaseParser {
         const subsetFont = new Font({
             familyName: name,
             styleName: this.font.names.fontSubfamily[languageKey],
-            glyphs: notdef.name === '.notdef' ? [notdef, ...glyphs]: [...glyphs],
+            glyphs: notdef.name === '.notdef' ? [notdef, ...glyphs] : [...glyphs],
             unitsPerEm: this.font.unitsPerEm,
             ascender: this.font.ascender,
             descender: this.font.descender,
         });
+
+        if (this.copyLigature) {
+            // 检查连字设置，直接复制算了
+            subsetFont.tables.gsub = this.font.tables.gsub;
+        }
 
         // 保存裁剪后的字体
         // subsetFont.download(`${name}.min.ttf`);

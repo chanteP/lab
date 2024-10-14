@@ -36,6 +36,9 @@ async function parseFile() {
         parser = new BaseParser(props.file);
         await parser.parse();
 
+        // @ts-expect-error
+        window.currentFont = parser;
+
         fontList.value = parser.getFontList();
         ligatureList.value = parser.getLigatureList();
 
