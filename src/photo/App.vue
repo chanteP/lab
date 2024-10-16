@@ -85,7 +85,7 @@ onMounted(async () => {
                 <img class="thumbnail" :src="img.src" />
             </div>
             <label class="dashed-box add">
-                <input type="file" accept="image/*" multiple @change="selectImage" hidden />
+                <input type="file" accept="image/*,video/*" multiple @change="selectImage" hidden />
             </label>
         </div>
         <div class="main-side">
@@ -103,6 +103,9 @@ onMounted(async () => {
                 </NButton>
                 <NButton type="primary" :disabled="selected.length === 0" size="large" @click="convert('png')">
                     to PNG
+                </NButton>
+                <NButton type="primary" :disabled="selected.length === 0" size="large" @click="convert('mp4')">
+                    to mp4
                 </NButton>
             </div>
         </div>
@@ -160,7 +163,7 @@ onMounted(async () => {
     box-shadow: rgba(0, 0, 0, 0.4) 2px 2px 8px;
 }
 .add {
-    border: 6px dashed var(--box-color);
+    /* border: 6px dashed var(--box-color); */
     opacity: 0.7;
 }
 .add:after {
