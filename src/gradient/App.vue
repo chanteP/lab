@@ -2,7 +2,18 @@
 import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import { parse as cssTreeParse, walk as cssTreeWalk, generate as cssGenerate } from 'css-tree';
 
-import { NButton, NFlex, NSpace, NSelect, NDivider, NImage, NImageGroup, NInput, useMessage, NInputGroup } from 'naive-ui';
+import {
+    NButton,
+    NFlex,
+    NSpace,
+    NSelect,
+    NDivider,
+    NImage,
+    NImageGroup,
+    NInput,
+    useMessage,
+    NInputGroup,
+} from 'naive-ui';
 
 import Gradient from './Gradient.vue';
 import { cachedRef } from '../common/vue';
@@ -11,7 +22,11 @@ import GithubLink from '../common/GithubLink.vue';
 
 const message = useMessage();
 
-const input = cachedRef<string>('gradientInput', 'linear-gradient(33deg, #000 0%,#FF0C0CAB 40.0347%,#e6050552 100%)', true);
+const input = cachedRef<string>(
+    'gradientInput',
+    'linear-gradient(33deg, #000 0%,#FF0C0CAB 40.0347%,#e6050552 100%)',
+    true,
+);
 const inputError = ref(false);
 const displayInput = ref<string[]>([]);
 
@@ -37,9 +52,8 @@ function refreshShowInput() {
     });
 }
 
-
 function addGradient(css = 'linear-gradient(0deg, #000, #fff)', type = 'linear-gradient') {
-    console.log('addGradient', css)
+    console.log('addGradient', css);
 
     gradients.value.push({
         type,
@@ -51,7 +65,7 @@ function addGradient(css = 'linear-gradient(0deg, #000, #fff)', type = 'linear-g
 
     nextTick(() => {
         $gradientContent.value?.scrollTo({
-            behavior: "smooth",
+            behavior: 'smooth',
             top: 99999,
         });
     });
@@ -71,7 +85,7 @@ function parseInputCSS(isDeclaration = false) {
     try {
         const cssInput = input.value.toLowerCase();
         const ast = cssTreeParse(cssInput, {
-            context: isDeclaration ? 'declaration' : 'value'
+            context: isDeclaration ? 'declaration' : 'value',
         });
 
         cssTreeWalk(ast, {
@@ -79,10 +93,10 @@ function parseInputCSS(isDeclaration = false) {
                 if (node.type === 'Function' && node.name.endsWith('-gradient')) {
                     const css = cssGenerate(node);
                     addGradient(css, node.name);
-                    return this.skip
+                    return this.skip;
                 }
-            }
-        })
+            },
+        });
         inputError.value = false;
     } catch (e) {
         // 不确定输入会不会带完整属性名，默认使用value，解析失败再试试declaration，再不行就是输入问题了
@@ -97,7 +111,7 @@ function updateGradient(index: number, value: string) {
     inputUpdateFlag = true;
     displayInput.value[index] = value;
     refreshShowInput();
-};
+}
 
 function removeGradient(index: number) {
     gradients.value.splice(index, 1);
@@ -110,42 +124,50 @@ function save() {
     location.hash = `#${data}`;
 }
 
-watch(() => input.value, () => {
-    if (inputUpdateFlag) { return; }
-    reset();
-    try {
-        parseInputCSS()
-    } catch (e) {
-        console.error(e);
-        inputError.value = true;
-    }
-}, {
-    immediate: true,
-});
+watch(
+    () => input.value,
+    () => {
+        if (inputUpdateFlag) {
+            return;
+        }
+        reset();
+        try {
+            parseInputCSS();
+        } catch (e) {
+            console.error(e);
+            inputError.value = true;
+        }
+    },
+    {
+        immediate: true,
+    },
+);
 
 onMounted(() => {
     if (location.hash.length > 2) {
         input.value = decodeURIComponent(location.hash.slice(1));
     }
 });
-
 </script>
 
 <template>
     <div class="wrap">
         <div class="content">
             <NInputGroup class="info-group">
-                <NInput type="textarea" v-model:value="input" :status="inputError ? 'error' : ''"
-                    :autosize="{ minRows: 3, maxRows: 5 }" placeholder="input">
+                <NInput
+                    type="textarea"
+                    v-model:value="input"
+                    :status="inputError ? 'error' : ''"
+                    :autosize="{ minRows: 3, maxRows: 5 }"
+                    placeholder="input"
+                >
                     <template #prefix>
                         <div class="head">background-image:</div>
                     </template>
                 </NInput>
                 <div class="button-box">
-                    <NButton class="button-main" type="success" @click="addGradient()">Add Gradient
-                    </NButton>
-                    <NButton class="button-sub" type="info" @click="copy(`background-image: ${input}`)">copy
-                    </NButton>
+                    <NButton class="button-main" type="success" @click="addGradient()">Add Gradient </NButton>
+                    <NButton class="button-sub" type="info" @click="copy(`background-image: ${input}`)">copy </NButton>
                     <NButton class="button-sub" type="info" @click="save">save</NButton>
                 </div>
             </NInputGroup>
@@ -153,14 +175,20 @@ onMounted(() => {
             <div ref="$gradientContent" class="gradient-detail-group">
                 <template v-for="(gradient, index) in gradients" :key="gradient.id">
                     <NDivider class="divider" v-if="index !== 0" />
-                    <Gradient class="gradient" :index="index" :total="gradients.length"
-                        :stringValue="gradient.stringValue" :type="gradient.type"
-                        @update="updateGradient(index, $event)" @remove="removeGradient(index)" @up="move(index, -1)"
-                        @down="move(index, 1)">
+                    <Gradient
+                        class="gradient"
+                        :index="index"
+                        :total="gradients.length"
+                        :stringValue="gradient.stringValue"
+                        :type="gradient.type"
+                        @update="updateGradient(index, $event)"
+                        @remove="removeGradient(index)"
+                        @up="move(index, -1)"
+                        @down="move(index, 1)"
+                    >
                     </Gradient>
                 </template>
             </div>
-
         </div>
         <div class="preview" :style="{ backgroundColor, backgroundImage: input }"></div>
         <GithubLink />
@@ -169,7 +197,7 @@ onMounted(() => {
 <style>
 .n-input,
 .n-base-selection {
-    --n-color: rgba(255, 255, 255, .5) !important;
+    --n-color: rgba(255, 255, 255, 0.5) !important;
 }
 </style>
 <style scoped>
@@ -179,11 +207,21 @@ onMounted(() => {
     width: 100vw;
     min-height: 100vh;
     flex-direction: column;
+
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(255,255,255,0) 0px 10px,
+        rgba(147, 147, 147, 0.2) 11px 20px,
+    ), repeating-linear-gradient(
+        90deg,
+        rgba(255,255,255,0) 0px 10px,
+        rgba(147, 147, 147, 0.2) 11px 20px,
+    );
 }
 
 .content {
     background: #fff;
-    box-shadow: rgba(0, 0, 0, .4) 0 0 12px;
+    box-shadow: rgba(0, 0, 0, 0.4) 0 0 12px;
 }
 
 .head {
@@ -223,19 +261,18 @@ onMounted(() => {
         width: 50%;
         height: 100%;
     }
-    .button-sub{
+    .button-sub {
         width: calc(25% - 1px);
         height: 100%;
     }
 }
-
 
 .gradient-detail-group {
     padding: 0 20px;
     max-height: 30vh;
     overflow-y: auto;
     background: #f0f0f0;
-    box-shadow: inset rgba(0, 0, 0, .4) 0 0 8px;
+    box-shadow: inset rgba(0, 0, 0, 0.4) 0 0 8px;
     counter-reset: gradient-counter;
 }
 
@@ -251,7 +288,7 @@ onMounted(() => {
 }
 
 .gradient::before {
-    content: counter(gradient-counter) ". ";
+    content: counter(gradient-counter) '. ';
     position: absolute;
     font-size: 40px;
     font-weight: 700;
@@ -271,8 +308,6 @@ onMounted(() => {
         min-height: 30vh;
     }
 }
-
-
 
 .divider {
     --n-color: rgb(219, 219, 219) !important;
