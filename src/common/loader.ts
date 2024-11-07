@@ -13,6 +13,7 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
     return new Promise<HTMLImageElement>((res, rej) => {
         const img = new Image();
         img.src = src;
+        img.crossOrigin = 'anonymous'; // 处理CORS问题
 
         img.onload = () => res(img);
         img.onerror = rej;

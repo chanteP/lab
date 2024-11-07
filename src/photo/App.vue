@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, onMounted, ref, type Ref, computed, shallowRef } from 'vue';
+import { watch, onMounted, ref, type Ref, computed, shallowRef, effect } from 'vue';
 import {
     NButton,
     NDivider,
@@ -15,201 +15,289 @@ import {
     useMessage,
 } from 'naive-ui';
 import { download } from '../common/common';
-import { loadFFmpeg, simpleConvertTo } from './utils';
+import { parseExif, parseFile } from './exitUtils';
+import { exportImage, isSupportedWEBP } from './canvasUtils';
 
 interface Img {
     name: string;
     src: string;
-    selected: boolean;
 }
 const images = ref<Img[]>([]);
 
-const selected = ref<Img[]>([]);
 const message = useMessage();
 
-function addImage(file: File) {
-    const url = URL.createObjectURL(file);
-    images.value.push({ name: file.name, src: url, selected: false });
+const src = ref<string>();
+const name = ref<string>();
+const groups = ref<Awaited<ReturnType<typeof parseFile>>>();
+
+const APIKEY = 'AIzaSyCCsZTcKlqYk0LzNH8gbwQ290Zpgw9NS7w';
+
+const staticMapURL = computed(() => {
+    if (!groups.value.gps) {
+        return undefined;
+    }
+    const latitude = groups.value.gps.fields.find((f) => f.key === 'latitude')?.value;
+    const longitude = groups.value.gps.fields.find((f) => f.key === 'longitude')?.value;
+    const marker = encodeURIComponent(`color:blue|${latitude},${longitude}`);
+    // https://developers.google.com/maps/documentation/maps-static/start?hl=zh-cn#Markers
+    return `https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=14&size=600x450&maptype=roadmap&markers=${marker}&key=${APIKEY}`;
+});
+
+const mapUrl = computed(() => {
+    if (!groups.value.gps) {
+        return undefined;
+    }
+    const latitude = groups.value.gps.fields.find((f) => f.key === 'latitude')?.value;
+    const longitude = groups.value.gps.fields.find((f) => f.key === 'longitude')?.value;
+    return `https://www.google.com/maps/?q=${latitude},${longitude}`;
+});
+
+async function addImage(file: File) {
+    if (!file) {
+        return;
+    }
+    name.value = file.name;
+    src.value = URL.createObjectURL(file);
+    groups.value = undefined;
+
+    const exif = await parseFile(file, true);
+    console.log(exif);
+    groups.value = exif;
 }
-function dropImage(e: DragEvent) {
+
+const width = ref(0);
+const height = ref(0);
+function getImageInfo(e: Event) {
+    const img = e.target as HTMLImageElement;
+    width.value = img.naturalWidth;
+    height.value = img.naturalHeight;
+}
+
+async function dropImage(e: DragEvent) {
     e.preventDefault();
     const files = e.dataTransfer.files;
-    Array.from(files).forEach((f) => addImage(f));
+    // Array.from(files).forEach((f) => addImage(f));
+
+    try {
+        await addImage(files[0]);
+    } catch (e) {
+        message.error(e.message);
+    }
 }
-function selectImage(e: Event) {
-    const target = e.currentTarget as HTMLInputElement;
-    const files = target.files;
-    Array.from(files).forEach((f) => addImage(f));
+async function selectImage(e: InputEvent) {
+    e.preventDefault();
+    const files = (e.currentTarget as HTMLInputElement).files;
+    // Array.from(files).forEach((f) => addImage(f));
 
-    target.value = '';
-}
-
-async function convert(type: string) {
-    const list = selected.value;
-
-    list.map(async (item) => {
-        try{
-            const url = await simpleConvertTo(item.src, item.name, type);
-            download(url);
-
-            item.selected = false;
-        }catch(e){
-            message.error(e as string);
-            console.error(e);
-        }
-    });
+    try {
+        await addImage(files[0]);
+    } catch (e) {
+        message.error(e.message);
+    }
 }
 
-watch(
-    () => images.value,
-    () => {
-        selected.value = images.value.filter((i) => i.selected);
-        console.log(images.value, selected.value);
-    },
-    {
-        deep: true,
-    },
-);
+async function transformImageAndDownload(mime: string) {
+    const dataUrl = await exportImage(src.value, mime);
 
-onMounted(async () => {
-    const loading = message.loading('初始化中...', { duration: 99999 });
-    await loadFFmpeg();
-    loading.destroy();
-});
+    const base64Data = dataUrl.split(',')[1];
+    // 将Base64编码的数据转换为二进制数据
+    const byteString = atob(base64Data);
+    // 将二进制数据转换为8位无符号整型数组
+    const mimeString = mime;
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+    // 使用二进制数据创建一个Blob对象
+    const blob = new Blob([ab], { type: mimeString });
+    // 使用Blob对象创建一个File对象
+    const file = new File([blob], name.value.replace(/\.[\w]+$/, `.${mime.split('/')[1]}`), { type: mimeString });
+
+    download(file);
+}
 </script>
 
 <template>
     <div class="wrap" @dragover.prevent @drop="dropImage">
-        <div class="pic-list">
-            <div v-for="img in images" :key="img.src" class="dashed-box img" @click="img.selected = !img.selected">
-                <img class="thumbnail" :src="img.src" />
-            </div>
-            <label class="dashed-box add">
-                <input type="file" accept="image/*,video/*" multiple @change="selectImage" hidden />
-            </label>
-        </div>
-        <div class="main-side">
-            <div class="preview">
-                <div v-for="(img, index) in selected" :key="img.src" class="main-pic">
-                    <img
-                        :src="img.src"
-                        :style="`transform: rotate(${((index * 23) % 17) * Math.sign((index % 3) - 1)}deg);`"
-                    />
+        <template v-if="!src">
+            <label class="empty">Drop image here<input type="file" hidden @change="selectImage" /></label>
+        </template>
+        <template v-else>
+            <div class="background" :style="{ backgroundImage: `url(${src})` }"></div>
+
+            <div class="lane">
+                <label class="preview info">
+                    <img class="thumb" :src="src" @load="getImageInfo" />
+                    <input type="file" hidden @change="selectImage" />
+                </label>
+                <div class="info">
+                    <div class="desc">{{ width }} x {{ height }}</div>
+                </div>
+
+                <div class="info">
+                    <NSpace>
+                        <NButton type="primary" @click="transformImageAndDownload('image/jpeg')">to JPEG</NButton>
+                        <NButton type="primary" @click="transformImageAndDownload('image/png')">to PNG</NButton>
+                        <NButton v-if="isSupportedWEBP" type="primary" @click="transformImageAndDownload('image/webp')"
+                            >to WEBP</NButton
+                        >
+                    </NSpace>
+                </div>
+
+                <div v-if="groups?.ifd0" class="info">
+                    <div class="title">{{ groups.ifd0.title }}</div>
+                    <div v-for="field in groups.ifd0.fields" class="line">
+                        <div class="field">{{ field.name }}</div>
+                        <div class="data">{{ field.value }}</div>
+                    </div>
                 </div>
             </div>
-            <div class="control">
-                <NButton type="primary" :disabled="selected.length === 0" size="large" @click="convert('jpg')">
-                    to JPG
-                </NButton>
-                <NButton type="primary" :disabled="selected.length === 0" size="large" @click="convert('png')">
-                    to PNG
-                </NButton>
-                <NButton type="primary" :disabled="selected.length === 0" size="large" @click="convert('mp4')">
-                    to mp4
-                </NButton>
+
+            <div class="lane" v-if="groups">
+                <div v-if="groups?.gps" class="info">
+                    <div class="title">{{ groups.gps.title }}</div>
+                    <div v-for="field in groups.gps.fields" class="line">
+                        <div class="field">{{ field.name }}</div>
+                        <div class="data">{{ field.value }}</div>
+                    </div>
+                    <a :href="mapUrl" target="_blank">
+                        <img class="google-map" :src="staticMapURL" crossorigin="anonymous" @click="" />
+                    </a>
+                </div>
+
+                <div v-for="group in groups.others" class="info">
+                    <div class="title">{{ group.title }}</div>
+                    <div v-for="field in group.fields" class="line">
+                        <div class="field">{{ field.name }}</div>
+                        <div class="data">{{ field.value }}</div>
+                    </div>
+                </div>
             </div>
-        </div>
+
+            <div class="lane">
+                <div v-if="groups?.exif" class="info">
+                    <div class="title">{{ groups.exif.title }}</div>
+                    <div v-for="field in groups.exif.fields" class="line">
+                        <div class="field">{{ field.name }}</div>
+                        <div class="data">{{ field.value }}</div>
+                    </div>
+                </div>
+            </div>
+        </template>
     </div>
 </template>
+<style>
+body {
+    user-select: auto;
+}
+</style>
 
 <style scoped>
 .wrap {
-    --noise-color: rgba(0, 0, 0, 0.2);
-    --box-color: rgba(43, 43, 43, 0.68);
     position: relative;
     display: flex;
-    width: 100vw;
+    flex-wrap: wrap;
+    min-width: 100vw;
     height: 100vh;
 }
 
-.wrap:before {
-    content: '';
+.background {
     position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    pointer-events: none;
-
-    background: repeating-radial-gradient(var(--noise-color) 0 0.0001%, #fff 0 0.0002%) 50% 0 / 2500px 2500px,
-        repeating-conic-gradient(var(--noise-color) 0 0.0001%, #fff 0 0.0002%) 60% 60% / 2500px 2500px;
-    background-blend-mode: difference;
-    opacity: 0.07;
-    z-index: -1;
-}
-
-.pic-list {
-    box-sizing: border-box;
-    padding: 12px 8px;
-    height: 100vh;
-    overflow: auto;
-    border-right: 1px solid var(--box-color);
-}
-
-.dashed-box {
-    box-sizing: border-box;
-    margin-bottom: 8px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 200px;
-    height: 150px;
-    cursor: pointer;
-    border-radius: 10px;
-    overflow: hidden;
-}
-.img {
-    border: 1px solid var(--box-color);
-    box-shadow: rgba(0, 0, 0, 0.4) 2px 2px 8px;
-}
-.add {
-    /* border: 6px dashed var(--box-color); */
-    opacity: 0.7;
-}
-.add:after {
-    content: '+';
-    font-size: 50px;
-    font-weight: 700;
-    color: var(--box-color);
-}
-.thumbnail {
-    max-width: 100%;
-    max-height: 100%;
-    box-shadow: rgba(0, 0, 0, 0.4) 0 0 20px 10px;
-}
-
-.main-side {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-.preview {
-    position: relative;
-    flex: 1;
-}
-.main-pic {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    max-width: 80%;
-    max-height: 80%;
-    transform: translate(-50%, -50%);
-}
-.main-pic img {
     width: 100%;
     height: 100%;
-    display: block;
-    transition: transform 300ms ease;
-    box-shadow: rgba(0, 0, 0, 0.4) 2px 2px 8px;
+    filter: blur(20px) brightness(0.4);
+    background: no-repeat;
+    background-size: cover;
+    background-position: center center;
+    /* transform: scale(1.5); */
     transform-origin: center center;
+    z-index: -1;
+}
+.desc {
+    box-sizing: border-box;
+    padding-left: 1em;
+    color: #333;
+    font-size: 12px;
 }
 
-.control {
+.lane {
+    flex: 1;
+}
+.info {
+    box-sizing: border-box;
+    padding: 2px 2px;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.empty {
+    box-sizing: border-box;
     display: flex;
-    margin: 0 12px;
+    width: 100%;
+    height: 100%;
+    font-size: 50px;
+    font-weight: 700;
+    justify-content: center;
     align-items: center;
-    gap: 12px;
-    height: 100px;
-    line-height: 100px;
+    border: 8px dashed #ccc;
+    color: #ccc;
+    border-radius: 5vw;
+}
+.preview {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+.preview img {
+    max-width: 100%;
+    max-height: 300px;
+}
+
+.thumb {
+    display: block;
+}
+
+.title {
+    box-sizing: border-box;
+    padding: 0 4px;
+    border-bottom: 1px #ccc solid;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 2;
+    color: #666;
+    background: #eee;
+}
+
+.line {
+    display: flex;
+    font-size: 13px;
+    line-height: 1.4;
+    gap: 4px;
+    border-bottom: 1px solid #dedede;
+}
+.field {
+    padding: 8px 3px;
+    width: 12em;
+    height: 100%;
+    text-align: right;
+    font-size: 13px;
+    line-height: 1.4;
+    background: rgb(237, 237, 237);
+}
+.data {
+    padding: 8px 3px;
+    text-align: left;
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.4;
+    height: 100%;
+}
+
+.google-map {
+    display: block;
+    width: 100%;
+    /* height: 300px; */
+    border: none;
 }
 </style>
