@@ -17,6 +17,7 @@ import {
 import { download } from '../common/common';
 import { parseExif, parseFile } from './exitUtils';
 import { exportImage, isSupportedWEBP } from './canvasUtils';
+import ColorMap from './ColorMap.vue';
 
 interface Img {
     name: string;
@@ -131,8 +132,9 @@ async function transformImageAndDownload(mime: string) {
                     <img class="thumb" :src="src" @load="getImageInfo" />
                     <input type="file" hidden @change="selectImage" />
                 </label>
-                <div class="info">
-                    <div class="desc">{{ width }} x {{ height }}</div>
+                <div class="info desc">
+                    <div>{{ width }} x {{ height }} = {{ width * height }}</div>
+                    <ColorMap :src="src" />
                 </div>
 
                 <div class="info">
@@ -215,10 +217,9 @@ body {
     z-index: -1;
 }
 .desc {
-    box-sizing: border-box;
-    padding-left: 1em;
     color: #333;
     font-size: 12px;
+    text-indent: 2em;
 }
 
 .lane {
