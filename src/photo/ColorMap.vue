@@ -11,6 +11,7 @@ async function getImgData() {
 
     const canvas = new OffscreenCanvas(img.width, img.height);
     const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, img.width, img.height);
     ctx?.drawImage(img, 0, 0);
 
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -60,7 +61,13 @@ function log(color: string, num: number) {
 <template>
     <div>colors: {{ count }}</div>
     <div class="flexbox">
-        <div class="color-bit" v-for="color in colorMap" :key="color[0]" :style="`background:${color[0]};color:${color[0]}`" @click="log(color[0], color[1])">
+        <div
+            class="color-bit"
+            v-for="color in colorMap"
+            :key="color[0]"
+            :style="`background:${color[0]};color:${color[0]}`"
+            @click="log(color[0], color[1])"
+        >
             <!-- {{ color[1] }} -->
         </div>
     </div>
@@ -82,10 +89,9 @@ function log(color: string, num: number) {
     height: 10px;
     font-size: 4px;
 
-    &:hover{
+    &:hover {
         outline: 1px solid currentColor;
-        box-shadow: rgba(0,0,0,.1) 0 0 4px;
+        box-shadow: rgba(0, 0, 0, 0.1) 0 0 4px;
     }
-
 }
 </style>
