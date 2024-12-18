@@ -117,6 +117,10 @@ async function transformImageAndDownload(mime: string) {
 
     download(file);
 }
+
+function log(data: any) {
+    console.log(data);
+}
 </script>
 
 <template>
@@ -168,12 +172,20 @@ async function transformImageAndDownload(mime: string) {
                     </a>
                 </div>
 
-                <div v-for="group in groups.others" class="info">
+                <div v-for="group in groups.others" class="info" @click="log(group)">
                     <div class="title">{{ group.title }}</div>
-                    <div v-for="field in group.fields" class="line">
-                        <div class="field">{{ field.name }}</div>
-                        <div class="data">{{ field.value }}</div>
-                    </div>
+                    <template v-if="group.title.toLowerCase() !== 'makernote'">
+                        <div v-for="field in group.fields" class="line">
+                            <div class="field">{{ field.name }}</div>
+                            <div class="data">{{ field.value }}</div>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div class="line">
+                            <div class="field">data</div>
+                            <div class="data">[[ console ]]</div>
+                        </div>
+                    </template>
                 </div>
             </div>
 

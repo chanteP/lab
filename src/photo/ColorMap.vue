@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { watch, onMounted, ref, type Ref, computed } from 'vue';
+import { watch, onMounted, ref, type Ref, computed, nextTick } from 'vue';
 import { loadImage } from '../common/loader';
+import { useMessage } from 'naive-ui';
 
 const props = defineProps<{
     src?: string;
 }>();
+
+const message = useMessage();
 
 async function getImgData() {
     const img = await loadImage(props.src);
@@ -38,6 +41,8 @@ async function setupMap() {
     colorMap.value = [];
     count.value = 0;
 
+    const loading = message.loading('loading...', { duration: 99999999999 });
+
     const imageData = await getImgData();
     forEachPixel(imageData, (r, g, b, a) => {
         const key = `rgba(${r},${g},${b},${a / 255})`;
@@ -47,6 +52,10 @@ async function setupMap() {
 
     colorMap.value = [...map.entries()].sort((a, b) => (a[1] > b[1] ? -1 : 1));
     count.value = map.size;
+
+    nextTick(() => {
+        loading.destroy();
+    });
 }
 
 watch(() => props.src, setupMap, {
