@@ -13,6 +13,7 @@ import {
     NInput,
     useMessage,
     NInputGroup,
+    NColorPicker,
 } from 'naive-ui';
 
 import Gradient from './Gradient.vue';
@@ -22,15 +23,13 @@ import GithubLink from '../common/GithubLink.vue';
 
 const message = useMessage();
 
-const input = cachedRef<string>(
-    'gradientInput',
-    'linear-gradient(33deg, #000 0%,#FF0C0CAB 40.0347%,#e6050552 100%)',
-    true,
-);
+const input = cachedRef<string>('gradientInput', 'linear-gradient(33deg, #000 0%,#FF0C0CAB 40.0347%,#e6050552 100%)', {
+    wideDefault: true,
+});
 const inputError = ref(false);
 const displayInput = ref<string[]>([]);
 
-const backgroundColor = ref<string>('');
+const backgroundColor = cachedRef<string>('gradientBackgroundColor', '', { wideDefault: true });
 const gradients = ref<{ type: string; stringValue: string; id: number }[]>([]);
 let gradientId = 1;
 
@@ -39,7 +38,6 @@ const $gradientContent = ref<HTMLElement>();
 let inputUpdateFlag = false;
 
 function reset() {
-    backgroundColor.value = '';
     gradients.value = [];
     displayInput.value = [];
 }
@@ -167,6 +165,15 @@ onMounted(() => {
                 </NInput>
                 <div class="button-box">
                     <NButton class="button-main" type="success" @click="addGradient()">Add Gradient </NButton>
+                    <NButton class="button-sub">
+                        <NColorPicker
+                            class="color"
+                            :default-value="backgroundColor"
+                            :show-preview="true"
+                            @update:value="backgroundColor = $event"
+                        >
+                        </NColorPicker>
+                    </NButton>
                     <NButton class="button-sub" type="info" @click="copy(`background-image: ${input}`)">copy </NButton>
                     <NButton class="button-sub" type="info" @click="save">save</NButton>
                 </div>
@@ -208,15 +215,8 @@ onMounted(() => {
     min-height: 100vh;
     flex-direction: column;
 
-    background: repeating-linear-gradient(
-        0deg,
-        rgba(255,255,255,0) 0px 10px,
-        rgba(147, 147, 147, 0.2) 11px 20px,
-    ), repeating-linear-gradient(
-        90deg,
-        rgba(255,255,255,0) 0px 10px,
-        rgba(147, 147, 147, 0.2) 11px 20px,
-    );
+    background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0) 0px 10px, rgba(147, 147, 147, 0.2) 11px 20px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0) 0px 10px, rgba(147, 147, 147, 0.2) 11px 20px);
 }
 
 .content {
@@ -246,8 +246,14 @@ onMounted(() => {
 }
 .button-sub {
     display: flex;
-    width: calc(50% - 1px);
+    width: calc(33.3% - 1px);
     height: calc(50% - 1px);
+}
+.color {
+    width: 80px;
+}
+.color :deep(.n-color-picker-trigger__value) {
+    opacity: 0;
 }
 
 @media screen and (width <=500px) {
@@ -262,7 +268,7 @@ onMounted(() => {
         height: 100%;
     }
     .button-sub {
-        width: calc(25% - 1px);
+        width: calc(16.6% - 1px);
         height: 100%;
     }
 }
