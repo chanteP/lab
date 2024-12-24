@@ -1,0 +1,16 @@
+{
+    "title": "3D Model Preview - FBX, STL, GLTF, GLB Viewer",
+    "description": "Explore and preview 3D models in various formats including FBX, STL, GLTF, and GLB. Experience high-quality 3D visualization with our user-friendly interface.",
+    "keywords": "3D model preview, FBX viewer, STL viewer, GLTF viewer, GLB viewer, 3D visualization, 3D model formats",
+    "author": "Your Name or Company Name",
+    "robots": "index, follow",
+    "canonical": "https://www.yourwebsite.com/3d-model-preview",
+    "og:title": "3D Model Preview - FBX, STL, GLTF, GLB Viewer",
+    "og:type": "website",
+    "og:url": "https://www.yourwebsite.com/3d-model-preview",
+    "og:description": "Discover a comprehensive 3D model preview tool that supports FBX, STL, GLTF, and GLB formats. Enhance your 3D modeling experience with our advanced features.",
+    "og:site_name": "Your Website Name",
+    "twitter:card": "summary_large_image",
+    "twitter:title": "3D Model Preview - FBX, STL, GLTF, GLB Viewer",
+    "twitter:description": "Explore high-quality 3D model previews with support for FBX, STL, GLTF, and GLB formats. Join us for an enhanced 3D visualization experience."
+  }
