@@ -1,0 +1,16 @@
+{
+    "title": "摄影助手 - 焦距与光圈分析工具",
+    "description": "摄影助手是一款专业的照片分析工具，帮助摄影师统计和分析照片的焦距分布和光圈分布，提升摄影技巧和作品质量。",
+    "keywords": "摄影助手, 焦距分析, 光圈分析, 摄影工具, 摄影技巧",
+    "author": "chanteP",
+    "robots": "index, follow",
+    "canonical": "https://lab.neetproject.com/photographer/index.html",
+    "og:title": "摄影助手 - 焦距与光圈分析工具",
+    "og:type": "website",
+    "og:url": "https://lab.neetproject.com/photographer/index.html",
+    "og:description": "摄影助手是一款专业的照片分析工具，帮助摄影师统计和分析照片的焦距分布和光圈分布，提升摄影技巧和作品质量。",
+    "og:site_name": "neetproject",
+    "twitter:card": "summary_large_image",
+    "twitter:title": "摄影助手 - 焦距与光圈分析工具",
+    "twitter:description": "摄影助手是一款专业的照片分析工具，帮助摄影师统计和分析照片的焦距分布和光圈分布，提升摄影技巧和作品质量。"
+}
