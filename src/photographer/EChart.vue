@@ -3,7 +3,12 @@ import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import * as echarts from 'echarts';
 
 const props = defineProps<{
-    options: any
+    options: any;
+}>();
+
+const emit = defineEmits<{
+    (e: 'dataZoom', chart: echarts.ECharts): void;
+    (e: 'legendselectchanged', chart: echarts.ECharts): void;
 }>();
 
 const $container = ref<HTMLElement>();
@@ -11,7 +16,7 @@ let chart: echarts.ECharts | undefined = undefined;
 
 function setOptions() {
     if (!chart || !props.options) {
-        return
+        return;
     }
     chart.setOption(props.options);
 }
@@ -21,6 +26,15 @@ watch(() => props.options, setOptions, { flush: 'post' });
 onMounted(() => {
     chart = echarts.init($container.value);
     setOptions();
+
+    // 监听 dataZoom 事件
+    chart.on('dataZoom', (e) => {
+        emit('dataZoom', chart);
+    });
+    // 监听 dataZoom 事件
+    chart.on('legendselectchanged', (e) => {
+        emit('legendselectchanged', chart);
+    });
 });
 
 defineExpose({

@@ -1,3 +1,5 @@
+import { ref } from 'vue';
+
 declare global {
     interface Window {
         showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
@@ -30,35 +32,63 @@ export function useFileHelper(callback: (file: File, info?: FileInfo) => unknown
         multiple: true,
     };
 
+    const total = ref(0);
+    const done = ref(0);
+    const error = ref(0);
+    const scanning = ref<Record<string, boolean>>({});
+
+    function reset() {
+        total.value = 0;
+        done.value = 0;
+    }
+
     /**
      * handle体系的api
      */
     async function handleEntry(entry: FileSystemHandle, dirName: string = '') {
-        if (entry.kind === 'file') {
-            const file = await (entry as FileSystemFileHandle).getFile(); // 获取文件对象
-            callback(file, {
-                path: `${dirName}${entry.name}`,
-                name: entry.name,
-                dir: dirName,
-            });
-        } else if (entry.kind === 'directory') {
-            // 如果需要递归处理子目录，可以在这里调用递归函数
-            readByHandle(entry as FileSystemDirectoryHandle, `${dirName}${entry.name}/`);
+        const fullPath = `${dirName}${entry.name}`;
+
+        try {
+            total.value = total.value + 1;
+
+            if (entry.kind === 'file') {
+                const file = await (entry as FileSystemFileHandle).getFile(); // 获取文件对象
+                callback(file, {
+                    path: fullPath,
+                    name: entry.name,
+                    dir: dirName,
+                });
+            } else if (entry.kind === 'directory') {
+                // 如果需要递归处理子目录，可以在这里调用递归函数
+                await readByHandle(entry as FileSystemDirectoryHandle, `${fullPath}/`);
+            } else {
+                debugger;
+            }
+
+            done.value = done.value + 1;
+        } catch (e) {
+            console.error(e);
+            error.value = error.value + 1;
         }
     }
 
     async function readByHandle(dirHandle: FileSystemDirectoryHandle, dirName: string = '') {
+        scanning.value[dirName] = false;
         const entries = await dirHandle.values(); // 获取目录中的所有条目
         for await (const entry of entries) {
             handleEntry(entry, dirName);
         }
+        scanning.value[dirName] = true;
     }
 
     /**
      * entry体系的api
      */
     function parseFileEntry(entry: FileSystemEntry, dirName: string = ''): void {
+        total.value = total.value + 1;
+
         if (entry.isDirectory) {
+            scanning.value[entry.fullPath] = false;
             // 如果是目录，获取目录读取器
             const reader = (entry as FileSystemDirectoryEntry).createReader();
             reader.readEntries(
@@ -67,9 +97,13 @@ export function useFileHelper(callback: (file: File, info?: FileInfo) => unknown
                     entries.forEach((subEntry) => {
                         parseFileEntry(subEntry, `${dirName}${entry.name}/`);
                     });
+                    scanning.value[entry.fullPath] = true;
+                    done.value = done.value + 1;
                 },
-                (error: Error) => {
-                    console.error('Error reading directory:', error);
+                (e: Error) => {
+                    console.error('Error reading directory:', e);
+                    scanning.value[entry.fullPath] = true;
+                    error.value = error.value + 1;
                 },
             );
         } else if (entry.isFile) {
@@ -81,15 +115,23 @@ export function useFileHelper(callback: (file: File, info?: FileInfo) => unknown
                         dir: dirName,
                         name: entry.name,
                     });
+                    done.value = done.value + 1;
                 },
-                (error: Error) => {
-                    console.error('Error getting file:', error);
+                (e: Error) => {
+                    console.error('Error getting file:', e);
+                    error.value = error.value + 1;
                 },
             );
         }
     }
 
     return {
+        total,
+        done,
+        error,
+        scanning,
+        reset,
+
         getFileBySelect: (e: InputEvent) => {
             Array.from((e.target as HTMLInputElement)?.files).forEach((file) => callback(file));
         },

@@ -70,3 +70,12 @@ export async function convertToBase64(file: File) {
         reader.readAsDataURL(file); // 读取文件并转换为Data URL
     });
 }
+
+export function getColorByString(str: string, s = 70, l = 80) {
+    let sum = 0;
+    for (let i = 0; i < str.length; i++) {
+        sum += str.charCodeAt(i) - 48;
+    }
+
+    return `hsl(${sum % 360}, ${s}%, ${l}%)`;
+}
