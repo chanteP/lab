@@ -31,7 +31,6 @@ onMounted(() => {
     chart.on('dataZoom', (e) => {
         emit('dataZoom', chart);
     });
-    // 监听 dataZoom 事件
     chart.on('legendselectchanged', (e) => {
         emit('legendselectchanged', chart);
     });

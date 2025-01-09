@@ -66,7 +66,7 @@ watch(() => photos.value, gen, { deep: true });
         <NCard>
             <NFlex>
                 <NButton primary @click="getFileByDirPicker">select folder</NButton>
-                <NButton :disabled="!hasChange" @click="gen">analysis</NButton>
+                <NButton :disabled="!hasChange" @click="gen">refresh</NButton>
 
                 <NProgress type="line" :percentage="reading" indicator-placement="inside" :processing="reading < 100">
                     <span v-if="error">({{ error }} errors)</span>{{ done + error }} / {{ total }}
