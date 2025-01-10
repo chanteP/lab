@@ -1,9 +1,10 @@
 import { ref, shallowRef } from 'vue';
 import { FileInfo } from '../common/file';
-import EXIF from 'exif-js';
-import { getColorByString } from '../common/common';
+import { getColorByString, sleep } from '../common/common';
+import { parse } from 'exifr/dist/lite.esm.mjs'; // to use ES Modules
+import { timeout } from '../common/common';
 
-interface PhotoUnit {
+export interface PhotoUnit {
     // url: string;
     info: FileInfo;
     meta: {
@@ -19,25 +20,53 @@ interface PhotoUnit {
         DateTime: string;
         // 相机
         Model: string;
+        // 镜头
+        Lens: string;
     };
 }
 
-export const photos = ref<PhotoUnit[]>([]);
-export const parseTotal = ref(0);
-export const parseDone = ref(0);
-
-export function reset() {
-    parseDone.value = 0;
-    parseTotal.value = 0;
+export async function parseExif(image: File) {
+    // console.log(image);
+    // console.log(exifr);
+    // https://www.npmjs.com/package/exifr
+    const options = {
+        jfif: false,
+        xmp: false,
+        icc: false,
+        iptc: false,
+        ifd0: true,
+        ifd1: false,
+        exif: true,
+        gps: false,
+        interop: true,
+        makerNote: false,
+        userComment: false,
+        multiSegment: false,
+        skip: [],
+        pick: [],
+        translateKeys: true,
+        translateValues: true,
+        reviveValues: false,
+        sanitize: true,
+        mergeOutput: false,
+        silentErrors: false,
+        chunked: true,
+        firstChunkSizeNode: 512,
+        firstChunkSizeBrowser: 65536,
+        chunkSize: 65536,
+        chunkLimit: 5,
+        ihdr: false,
+    };
+    const exif = await timeout<any>(parse(image, options), 5000);
+    return exif;
 }
 
-function getTechString(data: { denominator: number; numerator: number }) {
-    const { denominator, numerator } = data;
-    // console.log(data, numerator, denominator);
-    const text = denominator === 1 ? numerator : `${numerator}/${denominator}`;
-    return text;
+export function getExposureString(value: number) {
+    if (value >= 1) {
+        return String(value);
+    }
+    return `1/${Math.round(1 / value)}`;
 }
-
 function getTechValue(data: string) {
     let denominator = 0;
     let numerator = 0;
@@ -47,38 +76,8 @@ function getTechValue(data: string) {
     return numerator / denominator;
 }
 
-export function addFile(file: File, info?: FileInfo) {
-    parseTotal.value = parseTotal.value + 1;
-    // @ts-expect-error
-    EXIF.getData(file, function () {
-        const exifData = EXIF.getAllTags(this);
-
-        // console.log(exifData);
-        parseDone.value = parseDone.value + 1;
-
-        if (!exifData.FNumber) {
-            return;
-        }
-
-        const item = {
-            // url: URL.createObjectURL(file),
-            info,
-            meta: {
-                FocalLength: exifData.FocalLength.valueOf(),
-                FNumber: exifData.FNumber.valueOf(),
-                ExposureTime: `${getTechString(exifData.ExposureTime)}`,
-                ISOSpeedRatings: exifData.ISOSpeedRatings,
-                DateTime: exifData.DateTimeOriginal,
-                Model: exifData.Model,
-            },
-        };
-
-        photos.value.push(item);
-        // console.log(item);
-    });
-}
-
 export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
+    photos: PhotoUnit[],
     field: T,
     xList: PhotoUnit['meta'][T][],
 ) {
@@ -87,7 +86,8 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
     // 计算纵轴数据
     const modelCounts: { [model: string]: number[] } = {};
     const models = new Set<string>();
-    photos.value.forEach((photo) => {
+    // const lens = new Set<string>();
+    photos.forEach((photo) => {
         const model = photo.meta.Model;
         const fieldValue = photo.meta[field];
         models.add(model);
@@ -151,24 +151,24 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
     };
 }
 
-export function getFOptions() {
+export function getFOptions(photos: PhotoUnit[]) {
     const basicF = [
         1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.5, 2.8, 3.2, 3.5, 4.0, 4.5, 5.0, 5.6, 6.3, 7.1, 8.0, 9.0, 10, 11, 13,
         14, 16, 18, 20, 22,
     ];
     // 生成横轴数据（不重复的FocalLength值）
-    const dataF = photos.value.map((p) => p.meta.FNumber);
+    const dataF = photos.map((p) => p.meta.FNumber);
 
     const FNumberList = Array.from(new Set([...basicF, ...dataF])).sort((a, b) => {
         return a > b ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel('FNumber', FNumberList);
+    const options = getBasicBarOptionsWithModel(photos, 'FNumber', FNumberList);
     options.title.text = '光圈分布';
     return options;
 }
 
-export function getExposureTimeOptions() {
+export function getExposureTimeOptions(photos: PhotoUnit[]) {
     const basic = [
         '1/8000',
         '1/4000',
@@ -191,27 +191,27 @@ export function getExposureTimeOptions() {
         '30',
     ];
     // 生成横轴数据（不重复的FocalLength值）
-    const data = photos.value.map((p) => p.meta.ExposureTime);
+    const data = photos.map((p) => p.meta.ExposureTime);
 
     const valueList = Array.from(new Set([...basic, ...data]));
     valueList.sort((a, b) => {
         return getTechValue(a) > getTechValue(b) ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel('ExposureTime', valueList);
+    const options = getBasicBarOptionsWithModel(photos, 'ExposureTime', valueList);
     options.title.text = '快门分布';
     return options;
 }
 
-export function getFocalLengthOptions() {
+export function getFocalLengthOptions(photos: PhotoUnit[]) {
     const basicFocalLength = [12, 24, 28, 50, 70, 85, 120, 200];
     // 生成横轴数据（不重复的FocalLength值）
-    const dataFocalLength = photos.value.map((p) => p.meta.FocalLength);
+    const dataFocalLength = photos.map((p) => p.meta.FocalLength);
     const FocalLengthList = Array.from(new Set([...basicFocalLength, ...dataFocalLength])).sort((a, b) => {
         return a > b ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel('FocalLength', FocalLengthList);
+    const options = getBasicBarOptionsWithModel(photos, 'FocalLength', FocalLengthList);
     options.title.text = '焦距分布';
     return options;
 }

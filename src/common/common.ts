@@ -79,3 +79,37 @@ export function getColorByString(str: string, s = 70, l = 80) {
 
     return `hsl(${sum % 360}, ${s}%, ${l}%)`;
 }
+
+export function timeout<T>(promise: Promise<T>, delay: number) {
+    return Promise.race<T>([
+        promise,
+        new Promise((res, rej) => {
+            setTimeout(() => {
+                rej('timeout');
+            }, delay);
+        }),
+    ]);
+}
+
+export function throttle<T extends (...args: any) => any>(func: T, limit: number) {
+    let inThrottle: boolean;
+    let lastArgs: Parameters<T> | undefined = undefined;
+
+    return function (...args: Parameters<T>) {
+        const context = this;
+        if (!inThrottle) {
+            inThrottle = true;
+            setTimeout(() => {
+                inThrottle = false;
+                if (lastArgs) {
+                    const last = lastArgs;
+                    lastArgs = undefined;
+                    func.apply(context, last);
+                }
+            }, limit);
+            func.apply(context, args);
+        } else {
+            lastArgs = args;
+        }
+    };
+}

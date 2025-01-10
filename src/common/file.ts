@@ -136,6 +136,7 @@ export function useFileHelper(callback: (file: File, info?: FileInfo) => unknown
             Array.from((e.target as HTMLInputElement)?.files).forEach((file) => callback(file));
         },
         getFileByDrop: async (e: DragEvent) => {
+            // drop 只能接受100个文件
             // Array.from(e.dataTransfer?.files).forEach((file) => callback(file));
             // sb handleAPI 有bug，同时拖目录和文件遍历不出来目录
             // for (const item of e.dataTransfer.items) {
