@@ -78,6 +78,7 @@ function getTechValue(data: string) {
 
 export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
     photos: PhotoUnit[],
+    modelOrLens: 'Model' | 'Lens',
     field: T,
     xList: PhotoUnit['meta'][T][],
 ) {
@@ -85,20 +86,28 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
 
     // 计算纵轴数据
     const modelCounts: { [model: string]: number[] } = {};
+    const lensCounts: { [lens: string]: number[] } = {};
     const models = new Set<string>();
-    // const lens = new Set<string>();
+    const lens = new Set<string>();
     photos.forEach((photo) => {
         const model = photo.meta.Model;
         const fieldValue = photo.meta[field];
         models.add(model);
+        lens.add(photo.meta.Lens);
         if (!modelCounts[model]) {
             modelCounts[model] = xAxisData.map(() => 0);
+        }
+        if (!lensCounts[photo.meta.Lens]) {
+            lensCounts[photo.meta.Lens] = xAxisData.map(() => 0);
         }
         const index = xAxisData.indexOf(fieldValue);
         if (index !== -1) {
             modelCounts[model][index]++;
+            lensCounts[photo.meta.Lens][index]++;
         }
     });
+
+    const baseData = modelOrLens === 'Model' ? modelCounts : lensCounts;
 
     return {
         title: {
@@ -111,7 +120,7 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
             },
         },
         legend: {
-            data: [...models],
+            data: [...(modelOrLens === 'Model' ? models : lens)],
         },
         grid: {
             left: '3%',
@@ -126,14 +135,14 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
         yAxis: {
             type: 'value',
         },
-        series: Object.keys(modelCounts).map((model) => {
+        series: Object.keys(baseData).map((k) => {
             return {
-                name: model,
+                name: k,
                 type: 'bar',
                 stack: '总量',
-                data: modelCounts[model],
+                data: baseData[k],
                 itemStyle: {
-                    color: getColorByString(model),
+                    color: getColorByString(k),
                 },
             };
         }),
@@ -151,7 +160,7 @@ export function getBasicBarOptionsWithModel<T extends keyof PhotoUnit['meta']>(
     };
 }
 
-export function getFOptions(photos: PhotoUnit[]) {
+export function getFOptions(photos: PhotoUnit[], m: 'Model' | 'Lens') {
     const basicF = [
         1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.5, 2.8, 3.2, 3.5, 4.0, 4.5, 5.0, 5.6, 6.3, 7.1, 8.0, 9.0, 10, 11, 13,
         14, 16, 18, 20, 22,
@@ -163,12 +172,12 @@ export function getFOptions(photos: PhotoUnit[]) {
         return a > b ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel(photos, 'FNumber', FNumberList);
+    const options = getBasicBarOptionsWithModel(photos, m, 'FNumber', FNumberList);
     options.title.text = '光圈分布';
     return options;
 }
 
-export function getExposureTimeOptions(photos: PhotoUnit[]) {
+export function getExposureTimeOptions(photos: PhotoUnit[], m: 'Model' | 'Lens') {
     const basic = [
         '1/8000',
         '1/4000',
@@ -198,12 +207,12 @@ export function getExposureTimeOptions(photos: PhotoUnit[]) {
         return getTechValue(a) > getTechValue(b) ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel(photos, 'ExposureTime', valueList);
+    const options = getBasicBarOptionsWithModel(photos, m, 'ExposureTime', valueList);
     options.title.text = '快门分布';
     return options;
 }
 
-export function getFocalLengthOptions(photos: PhotoUnit[]) {
+export function getFocalLengthOptions(photos: PhotoUnit[], m: 'Model' | 'Lens') {
     const basicFocalLength = [12, 24, 28, 50, 70, 85, 120, 200];
     // 生成横轴数据（不重复的FocalLength值）
     const dataFocalLength = photos.map((p) => p.meta.FocalLength);
@@ -211,7 +220,7 @@ export function getFocalLengthOptions(photos: PhotoUnit[]) {
         return a > b ? 1 : -1;
     });
 
-    const options = getBasicBarOptionsWithModel(photos, 'FocalLength', FocalLengthList);
+    const options = getBasicBarOptionsWithModel(photos, m, 'FocalLength', FocalLengthList);
     options.title.text = '焦距分布';
     return options;
 }
@@ -268,4 +277,42 @@ export function getPercent(chart: echarts.ECharts) {
         seriesIndex: 0,
         dataIndex: startIndex, // 选择一个数据点来触发 tooltip
     });
+}
+
+export function getBaseBarOption(photos: PhotoUnit[], field: keyof PhotoUnit['meta']) {
+    const map: Record<string, number> = {};
+    photos.forEach((photo) => {
+        const k = photo.meta[field];
+        if (!map[k]) {
+            map[k] = 0;
+        }
+        map[k]++;
+    });
+
+    return {
+        legend: {
+            top: 'bottom',
+        },
+        series: [
+            {
+                name: 'Nightingale Chart',
+                type: 'pie',
+                radius: [50, 100],
+                center: ['50%', '50%'],
+                roseType: 'area',
+                itemStyle: {
+                    borderRadius: 8,
+                },
+                data: Object.keys(map).map((k) => {
+                    return {
+                        value: map[k],
+                        name: k,
+                        itemStyle: {
+                            color: getColorByString(k),
+                        },
+                    };
+                }),
+            },
+        ],
+    };
 }
