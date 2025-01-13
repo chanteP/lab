@@ -50,7 +50,7 @@ async function setupMap() {
         map.set(key, count + 1);
     });
 
-    colorMap.value = [...map.entries()].sort((a, b) => (a[1] > b[1] ? -1 : 1));
+    // colorMap.value = [...map.entries()].sort((a, b) => (a[1] > b[1] ? -1 : 1));
     count.value = map.size;
 
     nextTick(() => {
