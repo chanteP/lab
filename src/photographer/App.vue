@@ -204,7 +204,7 @@ watch(() => [photos.value, viewModel.value], throttle(gen, 1000), { deep: true, 
     flex: 1;
 }
 .bar-chart {
-    min-height: 200px;
+    min-height: 250px;
 }
 .basic-chart {
     height: 300px;
