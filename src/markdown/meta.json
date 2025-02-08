@@ -1,0 +1,16 @@
+{
+    "title": "Markdown Resume Renderer - Create and Print Your Resume",
+    "description": "A powerful online tool for rendering Markdown formatted resumes. Easily create, customize, and print your professional resume with Markdown syntax. 简洁高效，轻松生成简历。",
+    "keywords": "Markdown, Resume, Renderer, Print, Markdown 简历, 打印",
+    "author": "chanteP",
+    "robots": "index, follow",
+    "canonical": "https://lab.neetproject.com/markdown/index.html",
+    "og:title": "Markdown Resume Renderer - Create and Print Your Resume",
+    "og:type": "website",
+    "canonical": "https://lab.neetproject.com/markdown/index.html",
+    "og:description": "A powerful online tool for rendering Markdown formatted resumes. Easily create, customize, and print your professional resume with Markdown syntax. 简洁高效，轻松生成简历。",
+    "og:site_name": "Markdown Resume Renderer - Create and Print Your Resume",
+    "twitter:card": "summary",
+    "twitter:title": "Markdown Resume Renderer - Create and Print Your Resume",
+    "twitter:description": "A powerful online tool for rendering Markdown formatted resumes. Easily create, customize, and print your professional resume with Markdown syntax. 简洁高效，轻松生成简历。"
+  }
