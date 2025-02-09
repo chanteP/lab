@@ -22,13 +22,18 @@ import './markdown.scss';
 
 const markdownData = cachedRef('markdownContent', '');
 const previewData = ref('');
+const fileName = ref('');
+
+const fileNameHasSet = ref(false);
+
+
 const md = markdownit({
     html: true, // 启用 HTML 解析
     linkify: true, // 启用自动链接解析
     typographer: true, // 启用排版功能
 });
 
-function print(){
+function print() {
     window.print();
 }
 
@@ -36,6 +41,14 @@ watch(
     () => markdownData.value,
     () => {
         previewData.value = md.render(markdownData.value);
+        if (!fileNameHasSet.value) {
+            const [match, title] = /<h1>(.*?)<\/h1>/.exec(previewData.value) ?? [];
+            if (title) {
+                fileName.value = title;
+            }
+        }
+
+        document.title = fileName.value;
     },
     {
         immediate: true,
@@ -50,6 +63,8 @@ watch(
         </div>
         <div class="side preview">
             <NSpace class="fn">
+                <NInput class="editor" v-model:value="fileName" placeholder="fileName here"
+                    @focus="fileNameHasSet = true" />
                 <NButton type="primary" @click="print">print</NButton>
             </NSpace>
             <div class="markdown print" v-html="previewData"></div>
@@ -65,9 +80,11 @@ watch(
     height: 100vh;
     display: flex;
 }
+
 .content {
     flex: 1;
 }
+
 .editor {
     width: 100%;
     height: 100vh;
@@ -84,6 +101,7 @@ watch(
         resize: none !important;
     }
 }
+
 .preview {
     display: flex;
     flex-direction: column;
@@ -91,11 +109,13 @@ watch(
     height: 100vh;
     background: #fff;
     box-shadow: rgba(0, 0, 0, 0.4) 0 0 8px;
-    .fn{
+
+    .fn {
         justify-content: end !important;
         padding: 4px 12px;
         border-bottom: 1px solid #dedede;
     }
+
     .markdown {
         margin: 0;
         padding: 12px 24px;
@@ -108,16 +128,19 @@ watch(
     .wrap {
         height: auto;
     }
-    .wrap > *:not(.preview) {
+
+    .wrap>*:not(.preview) {
         display: none;
     }
 
     .preview {
         height: auto;
         box-shadow: none;
-        .fn{
+
+        .fn {
             display: none !important;
         }
+
         .markdown {
             padding: 1.2cm 1.4cm;
             height: auto;
