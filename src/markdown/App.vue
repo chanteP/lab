@@ -26,7 +26,6 @@ const fileName = ref('');
 
 const fileNameHasSet = ref(false);
 
-
 const md = markdownit({
     html: true, // 启用 HTML 解析
     linkify: true, // 启用自动链接解析
@@ -47,11 +46,16 @@ watch(
                 fileName.value = title;
             }
         }
-
-        document.title = fileName.value;
     },
     {
         immediate: true,
+    },
+);
+
+watch(
+    () => fileName.value,
+    () => {
+        document.title = fileName.value;
     },
 );
 </script>
@@ -62,11 +66,13 @@ watch(
             <NInput class="editor" v-model:value="markdownData" type="textarea" placeholder="markdown content" />
         </div>
         <div class="side preview">
-            <NSpace class="fn">
-                <NInput class="editor" v-model:value="fileName" placeholder="fileName here"
-                    @focus="fileNameHasSet = true" />
+            <NFlex class="fn">
+                <NInputGroup class="filename">
+                    <NInput v-model:value="fileName" placeholder="fileName here" @focus="fileNameHasSet = true" />
+                    <NInputGroupLabel>.pdf</NInputGroupLabel>
+                </NInputGroup>
                 <NButton type="primary" @click="print">print</NButton>
-            </NSpace>
+            </NFlex>
             <div class="markdown print" v-html="previewData"></div>
         </div>
     </div>
@@ -101,6 +107,9 @@ watch(
         resize: none !important;
     }
 }
+.filename {
+    flex: 1;
+}
 
 .preview {
     display: flex;
@@ -129,7 +138,7 @@ watch(
         height: auto;
     }
 
-    .wrap>*:not(.preview) {
+    .wrap > *:not(.preview) {
         display: none;
     }
 
