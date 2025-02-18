@@ -132,6 +132,58 @@ function createUBO(gl: WebGL2RenderingContext, program: WebGLProgram, index: num
     gl.bindBufferBase(gl.UNIFORM_BUFFER, index, ubo);
 }
 
+function initFBO(gl: WebGL2RenderingContext) {
+    const fbo = gl.createFramebuffer();
+
+    // 创建对应的纹理
+    const texture = createTexture(gl);
+
+    // 绑定纹理到FBO
+    bindFBO(gl, fbo, texture);
+
+    // 初始化纹理为透明
+    clearTexture(gl, texture);
+
+    return {
+        fbo,
+        texture,
+    };
+}
+
+function createTexture(gl: WebGL2RenderingContext) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // 设置纹理参数（重要！防止边缘闪烁）
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    // 初始空纹理
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    return texture;
+}
+
+function bindFBO(gl: WebGL2RenderingContext, fbo: WebGLFramebuffer, texture: WebGLTexture) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+}
+
+function clearTexture(gl: WebGL2RenderingContext, texture: WebGLTexture) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        gl.canvas.width,
+        gl.canvas.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([0, 0, 0, 0]),
+    );
+}
+
 export function createInjectAttrGroup() {
     const groupData: { name: string; length: number; data: number[][] }[] = [];
     let currentLen = 0;
@@ -424,10 +476,13 @@ export function simpleInit(
 
         attr?: ReturnType<typeof createInjectAttrGroup>;
         drawType?: number; // WebGL2RenderingContext.LINE_LOOP | WebGL2RenderingContext.TRIANGLE_STRIP
+        clearColor?: [number, number, number, number];
 
         preserveDrawingBuffer?: boolean;
 
-        postProcess?: ShaderOptions[];
+        useLastView?: boolean;
+
+        // postProcess?: ShaderOptions[];
     } & ShaderOptions,
 ) {
     const ratio = options?.ratio ?? DEFAULT_RATIO;
@@ -447,6 +502,12 @@ export function simpleInit(
 
     inject();
 
+    const { fbo: fbo1, texture: texture1 } = initFBO(gl);
+    const { fbo: fbo2, texture: texture2 } = initFBO(gl);
+    const FBOCache = [fbo1, fbo2];
+    const FBOTextureCache = [texture1, texture2];
+    const FBOCacheLength = FBOCache.length;
+
     // if(options?.postProcess){
     //     const postPostPrograms = options.postProcess?.map(shaderOptions => createProgram(gl, getFinalShaderConfig(shaderOptions)));
     // }
@@ -455,17 +516,70 @@ export function simpleInit(
     let lastRender = Date.now();
     const tickDuration = 1000 / fps;
 
+    const clearColor = options.clearColor ?? [0, 0, 0, 0];
+
+    // FBO处理
+    let currentFBOIndex = 0;
+    let prevFBOIndex = 1;
+
+    function clear() {
+        // clear
+        gl.clearColor(...clearColor);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+
+    function draw() {
+        gl.drawArrays(options?.drawType ?? gl.TRIANGLE_STRIP, 0, injectGroupData.length);
+    }
+
+    function renderTickWithLastScene() {
+        const now = Date.now();
+        if (now - lastRender >= tickDuration) {
+            lastRender = now;
+
+            // 绑定到当前FBO
+            gl.bindFramebuffer(gl.FRAMEBUFFER, FBOCache[currentFBOIndex]);
+
+            // 使用上一帧的结果作为纹理输入
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[prevFBOIndex]); // 注意这里使用交换后的texture2
+
+            // 注入uniform
+            const loc = gl.getUniformLocation(program, 'uPrev');
+            gl.uniform1i(loc, 0);
+
+            inject();
+
+            clear();
+
+            // 绘制到fbo
+            draw();
+
+            // 解绑FBO，后续绘制到屏幕
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            // 将最终结果绘制到屏幕（使用当前FBO的纹理）
+            gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[currentFBOIndex]);
+            draw();
+
+            currentFBOIndex = (currentFBOIndex + 1) % FBOCacheLength;
+            prevFBOIndex = (prevFBOIndex + 1) % FBOCacheLength;
+        }
+
+        timer = requestAnimationFrame(renderTickWithLastScene);
+    }
+
     function renderTick() {
         const now = Date.now();
         if (now - lastRender >= tickDuration) {
             lastRender = now;
 
-            gl.clearColor(0.0, 0.0, 0.0, 0.0); // 使用透明的黑色清除颜色
-            gl.clear(gl.COLOR_BUFFER_BIT);
-
             inject();
 
-            gl.drawArrays(options?.drawType ?? gl.TRIANGLE_STRIP, 0, injectGroupData.length);
+            clear();
+
+            // 绘制到fbo
+            draw();
         }
 
         timer = requestAnimationFrame(renderTick);
@@ -493,7 +607,11 @@ export function simpleInit(
         },
         play: () => {
             cancelAnimationFrame(timer);
-            renderTick();
+            if (options.useLastView) {
+                renderTickWithLastScene();
+            } else {
+                renderTick();
+            }
         },
         stop: () => {
             cancelAnimationFrame(timer);
