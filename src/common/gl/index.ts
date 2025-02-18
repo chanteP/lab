@@ -502,6 +502,13 @@ export function simpleInit(
 
     inject();
 
+    let timer = 0;
+    let lastRender = Date.now();
+    const tickDuration = 1000 / fps;
+
+    const clearColor = options.clearColor ?? [0, 0, 0, 0];
+
+    // FBO处理
     const { fbo: fbo1, texture: texture1 } = initFBO(gl);
     const { fbo: fbo2, texture: texture2 } = initFBO(gl);
     const FBOCache = [fbo1, fbo2];
@@ -511,12 +518,6 @@ export function simpleInit(
     // if(options?.postProcess){
     //     const postPostPrograms = options.postProcess?.map(shaderOptions => createProgram(gl, getFinalShaderConfig(shaderOptions)));
     // }
-
-    let timer = 0;
-    let lastRender = Date.now();
-    const tickDuration = 1000 / fps;
-
-    const clearColor = options.clearColor ?? [0, 0, 0, 0];
 
     // FBO处理
     let currentFBOIndex = 0;
@@ -532,57 +533,62 @@ export function simpleInit(
         gl.drawArrays(options?.drawType ?? gl.TRIANGLE_STRIP, 0, injectGroupData.length);
     }
 
-    function renderTickWithLastScene() {
+    let currentRenderer: undefined | (() => void) = undefined;
+
+    function loopRender() {
         const now = Date.now();
         if (now - lastRender >= tickDuration) {
             lastRender = now;
 
-            // 绑定到当前FBO
-            gl.bindFramebuffer(gl.FRAMEBUFFER, FBOCache[currentFBOIndex]);
-
-            // 使用上一帧的结果作为纹理输入
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[prevFBOIndex]); // 注意这里使用交换后的texture2
-
-            // 注入uniform
-            const loc = gl.getUniformLocation(program, 'uPrev');
-            gl.uniform1i(loc, 0);
-
-            inject();
-
-            clear();
-
-            // 绘制到fbo
-            draw();
-
-            // 解绑FBO，后续绘制到屏幕
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-            // 将最终结果绘制到屏幕（使用当前FBO的纹理）
-            gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[currentFBOIndex]);
-            draw();
-
-            currentFBOIndex = (currentFBOIndex + 1) % FBOCacheLength;
-            prevFBOIndex = (prevFBOIndex + 1) % FBOCacheLength;
+            currentRenderer?.();
         }
 
-        timer = requestAnimationFrame(renderTickWithLastScene);
+        timer = requestAnimationFrame(loopRender);
+    }
+
+    function renderTickWithLastScene() {
+        // 绑定到当前FBO
+        gl.bindFramebuffer(gl.FRAMEBUFFER, FBOCache[currentFBOIndex]);
+
+        // 使用上一帧的结果作为纹理输入
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[prevFBOIndex]); // 注意这里使用交换后的texture2
+
+        // 注入uniform
+        const loc = gl.getUniformLocation(program, 'uPrev');
+        gl.uniform1i(loc, 0);
+
+        inject();
+
+        clear();
+
+        // 绘制到fbo
+        draw();
+
+        // 解绑FBO，后续绘制到屏幕
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // 将最终结果绘制到屏幕（使用当前FBO的纹理）
+        gl.bindTexture(gl.TEXTURE_2D, FBOTextureCache[currentFBOIndex]);
+        draw();
+
+        currentFBOIndex = (currentFBOIndex + 1) % FBOCacheLength;
+        prevFBOIndex = (prevFBOIndex + 1) % FBOCacheLength;
     }
 
     function renderTick() {
-        const now = Date.now();
-        if (now - lastRender >= tickDuration) {
-            lastRender = now;
+        inject();
 
-            inject();
+        clear();
 
-            clear();
+        // 绘制到fbo
+        draw();
+    }
 
-            // 绘制到fbo
-            draw();
-        }
-
-        timer = requestAnimationFrame(renderTick);
+    if (options.useLastView) {
+        currentRenderer = renderTickWithLastScene;
+    } else {
+        currentRenderer = renderTick;
     }
 
     const api = {
@@ -607,11 +613,7 @@ export function simpleInit(
         },
         play: () => {
             cancelAnimationFrame(timer);
-            if (options.useLastView) {
-                renderTickWithLastScene();
-            } else {
-                renderTick();
-            }
+            loopRender();
         },
         stop: () => {
             cancelAnimationFrame(timer);
