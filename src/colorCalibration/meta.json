@@ -1,0 +1,17 @@
+{
+    "title": "Display Color Calibration Tool - Monitor Color Test",
+    "description": "Professional display color calibration tool for accurate color testing and monitor calibration. Test your monitor's color accuracy with our comprehensive color calibration tool.",
+    "keywords": "color calibration, display calibration, monitor color test, color accuracy, screen calibration, color checker, display color test, color calibration tool, monitor calibration tool, color accuracy test",
+    "author": "chanteP",
+    "robots": "index, follow",
+    "canonical": "https://lab.neetproject.com/colorCalibration/index.html",
+    "og:title": "Display Color Calibration Tool - Monitor Color Test",
+    "og:type": "website",
+    "og:url": "https://lab.neetproject.com/colorCalibration/index.html",
+    "og:description": "Calibrate your display with our professional color calibration tool. Test color accuracy, saturation, and lightness to ensure your monitor displays colors correctly.",
+    "og:site_name": "Display Color Calibration Tool",
+    "twitter:card": "summary",
+    "twitter:title": "Display Color Calibration Tool",
+    "twitter:description": "Professional color calibration tool for testing and calibrating your monitor's color accuracy. Ensure accurate color reproduction with our comprehensive calibration tool."
+}
+
