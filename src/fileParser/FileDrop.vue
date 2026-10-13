@@ -7,10 +7,10 @@
   </label>
 </template>
 <script>
-import { createComponent, reactive, computed, watch, onMounted } from '@vue/composition-api';
+import { defineComponent, reactive, computed, watch, onMounted, ref } from 'vue';
 import { genColorFromString } from './utils';
 
-export default createComponent({
+export default defineComponent({
     props: {
         progress: Number,
     },

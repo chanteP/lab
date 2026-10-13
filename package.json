@@ -1,46 +1,40 @@
 {
     "name": "lab",
     "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
+    "description": "chanteP's lab - 纯静态前端工具集",
+    "private": true,
     "scripts": {
-        "dev": "yarn copy-public & ts-node ./build/genPage.ts --watch -p",
-        "build": "yarn copy-public && ts-node ./build/sitemap.ts -p && ts-node ./build/genPage.ts -p",
-        "serve": "static ./docs -a -p 8501",
-        "copy-public": "cp -r ./public/* ./docs/public/",
-        "genIndex": "ts-node ./build/genIndex.ts"
+        "dev": "node scripts/lab.mjs dev",
+        "build": "node scripts/lab.mjs build",
+        "list": "node scripts/lab.mjs list",
+        "index": "node scripts/lab.mjs index",
+        "sitemap": "node scripts/lab.mjs sitemap",
+        "copy-public": "node scripts/lab.mjs copy-public",
+        "serve": "node scripts/lab.mjs serve"
     },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/chanteP/lab.git"
     },
     "keywords": [],
-    "author": "",
+    "author": "chanteP",
     "license": "ISC",
-    "bugs": {
-        "url": "https://github.com/chanteP/lab/issues"
-    },
-    "homepage": "https://github.com/chanteP/lab#readme",
+    "homepage": "https://lab.neetproject.com/",
     "dependencies": {
         "@ffmpeg/core": "^0.11",
         "@ffmpeg/ffmpeg": "^0.12.10",
         "@ffmpeg/util": "^0.12.1",
-        "@types/antlr4": "4.11",
-        "@types/three": "^0.171.0",
         "@vicons/ionicons5": "^0.12.0",
         "@vueuse/core": "^11.0.3",
         "antlr4": "4.11",
         "color-convert": "^2.0.1",
-        "commander": "^4.1.1",
         "crc-32": "^1.2.2",
         "css-tree": "^2.3.1",
         "echarts": "^5.5.0",
         "exif-js": "^2.3.0",
         "exifr": "^7.1.3",
-        "fs-extra": "^8.1.0",
         "github-markdown-css": "^5.8.1",
         "gl-matrix": "^3.4.3",
-        "glob": "^7.1.6",
         "gradient-parser": "^1.0.2",
         "markdown-it": "^14.1.0",
         "mime": "^4.0.4",
@@ -54,14 +48,14 @@
         "vue-color": "^2.7.0"
     },
     "devDependencies": {
-        "@tsconfig/recommended": "^1.0.11",
+        "@types/antlr4": "4.11",
         "@types/css-tree": "^2.3.8",
         "@types/mime": "^4.0.0",
-        "@types/node": "^24.10.0",
         "@types/opentype.js": "^1.3.8",
-        "sitemap": "^9.0.0",
-        "ts-node": "^10.9.2",
-        "typescript": "^4.6.3"
+        "@types/three": "^0.171.0",
+        "@vitejs/plugin-vue": "^6.0.0",
+        "typescript": "^5.6.0",
+        "vite": "^7.0.0"
     },
     "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
 }

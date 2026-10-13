@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watch, onMounted, ref, type Ref, computed } from 'vue';
-import opentype from 'opentype.js';
+import * as opentype from 'opentype.js';
 import { useMessage, NButton, NIcon, NInputGroup, NInputGroupLabel, NTooltip } from 'naive-ui';
 import { download, sleep } from '../common/common';
 

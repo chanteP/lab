@@ -5,11 +5,11 @@
   </div>
 </template>
 <script>
-import { createComponent, reactive, computed, watch, onMounted } from '@vue/composition-api';
+import { defineComponent, reactive, computed, watch, onMounted, ref } from 'vue';
 import FileDrop from './FileDrop.vue';
 import ParserTable from './ParserTable.vue';
 
-export default createComponent({
+export default defineComponent({
     components: {
         FileDrop,
         ParserTable,

@@ -50,7 +50,7 @@
   </div>
 </template>
 <script>
-import { createComponent, reactive, computed, watch, onMounted } from '@vue/composition-api';
+import { defineComponent, reactive, computed, watch, onMounted, ref } from 'vue';
 import {
     fitHeight,
     parseText,
@@ -68,12 +68,13 @@ const cacheToggleTextareaKey = 'lab.fileParser.toggle.textarea';
 const cacheLastFormatter = 'lab.fileParser.lastformatter';
 const cacheUserFormatter = 'lab.fileParser.formatter.user';
 
-export default createComponent({
+export default defineComponent({
     components: {},
     props: {
         file: Blob,
     },
     setup(props, context) {
+        const textarea = ref(null);
         const state = reactive({
             format: localStorage.getItem(cacheFormatterKey) || '',
             hideTextarea: !!+localStorage.getItem(cacheToggleTextareaKey),
@@ -90,7 +91,7 @@ export default createComponent({
         watch(
             () => state.format,
             () => {
-                fitHeight(context.refs.textarea);
+                textarea.value && fitHeight(textarea.value);
                 localStorage.setItem(cacheFormatterKey, state.format);
                 state.formatter = parseText(state.format);
             },
@@ -98,7 +99,7 @@ export default createComponent({
         watch(
             () => state.hideTextarea,
             () => {
-                fitHeight(context.refs.textarea);
+                textarea.value && fitHeight(textarea.value);
                 localStorage.setItem(cacheToggleTextareaKey, +state.hideTextarea);
             },
         );
@@ -116,7 +117,7 @@ export default createComponent({
             },
         );
         onMounted(() => {
-            fitHeight(context.refs.textarea);
+            textarea.value && fitHeight(textarea.value);
         });
 
         function progress(loaded, total) {
@@ -144,6 +145,7 @@ export default createComponent({
         return {
             state,
             tips,
+            textarea,
             saveAs() {
                 const name = window.prompt('把解析脚本保存为');
                 if (!name) {

@@ -4,7 +4,8 @@ import { watch, onMounted, ref, type Ref, computed } from 'vue';
 import { loadScript } from '../common/loader';
 
 
-import { createFFmpeg, fetchFile, FFmpeg } from '@ffmpeg/ffmpeg';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import NaiveUIContainer from '../common/NaiveUIContainer.vue';
 import { NButton, NDivider, NImage, NImageGroup, NInput } from 'naive-ui';
 
@@ -14,16 +15,14 @@ const command = ref('');
 const fileMap = new Map<string, string>()
 const fileList = ref<{ path: string; src: string }[]>([]);
 
-const ffmpeg = createFFmpeg({
-    log: false,
-    corePath: `${location.origin}/public/lib/ffmpeg/ffmpeg-core.js`,
-});
+const ffmpeg = new FFmpeg();
+ffmpeg.on('log', ({ message }) => console.log(message));
 
 const loaded = loadFFMPEG();
 
 
-function refreshFiles() {
-    const all = ffmpeg.FS('readdir', './');
+async function refreshFiles() {
+    const all = await ffmpeg.listDir('./');
     console.log('all files:', all);
 
     fileList.value = all.filter(p => !p.startsWith('.') && !['tmp', 'home', 'dev', 'proc'].includes(p)).map(path => {
@@ -48,32 +47,38 @@ async function addFile(e: DragEvent) {
         const data = new Uint8Array(await file.arrayBuffer());
 
         const path = file.name;
-        ffmpeg.FS('writeFile', `./${path}`, data);
+        await ffmpeg.writeFile(`./${path}`, data);
         fileMap.set(path, URL.createObjectURL(file));
     }));
 
-    refreshFiles();
+    await refreshFiles();
 }
 
 
 
 
 
+let ffmpegLoaded = false;
 async function loadFFMPEG() {
-    if (ffmpeg.isLoaded()) {
+    if (ffmpegLoaded) {
         return;
     }
     console.time('load wasm');
-    await ffmpeg.load();
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    ffmpegLoaded = true;
     console.timeEnd('load wasm');
 }
 
 async function convertVideo(file: File) {
     console.time('exec');
     const { name } = file;
-    ffmpeg.FS('writeFile', name, await fetchFile(file));
-    await ffmpeg.run('-i', name, 'output.mp4');
-    const data = ffmpeg.FS('readFile', 'output.mp4');
+    await ffmpeg.writeFile(name, await fetchFile(file));
+    await ffmpeg.exec(['-i', name, 'output.mp4']);
+    const data = await ffmpeg.readFile('output.mp4');
     console.timeEnd('exec');
     return data;
 }
