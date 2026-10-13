@@ -83,11 +83,12 @@ ${metaTags}
 }
 
 // 生成完整 HTML（用于 docs/index.html 这类非 vite 产物）
-export function fullHTML({ title, meta = null, content = '' }) {
+export function fullHTML({ title, meta = null, content = '', extraHead = '' }) {
     return `<!DOCTYPE html>
 <html lang="zh">
 <head>
 ${sharedHead({ title, meta })}
+${extraHead}
 </head>
 <body id="wrapper">
     <div id="app">

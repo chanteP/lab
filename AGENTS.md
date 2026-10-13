@@ -14,6 +14,7 @@
 3. **docs/ 是产物目录**：只通过构建命令更新，不手改。未执行对应构建命令前，保持 docs/ 不变。
 4. **无后端依赖**：不要引入需要服务端的能力。运行时允许依赖站点根的 `/public/...` 静态资源（已随仓库发布）和公共 CDN。
 5. **head 不手改**：页面的 `<head>`（title/meta/基础样式）由 `scripts/page-html.mjs` 统一注入。SEO 信息写 `src/<page>/meta.json`，不要编辑 `index.html` 的 head。
+6. **公开仓库，零个人信息**：代码、meta.json、注释、commit message 里不得出现私人信息（真实姓名、邮箱、token、密钥、内网地址等）。`meta.json` 的 `title`/`description` 同时用作全站索引的卡片文案，面向陌生访客，简洁描述用途即可；带 `canonical` 的页面会进入 sitemap，description 可以写详细些供 Google 收录。
 
 ## 页面结构约定
 

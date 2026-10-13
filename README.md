@@ -54,7 +54,7 @@ yarn serve
 ## 新增一个页面
 
 1. 建目录 `src/<page>/`，写 `index.html`（从现有页面复制即可，全站统一模板）、`index.ts`、`App.vue`。
-2. 需要 SEO 时加 `meta.json`（`title`、`description`、`canonical` 等，`canonical` 形如 `https://lab.neetproject.com/<page>/index.html`）。
+2. 每个页面都应有 `meta.json`：`title` 和 `description` 会显示在全站索引（docs/index.html）的卡片上；需要被 Google 收录时再加 `canonical`、`keywords`、`og:*` 等（`canonical` 形如 `https://lab.neetproject.com/<page>/index.html`，参考 `src/gradient/meta.json`）。**meta.json 内容面向公开访客，不要写个人信息（姓名、邮箱、token 等）**。
 3. `yarn dev <page>` 开发，`yarn build <page>` 构建。
 4. 确认 `docs/<page>/` 产物正确后，连同源码一起 commit & push，GitHub Pages 自动上线。
 5. 可选：`yarn index && yarn sitemap` 更新全站索引，再次提交。

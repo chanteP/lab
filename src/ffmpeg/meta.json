@@ -1,0 +1,4 @@
+{
+    "title": "浏览器视频处理",
+    "description": "基于 ffmpeg.wasm，在浏览器内运行 ffmpeg 命令处理音视频文件。"
+}

@@ -85,18 +85,144 @@ const commands = {
 
     index() {
         const docsDir = join(rootDir, 'docs');
-        const projects = readdirSync(docsDir, { withFileTypes: true })
-            .filter((d) => d.isDirectory() && existsSync(join(docsDir, d.name, 'index.html')))
-            .map((d) => `${d.name}/index.html`)
+        // public/assets 是共享静态资源目录，不是页面
+        const NON_PAGE_DIRS = ['public', 'assets'];
+        const routes = readdirSync(docsDir, { withFileTypes: true })
+            .filter((d) => d.isDirectory() && !NON_PAGE_DIRS.includes(d.name))
+            .filter((d) => existsSync(join(docsDir, d.name, 'index.html')))
+            .map((d) => d.name)
             .sort();
-        const content = projects
-            .map(
-                (route) =>
-                    `<li style="display:block;line-height:50px;padding-left:2em;font-family:monospace;"><a href="${route}">${route}</a></li>`,
-            )
-            .join('\n');
-        writeFileSync(join(docsDir, 'index.html'), fullHTML({ title: 'index', content: `<ul>${content}</ul>` }));
-        console.log(`[lab] docs/index.html 已更新（${projects.length} 个页面）`);
+
+        const esc = (s) =>
+            String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        // 备注来自 src/<page>/meta.json 的 title/description，面向访客，不含个人信息
+        const pages = routes.map((page) => {
+            const meta = readPageMeta(page);
+            return {
+                page,
+                title: meta?.title ?? page,
+                description: meta?.description ?? '',
+                seo: Boolean(meta?.canonical),
+            };
+        });
+        const tools = pages.filter((p) => p.seo);
+        const experiments = pages.filter((p) => !p.seo);
+
+        const card = ({ page, title, description }) => `        <a class="card" href="${page}/">
+            <h3>${esc(title)}</h3>
+            ${description ? `<p>${esc(description)}</p>` : ''}
+            <span class="path">/${page}/</span>
+        </a>`;
+
+        const section = (name, list) =>
+            list.length
+                ? `    <section>
+        <h2>${name}</h2>
+        <div class="grid">
+${list.map(card).join('\n')}
+        </div>
+    </section>`
+                : '';
+
+        const content = `<div class="site-index">
+    <header>
+        <h1>lab</h1>
+        <p class="subtitle">前端工具集 · Front-end tools &amp; experiments</p>
+    </header>
+${section('Tools', tools)}
+${section('Experiments', experiments)}
+</div>`;
+
+        const extraHead = `<style>
+.site-index {
+    box-sizing: border-box;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 20px 64px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+.site-index header {
+    margin-bottom: 40px;
+}
+.site-index h1 {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #1a1a1a;
+}
+.site-index .subtitle {
+    margin-top: 8px;
+    font-size: 15px;
+    color: #888;
+}
+.site-index h2 {
+    margin: 32px 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #999;
+}
+.site-index .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+}
+.site-index .card {
+    display: block;
+    box-sizing: border-box;
+    padding: 18px 20px 14px;
+    background: #fff;
+    border: 1px solid #ececec;
+    border-radius: 10px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.site-index .card:hover {
+    transform: translateY(-2px);
+    border-color: #d8e0f5;
+    box-shadow: 0 6px 20px rgba(60, 90, 180, 0.1);
+}
+.site-index .card h3 {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #222;
+}
+.site-index .card p {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #777;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.site-index .card .path {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #aab4c8;
+}
+</style>`;
+
+        writeFileSync(
+            join(docsDir, 'index.html'),
+            fullHTML({
+                title: 'lab - 前端工具集',
+                meta: {
+                    description:
+                        '纯静态前端工具与实验合集：Base64 编解码、二维码生成、CSS 渐变生成、字体工具、图片 EXIF 查看、Markdown 简历渲染、色彩校准、3D 模型预览，以及若干 WebGL 渲染实验。',
+                },
+                content,
+                extraHead,
+            }),
+        );
+        console.log(`[lab] docs/index.html 已更新（Tools ${tools.length} / Experiments ${experiments.length}）`);
     },
 
     sitemap() {
