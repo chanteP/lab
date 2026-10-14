@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { NButton, NIcon, NPopover, NSlider, NSwitch, useMessage } from 'naive-ui';
+import { NButton, NIcon, NPopover, NSelect, NSlider, NSwitch, useMessage } from 'naive-ui';
 import IconPlay from '@vicons/ionicons5/Play';
 import IconPause from '@vicons/ionicons5/Pause';
 import IconStop from '@vicons/ionicons5/Stop';
 import IconLocate from '@vicons/ionicons5/Locate';
 import FileDrop from '../common/FileDrop.vue';
 import ChordDiagram from './ChordDiagram.vue';
+import { PATTERNS } from './patterns';
 import { ScorePlayer } from './player';
 import { SAMPLE_SCORE } from './sample';
 import { flattenScore, parseKey, transposeChord, transposeKey } from './theory';
@@ -22,6 +23,8 @@ const rate = ref(1);
 const followMode = ref(true); // 自动滚动跟随
 const scrollSeek = ref(true); // 手动滚动定位进度
 const playing = ref(false);
+const patternId = ref(PATTERNS[0].id);
+const patternOptions = PATTERNS.map((p) => ({ label: p.name, value: p.id }));
 
 const player = new ScorePlayer();
 player.events.onStateChange = (p) => (playing.value = p);
@@ -241,6 +244,10 @@ function rebuildAtCurrent() {
 }
 
 watch(rate, rebuildAtCurrent);
+watch(patternId, (id) => {
+    player.pattern = PATTERNS.find((p) => p.id === id) ?? PATTERNS[0];
+    rebuildAtCurrent();
+});
 watch(transposeSemis, rebuildAtCurrent);
 
 function fmtTime(raw: number) {
@@ -359,6 +366,7 @@ onBeforeUnmount(() => {
                     </div>
                     <label class="switch"><NSwitch v-model:value="player.melodyOn" size="small" />旋律</label>
                     <label class="switch"><NSwitch v-model:value="player.chordOn" size="small" />和弦</label>
+                    <NSelect v-model:value="patternId" :options="patternOptions" size="small" style="width: 150px" />
                     <label class="switch"><NSwitch v-model:value="scrollSeek" size="small" />滚动定位</label>
                     <NButton v-if="!followMode" size="small" type="primary" @click="resumeFollow">
                         <NIcon><IconLocate /></NIcon>&nbsp;跟随

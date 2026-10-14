@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { PATTERNS, type StrumPattern } from './patterns';
 import { chordToMidi } from './theory';
 import type { FlatBar, FlatNote } from './types';
 
@@ -16,10 +17,10 @@ export class ScorePlayer {
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.015, decay: 0.12, sustain: 0.35, release: 0.5 },
     }).toDestination();
-    private chordSynth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'sawtooth' },
-        envelope: { attack: 0.03, decay: 0.2, sustain: 0.25, release: 0.6 },
-    }).toDestination();
+    // 和弦用 Karplus-Strong 拨弦合成，接近木吉他音色。
+    // PluckSynth 不是 Monophonic 子类，PolySynth 包不了，用手动 round-robin 池
+    private chordVoices: Tone.PluckSynth[] = [];
+    private chordVoiceIdx = 0;
 
     private eventIds: number[] = [];
     private spb = 0.5; // 秒/拍（按当前 rate）
@@ -28,14 +29,18 @@ export class ScorePlayer {
 
     melodyOn = true;
     chordOn = true;
+    pattern: StrumPattern = PATTERNS[0];
     events: PlayerEvents = {};
 
     constructor() {
         this.melody.volume.value = -7;
-        this.chordSynth.volume.value = -16;
-        const lp = new Tone.Filter(1800, 'lowpass').toDestination();
-        this.chordSynth.disconnect();
-        this.chordSynth.connect(lp);
+        const lp = new Tone.Filter(3200, 'lowpass').toDestination();
+        for (let i = 0; i < 8; i++) {
+            const v = new Tone.PluckSynth({ attackNoise: 2.2, dampening: 3600, resonance: 0.93 });
+            v.volume.value = -9;
+            v.connect(lp);
+            this.chordVoices.push(v);
+        }
     }
 
     get playing() {
@@ -75,17 +80,16 @@ export class ScorePlayer {
             if (!b.chord) continue;
             const midis = chordToMidi(b.chord);
             if (!midis.length) continue;
-            const hits = b.beats >= 4 ? [0, 2] : [0]; // 4 拍打 1、3 拍，其余只打第 1 拍
-            for (const h of hits) {
-                const t = (b.startBeat + h) * this.spb;
+            // 按当前节奏型展开整小节拨弦事件（跟随拍号）
+            for (const ev of this.pattern.gen(midis, b.beats)) {
+                const t = (b.startBeat + ev.t) * this.spb;
+                const durSec = Math.max(ev.dur * this.spb, 0.15);
                 const id = Tone.Transport.schedule((time) => {
                     if (!this.chordOn) return;
-                    const freqs = midis.map((m) => Tone.Frequency(m, 'midi').toFrequency());
-                    const dur = Math.min(b.beats * this.spb * (b.beats >= 4 ? 0.5 : 0.9), 3);
-                    // 轻微分解，模拟扫弦
-                    freqs.forEach((f, i) => {
-                        this.chordSynth.triggerAttackRelease(f, dur, time + i * 0.025, 0.5);
-                    });
+                    const v = this.chordVoices[this.chordVoiceIdx++ % this.chordVoices.length];
+                    v.triggerAttackRelease(
+                        Tone.Frequency(ev.midi, 'midi').toFrequency(), durSec, time, ev.vel,
+                    );
                 }, t);
                 this.eventIds.push(id);
             }
@@ -135,6 +139,6 @@ export class ScorePlayer {
         Tone.Transport.cancel(0);
         Tone.Transport.stop();
         this.melody.dispose();
-        this.chordSynth.dispose();
+        for (const v of this.chordVoices) v.dispose();
     }
 }
