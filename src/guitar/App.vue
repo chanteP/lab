@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
             </section>
         </transition>
 
-        <Arrangement :tuning-id="tuningId" :root="selectedRoot" :chord-suffix="activeChord?.suffix ?? ''" />
+        <Arrangement :synth="synth" :tuning-id="tuningId" :root="selectedRoot" :chord-suffix="activeChord?.suffix ?? ''" />
 
         <footer>
             <span>EXTENDED KARPLUS–STRONG SYNTHESIS</span>

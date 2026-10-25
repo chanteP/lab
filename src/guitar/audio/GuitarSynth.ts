@@ -4,6 +4,7 @@ interface PluckOptions {
     velocity?: number;
     stringIndex?: number;
     pan?: number;
+    when?: number;
 }
 
 interface Resonator {
@@ -67,6 +68,10 @@ export class GuitarSynth {
         return this.analyserNode;
     }
 
+    get now() {
+        return this.context?.currentTime ?? 0;
+    }
+
     async resume() {
         const context = this.ensureContext();
         if (context.state === 'suspended') await context.resume();
@@ -87,11 +92,11 @@ export class GuitarSynth {
             buffer = this.renderString(this.context!, midiToFrequency(midi), midi, velocity, stringIndex);
             this.buffers.set(key, buffer);
         }
-        this.playBuffer(buffer, 0.62, options.pan ?? (stringIndex - 2.5) * 0.065);
+        this.playBuffer(buffer, 0.62, options.pan ?? (stringIndex - 2.5) * 0.065, options.when);
     }
 
     /** 一次生成、一次起音：扫弦时差写在采样偏移里，不依赖 setTimeout。 */
-    async strum(voicing: Voicing, tuning: readonly number[] = OPEN_STRINGS) {
+    async strum(voicing: Voicing, tuning: readonly number[] = OPEN_STRINGS, when?: number, level = 0.9) {
         await this.resume();
         const key = `chord:${tuning.join('-')}:${voicing.midi.join('-')}:${voicing.frets.map(fret => fret ?? 'x').join('')}`;
         let buffer = this.buffers.get(key);
@@ -99,7 +104,7 @@ export class GuitarSynth {
             buffer = this.renderChord(this.context!, voicing, tuning);
             this.buffers.set(key, buffer);
         }
-        this.playBuffer(buffer, 0.9);
+        this.playBuffer(buffer, level, 0, when);
     }
 
     stopAll() {
@@ -107,7 +112,7 @@ export class GuitarSynth {
         this.active.clear();
     }
 
-    private playBuffer(buffer: AudioBuffer, level: number, pan = 0) {
+    private playBuffer(buffer: AudioBuffer, level: number, pan = 0, when?: number) {
         const source = this.context!.createBufferSource();
         source.buffer = buffer;
         const gain = this.context!.createGain();
@@ -117,7 +122,7 @@ export class GuitarSynth {
         source.connect(gain).connect(panner);
         panner.connect(this.dry!);
         panner.connect(this.body!);
-        source.start();
+        source.start(when);
         this.active.add(source);
         source.onended = () => {
             this.active.delete(source);
