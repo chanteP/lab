@@ -39,7 +39,7 @@ onMounted(() => {
 
         // 环境细线始终存在；音频出现时由真实输出驱动两层波形。
         const baseline = height * 0.56;
-        const amplitude = Math.min(height * 0.24, 35 + energy * 1300);
+        const amplitude = Math.min(height * 0.38, 55 + energy * 3200);
         for (let layer = 0; layer < 3; layer++) {
             context.beginPath();
             for (let x = 0; x <= width; x += 3) {
@@ -49,7 +49,7 @@ onMounted(() => {
                 if (x === 0) context.moveTo(x, y);
                 else context.lineTo(x, y);
             }
-            context.strokeStyle = `rgba(154, 111, 70, ${energy > 0.001 ? 0.12 - layer * 0.025 : 0.025 - layer * 0.005})`;
+            context.strokeStyle = `rgba(154, 111, 70, ${energy > 0.001 ? 0.17 - layer * 0.035 : 0.025 - layer * 0.005})`;
             context.lineWidth = layer === 0 ? 1.2 : 0.7;
             context.stroke();
         }

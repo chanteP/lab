@@ -5,7 +5,9 @@
 ## 文件职责
 
 - `App.vue`：页面状态、指板渲染、调式与和弦交互、全部视觉样式。
-- `theory/chords.ts`：音名、自然大调、调弦定义、和弦定义、适配当前调弦的低把位 voicing 搜索。纯函数，无 DOM。
+- `theory/chords.ts`：音名、自然大调、调弦定义、和弦定义、voicing 搜索及实际按法识别。纯函数，无 DOM。
+- `theory/noteColors.ts`：全局固定音名色表。
+- 键盘演奏：数字 1–7 为当前调顺阶和弦；A–' 为白键（F=C4），Q–] 为黑键。
 - `audio/GuitarSynth.ts`：Web Audio 物理建模、琴体响应、单音与扫弦。
 - `audio/AudioVisualizer.vue`：全屏 Canvas，以 60fps 上限绘制真实音频输出波形。
 - `arrangement/`：谱子编排、节奏型、四品按法编辑、IndexedDB 谱子库和 PNG 导出；详见其目录文档。

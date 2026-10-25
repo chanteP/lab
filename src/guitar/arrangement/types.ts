@@ -11,6 +11,8 @@ export interface Measure {
     id: string;
     chord: ArrangedChord | null;
     patternId: string;
+    lyric?: string;
+    note?: string;
 }
 
 export interface Arrangement {
@@ -27,6 +29,7 @@ export interface RhythmStep {
     strings: number[];
     stroke?: 'down' | 'up';
     muted?: boolean;
+    slap?: boolean;
 }
 
 export interface RhythmPattern {

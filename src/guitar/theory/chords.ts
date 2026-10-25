@@ -126,3 +126,52 @@ export function findVoicing(root: number, definition: ChordDefinition, tuning: r
 export function voicingLabel(frets: Array<number | null>) {
     return frets.map(fret => fret === null ? '×' : fret).join(' · ');
 }
+
+export interface ChordIdentity {
+    name: string;
+    root: number;
+    suffix: string;
+    bass: number;
+    tones: Set<number>;
+}
+
+const IDENTIFICATION_CHORDS = [
+    { suffix: '', intervals: [0, 4, 7] },
+    { suffix: 'm', intervals: [0, 3, 7] },
+    { suffix: 'sus4', intervals: [0, 5, 7] },
+    { suffix: 'sus2', intervals: [0, 2, 7] },
+    { suffix: '5', intervals: [0, 7] },
+    { suffix: 'dim', intervals: [0, 3, 6] },
+    { suffix: 'aug', intervals: [0, 4, 8] },
+    { suffix: '7', intervals: [0, 4, 7, 10] },
+    { suffix: 'maj7', intervals: [0, 4, 7, 11] },
+    { suffix: 'm7', intervals: [0, 3, 7, 10] },
+    { suffix: '6', intervals: [0, 4, 7, 9] },
+    { suffix: 'm6', intervals: [0, 3, 7, 9] },
+    { suffix: 'add9', intervals: [0, 4, 7, 14] },
+    { suffix: '9', intervals: [0, 4, 7, 10, 14] },
+];
+
+/** 按实际发声识别和弦；最低声部不是根音时使用 slash chord，如 G/D。 */
+export function identifyChord(frets: Array<number | null>, strings: readonly number[]): ChordIdentity {
+    const midi = frets.map((fret, index) => fret === null ? null : strings[index] + fret)
+        .filter((note): note is number => note !== null);
+    const tones = new Set(midi.map(pitchClass));
+    const bass = midi.length ? pitchClass(midi[0]) : 0;
+    if (!midi.length) return { name: '—', root: 0, suffix: '', bass, tones };
+    if (tones.size === 1) return { name: NOTE_NAMES[bass], root: bass, suffix: '', bass, tones };
+
+    for (const definition of IDENTIFICATION_CHORDS) {
+        for (let root = 0; root < 12; root++) {
+            const expected = new Set(definition.intervals.map(interval => (root + interval) % 12));
+            if (tones.size > expected.size || ![...tones].every(tone => expected.has(tone))) continue;
+            const missing = [...expected].filter(tone => !tones.has(tone));
+            // 吉他按法常省略五音；其他决定和弦性质的音不可缺。
+            if (missing.some(tone => tone !== (root + 7) % 12)) continue;
+            const slash = bass === root ? '' : `/${NOTE_NAMES[bass]}`;
+            return { name: `${NOTE_NAMES[root]}${definition.suffix}${slash}`, root, suffix: `${definition.suffix}${slash}`, bass, tones };
+        }
+    }
+    // 未收录的扩展音不冒充三和弦；保留最低音并明确这是自定义音响。
+    return { name: `${NOTE_NAMES[bass]}…`, root: bass, suffix: '…', bass, tones };
+}

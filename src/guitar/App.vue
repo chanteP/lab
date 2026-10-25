@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { GuitarSynth } from './audio/GuitarSynth';
 import AudioVisualizer from './audio/AudioVisualizer.vue';
 import Arrangement from './arrangement/Arrangement.vue';
@@ -8,6 +8,7 @@ import {
     findVoicing, noteName, pitchClass, scalePitchClasses, voicingLabel,
     type ChordDefinition,
 } from './theory/chords';
+import { noteColorStyle } from './theory/noteColors';
 
 const synth = new GuitarSynth();
 const keys = [0, 2, 4, 5, 7, 9, 11];
@@ -34,7 +35,7 @@ const chordShape = computed(() => activeChord.value
     : '');
 const intervalNames: Record<number, string> = { 0: '1', 3: '♭3', 4: '3', 5: '4', 7: '5', 10: '♭7', 11: '7', 14: '9' };
 const chordFormula = computed(() => activeChord.value?.intervals.map(interval => intervalNames[interval]).join(' · ') ?? '');
-const chordNotes = computed(() => activeChord.value?.intervals.map(interval => NOTE_NAMES[(selectedRoot.value + interval) % 12]).join(' · ') ?? '');
+const chordNotePitchClasses = computed(() => activeChord.value?.intervals.map(interval => (selectedRoot.value + interval) % 12) ?? []);
 const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i);
 const markers = [3, 5, 7, 9, 15, 17, 19];
 
@@ -74,9 +75,34 @@ function dragChord(event: DragEvent, chord: ChordDefinition) {
     event.dataTransfer!.effectAllowed = 'copy';
     event.dataTransfer!.setData('application/x-guitar-chord', JSON.stringify({ root: selectedRoot.value, suffix: chord.suffix }));
 }
+const whiteKeys: Record<string, number> = { a: 55, s: 57, d: 59, f: 60, g: 62, h: 64, j: 65, k: 67, l: 69, ';': 71, "'": 72 };
+const blackKeys: Record<string, number> = { q: 56, w: 58, e: 61, r: 63, t: 66, y: 68, u: 70, i: 73, o: 75, p: 78, '[': 80, ']': 82 };
+function handleKeyboard(event: KeyboardEvent) {
+    if (event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.matches('input, textarea, select, [contenteditable="true"]') || document.querySelector('.chord-editor')) return;
+    if (/^[1-7]$/.test(event.key)) {
+        event.preventDefault();
+        const degree = Number(event.key) - 1;
+        const root = (tonic.value + [0, 2, 4, 5, 7, 9, 11][degree]) % 12;
+        const suffix = ['', 'm', 'm', '', '', 'm', 'dim'][degree];
+        selectedRoot.value = root;
+        const chord = CHORDS.find(item => item.suffix === suffix) ?? { suffix: 'dim', name: '减三和弦', intervals: [0, 3, 6] };
+        void playChord(chord);
+        return;
+    }
+    const key = event.key.toLowerCase();
+    const midi = whiteKeys[key] ?? blackKeys[key];
+    if (midi === undefined) return;
+    event.preventDefault();
+    flash(midi);
+    void synth.pluck(midi, { stringIndex: midi % 6, velocity: 0.78 });
+}
+onMounted(() => window.addEventListener('keydown', handleKeyboard));
 onBeforeUnmount(() => {
     synth.stopAll();
     window.clearTimeout(playingTimer);
+    window.removeEventListener('keydown', handleKeyboard);
 });
 </script>
 
@@ -91,7 +117,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="standard-tuning" :aria-label="tuning.name">
                 <span>{{ tuning.name.toUpperCase() }} · 6 → 1</span>
-                <strong>{{ tuning.strings.map(noteName).join(' · ') }}</strong>
+                <strong><i v-for="(open, index) in tuning.strings" :key="index" :style="noteColorStyle(open)">{{ noteName(open) }}<span v-if="index < tuning.strings.length - 1"> · </span></i></strong>
             </div>
         </header>
 
@@ -104,12 +130,12 @@ onBeforeUnmount(() => {
             <div class="key-control">
                 <span class="control-label">调式 <small>KEY</small></span>
                 <div class="key-buttons">
-                    <button v-for="key in keys" :key="key" :class="{ selected: tonic === key }" @click="selectKey(key)">
+                    <button v-for="key in keys" :key="key" :style="noteColorStyle(key)" :class="{ selected: tonic === key }" @click="selectKey(key)">
                         {{ NOTE_NAMES[key] }}
                     </button>
                 </div>
             </div>
-            <div class="key-description"><i></i>{{ NOTE_NAMES[tonic] }} Major<span>自然大调</span></div>
+            <div class="key-description" :style="noteColorStyle(tonic)"><i></i>{{ NOTE_NAMES[tonic] }} Major<span>自然大调</span></div>
             <label class="volume-control">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"/></svg>
                 <input v-model.number="volume" type="range" min="0" max="1" step="0.05" aria-label="音量" @input="changeVolume">
@@ -138,7 +164,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div class="neck">
                         <div class="string-labels" aria-hidden="true">
-                            <span v-for="string in displayStrings" :key="string.stringIndex"><b>{{ noteName(string.midi) }}</b><small>{{ string.number }}</small></span>
+                            <span v-for="string in displayStrings" :key="string.stringIndex"><b :style="noteColorStyle(string.midi)">{{ noteName(string.midi) }}</b><small>{{ string.number }}</small></span>
                         </div>
                         <div class="fret-grid">
                             <template v-for="(string, rowIndex) in displayStrings" :key="string.stringIndex">
@@ -153,7 +179,7 @@ onBeforeUnmount(() => {
                                         :aria-label="`${string.number}弦 ${fret}品 ${noteName(string.midi + fret)}`"
                                         @click="playNote(string.midi + fret, string.stringIndex)"
                                     >
-                                        <span v-if="isVisible(string.midi + fret)" class="note" :class="{
+                                        <span v-if="isVisible(string.midi + fret)" :style="noteColorStyle(string.midi + fret)" class="note" :class="{
                                             tonic: pitchClass(string.midi + fret) === tonic,
                                             dimmed: isDimmed(string.midi + fret),
                                             'chord-tone': chordTones?.has(pitchClass(string.midi + fret)),
@@ -180,11 +206,11 @@ onBeforeUnmount(() => {
         <transition name="chord-rise">
             <section v-if="!activeChord && selectedRoot !== null" class="chord-panel" aria-label="和弦选择">
                 <div class="chord-root">
-                    <span>以</span><strong>{{ NOTE_NAMES[selectedRoot] }}</strong><span>为根音</span>
+                    <span>以</span><strong :style="noteColorStyle(selectedRoot)">{{ NOTE_NAMES[selectedRoot] }}</strong><span>为根音</span>
                     <small>CHOOSE A CHORD</small>
                 </div>
                 <div class="chord-list">
-                    <button v-for="chord in CHORDS" :key="chord.suffix" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
+                    <button v-for="chord in CHORDS" :key="chord.suffix" :style="noteColorStyle(selectedRoot)" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
                         <span>{{ NOTE_NAMES[selectedRoot] }}<sup>{{ chord.suffix }}</sup></span>
                         <small>{{ chord.name }}</small>
                     </button>
@@ -196,20 +222,22 @@ onBeforeUnmount(() => {
         <transition name="chord-rise">
             <section v-if="activeChord" class="chord-panel active-chord" aria-label="当前和弦">
                 <div class="now-playing"><span>NOW PLAYING</span><i></i><i></i><i></i><i></i></div>
-                <div class="current-chord"><strong>{{ selectedChordName }}</strong><span>{{ activeChord.name }}</span></div>
+                <div class="current-chord"><strong :style="noteColorStyle(selectedRoot)">{{ selectedChordName }}</strong><span>{{ activeChord.name }}</span></div>
                 <div class="harmony">
                     <div><small>音程构成</small><strong>{{ chordFormula }}</strong></div>
-                    <div><small>组成音</small><span>{{ chordNotes }}</span></div>
+                    <div><small>组成音</small><span class="chord-note-list"><i v-for="note in chordNotePitchClasses" :key="note" :style="noteColorStyle(note)">{{ NOTE_NAMES[note] }}</i></span></div>
                 </div>
                 <div class="shape"><small>指法 · 从六弦到一弦</small><span>{{ chordShape }}</span></div>
                 <div class="chord-list compact">
-                    <button v-for="chord in CHORDS" :key="chord.suffix" :class="{ current: chord.suffix === activeChord.suffix }" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
+                    <button v-for="chord in CHORDS" :key="chord.suffix" :style="noteColorStyle(selectedRoot)" :class="{ current: chord.suffix === activeChord.suffix }" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
                         {{ NOTE_NAMES[selectedRoot] }}<sup>{{ chord.suffix }}</sup>
                     </button>
                 </div>
                 <button class="replay" title="再次播放" aria-label="再次播放当前和弦" @click="playChord(activeChord)">↻</button>
             </section>
         </transition>
+
+        <div class="keyboard-guide"><span><b>1–7</b> 调内和弦</span><span><b>A–'</b> 白键 · F = C4</span><span><b>Q–]</b> 黑键</span><small>编辑按法或输入文字时自动停用</small></div>
 
         <Arrangement :synth="synth" :tuning-id="tuningId" :root="selectedRoot" :chord-suffix="activeChord?.suffix ?? ''" />
 
@@ -242,6 +270,8 @@ h1 em { color: #77796e; font-style: normal; }
 .subtitle { margin: 12px 0 0; color: #8b8c83; font-size: 13px; letter-spacing: 1px; }
 .standard-tuning { text-align: right; padding-bottom: 5px; }
 .standard-tuning span { display: block; font-size: 9px; letter-spacing: 1.8px; color: #9a9b92; margin-bottom: 8px; }
+.standard-tuning strong i { color: var(--note-color); font-style: normal; }
+.standard-tuning strong i span { color: #aaa79d; }
 .standard-tuning strong { font-family: Georgia, serif; color: #686c63; font-size: 15px; letter-spacing: 3px; font-weight: 400; }
 .control-bar { display: flex; align-items: center; min-height: 86px; padding: 16px 24px; background: rgba(255,255,255,.8); border: 1px solid #e4e2da; border-radius: 12px; box-shadow: 0 5px 22px #393a2d05; gap: 25px; }
 .scale-toggle { display: flex; align-items: center; gap: 12px; border: 0; background: none; padding: 0; color: #43473f; cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: 600; text-align: left; }
@@ -256,9 +286,10 @@ h1 em { color: #77796e; font-style: normal; }
 .key-buttons { display: flex; gap: 5px; }
 .key-buttons button { width: 38px; height: 38px; border: 1px solid transparent; background: transparent; border-radius: 7px; cursor: pointer; color: #62665c; font-family: Georgia, serif; font-size: 15px; transition: .18s; }
 .key-buttons button:hover { background: #f2eee6; }
-.key-buttons button.selected { color: white; background: #9a6b43; box-shadow: 0 3px 9px #8c603633; }
-.key-description { display: flex; align-items: center; gap: 6px; color: #696b63; font-family: Georgia, serif; font-size: 12px; white-space: nowrap; }
-.key-description i { width: 5px; height: 5px; border-radius: 50%; background: #a9774e; }
+.key-buttons button { color: var(--note-color); }
+.key-buttons button.selected { color: white; background: var(--note-color); box-shadow: 0 3px 9px #8c603633; }
+.key-description { display: flex; align-items: center; gap: 6px; color: var(--note-color); font-family: Georgia, serif; font-size: 12px; white-space: nowrap; }
+.key-description i { width: 5px; height: 5px; border-radius: 50%; background: var(--note-color); }
 .key-description span { color: #a2a299; font-family: sans-serif; font-size: 10px; margin-left: 2px; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .volume-control svg { width: 17px; height: 17px; stroke: #96988f; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -290,7 +321,7 @@ h1 em { color: #77796e; font-style: normal; }
 .neck { display: flex; position: relative; filter: drop-shadow(0 7px 6px #2c1a1030); }
 .string-labels { width: 52px; flex: 0 0 52px; display: grid; grid-template-rows: repeat(6, 43px); background: #35382f; border-radius: 5px 0 0 5px; position: relative; z-index: 4; }
 .string-labels span { display: flex; align-items: center; justify-content: center; position: relative; }
-.string-labels b { color: #d5d3c4; font-family: Georgia, serif; font-weight: 400; font-size: 12px; }
+.string-labels b { color: var(--note-color); font-family: Georgia, serif; font-weight: 400; font-size: 12px; }
 .string-labels small { position: absolute; left: 7px; color: #797e71; font-size: 7px; }
 .fret-grid { display: grid; grid-template-columns: 42px repeat(20, minmax(0, 1fr)); grid-template-rows: repeat(6, 43px); flex: 1; border-radius: 0 4px 4px 0; background:
     linear-gradient(90deg, #3724190c, transparent 10%, #e9ba7910 53%, transparent 88%),
@@ -304,10 +335,11 @@ h1 em { color: #77796e; font-style: normal; }
 .note-hit { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center; }
 .note { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center; width: 27px; height: 27px; background: #f2eee1; color: #625d50; border: 1px solid #fff9; border-radius: 50%; box-shadow: 0 1px 4px #21160c50; font-family: Georgia, serif; font-size: 11px; font-weight: 600; transition: opacity .25s, transform .15s, background .25s; }
 .note:hover { transform: scale(1.16); background: white; }
-.note.tonic { background: #a16e43; color: #fff9ed; border-color: #c89c6c; }
+.note { color: var(--note-color); }
+.note.tonic { background: var(--note-color); color: #fff9ed; border-color: #c89c6c; }
 .note.dimmed { opacity: .24; }
-.note.chord-tone { opacity: 1; background: #f7e8c9; color: #82552e; box-shadow: 0 0 0 2px #d5ae7880, 0 2px 4px #21160c60; }
-.note.tonic.chord-tone { background: #b77943; color: white; }
+.note.chord-tone { opacity: 1; background: #f7e8c9; color: var(--note-color); box-shadow: 0 0 0 2px #d5ae7880, 0 2px 4px #21160c60; }
+.note.tonic.chord-tone { background: var(--note-color); color: white; }
 .is-playing .note { transform: scale(.88); filter: brightness(1.12); }
 .guitar-string { position: absolute; z-index: 1; left: 0; right: -2px; top: 50%; transform: translateY(-50%); pointer-events: none; background: linear-gradient(to bottom, #5d574c 0%, #e8e2cf 25%, #a7a08d 48%, #f4ead1 62%, #5c5347 100%); box-shadow: 0 1px 1px #1b100a99; }
 .gauge-0 { height: 1px; }
@@ -320,7 +352,14 @@ h1 em { color: #77796e; font-style: normal; }
 .position-marks > i { position: absolute; top: 46%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f0e8d2, #c9bda2 70%, #8c8068); box-shadow: inset 0 1px 2px #fff8, 0 1px 2px #2a1b1099; opacity: .8; }
 .position-marks > i.double-one { top: 25%; }
 .position-marks > i.double-two { top: 67%; }
-.panel-footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 23px; background: #faf9f6; border-top: 1px solid #e4e0d8; color: #9b9a91; font-size: 10px; }
+.panel-
+.chord-note-list { display: flex; gap: 7px; }
+.chord-note-list i { color: var(--note-color); font-style: normal; font-weight: 700; }
+.keyboard-guide { display: flex; align-items: center; gap: 18px; margin: 13px 3px 0; color: #99978e; font-size: 8px; }
+.keyboard-guide b { margin-right: 4px; color: #8e6e50; font-family: monospace; font-size: 9px; }
+.keyboard-guide small { margin-left: auto; color: #b0ada4; font-size: 7px; }
+@media(max-width:760px){.keyboard-guide{flex-wrap:wrap;gap:8px 14px}.keyboard-guide small{display:none}}
+footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 23px; background: #faf9f6; border-top: 1px solid #e4e0d8; color: #9b9a91; font-size: 10px; }
 .panel-footer p { margin: 0; }
 .mouse-icon { color: #a47b55; padding-right: 6px; }
 .legend { display: flex; gap: 16px; }
@@ -329,12 +368,12 @@ h1 em { color: #77796e; font-style: normal; }
 .legend i.legend-tonic { background: #a16e43; border-color: #a16e43; }
 .chord-panel { min-height: 98px; display: flex; align-items: center; gap: 25px; margin-top: 18px; padding: 15px 22px; background: #fff; border: 1px solid #e1dfd6; border-radius: 12px; box-shadow: 0 5px 20px #393a2d05; }
 .chord-root { display: grid; grid-template-columns: auto auto auto; align-items: baseline; column-gap: 5px; min-width: 135px; color: #85877e; font-size: 11px; }
-.chord-root strong { color: #9b6a41; font-family: Georgia, serif; font-size: 29px; font-weight: 400; }
+.chord-root strong { color: var(--note-color); font-family: Georgia, serif; font-size: 29px; font-weight: 400; }
 .chord-root small { grid-column: 1 / -1; color: #aaa99f; font-size: 7px; letter-spacing: 1.3px; margin-top: 3px; }
 .chord-list { display: grid; grid-template-columns: repeat(8, minmax(68px, 1fr)); gap: 8px; flex: 1; }
 .chord-list button { min-height: 56px; padding: 7px 9px; border: 1px solid #e1ded4; border-radius: 7px; background: #faf9f6; color: #4c5048; cursor: pointer; transition: .18s; }
 .chord-list button:hover, .chord-list button.current { border-color: #b28a62; background: #f3ebdf; transform: translateY(-1px); }
-.chord-list button > span { font-family: Georgia, serif; font-size: 17px; }
+.chord-list button > span { color: var(--note-color); font-family: Georgia, serif; font-size: 17px; }
 .chord-list sup { font-size: .57em; margin-left: 1px; }
 .chord-list button small { display: block; font-size: 8px; color: #a2a198; margin-top: 4px; }
 .chord-tip { border-left: 1px solid #e5e2d9; padding-left: 19px; color: #919289; font-size: 10px; line-height: 1.7; white-space: nowrap; }
@@ -348,7 +387,7 @@ h1 em { color: #77796e; font-style: normal; }
 .now-playing i:nth-child(4) { animation-delay: -.4s; height: 16px; }
 .now-playing i:nth-child(5) { animation-delay: -.1s; height: 8px; }
 .current-chord { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
-.current-chord strong { font-family: Georgia, serif; font-size: 32px; color: #8e603b; font-weight: 400; }
+.current-chord strong { color: var(--note-color); font-family: Georgia, serif; font-size: 32px; font-weight: 400; }
 .current-chord span { font-size: 10px; color: #96958b; }
 
 .harmony { display: flex; align-items: center; gap: 22px; padding-left: 18px; border-left: 1px solid #e3ded4; }
@@ -360,8 +399,15 @@ h1 em { color: #77796e; font-style: normal; }
 .shape small { display: block; font-size: 8px; color: #a7a499; margin-bottom: 7px; }
 .shape span { font-family: monospace; color: #69695f; font-size: 11px; letter-spacing: 1px; }
 .active-chord .chord-list.compact { order: 20; flex-basis: 100%; }
-.chord-list.compact button { min-height: 38px; font-family: Georgia, serif; font-size: 14px; }
+.chord-list.compact button { color: var(--note-color); min-height: 38px; font-family: Georgia, serif; font-size: 14px; }
 .replay { flex: 0 0 35px; height: 35px; border: 1px solid #d8c6b0; border-radius: 50%; background: transparent; color: #9e7149; font-size: 20px; cursor: pointer; }
+
+.chord-note-list { display: flex; gap: 7px; }
+.chord-note-list i { color: var(--note-color); font-style: normal; font-weight: 700; }
+.keyboard-guide { display: flex; align-items: center; gap: 18px; margin: 13px 3px 0; color: #99978e; font-size: 8px; }
+.keyboard-guide b { margin-right: 4px; color: #8e6e50; font-family: monospace; font-size: 9px; }
+.keyboard-guide small { margin-left: auto; color: #b0ada4; font-size: 7px; }
+@media(max-width:760px){.keyboard-guide{flex-wrap:wrap;gap:8px 14px}.keyboard-guide small{display:none}}
 footer { display: flex; align-items: center; gap: 18px; padding: 24px 3px 0; color: #a7a69d; font-size: 9px; }
 footer > span:first-child { letter-spacing: 1.1px; font-size: 7px; }
 footer p { margin: 0; }

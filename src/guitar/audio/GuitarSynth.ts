@@ -107,6 +107,17 @@ export class GuitarSynth {
         this.playBuffer(buffer, level, 0, when);
     }
 
+    /** 拍弦：短噪声触弦 + 面板低频冲击，不包含和弦音高。 */
+    async slap(when?: number) {
+        await this.resume();
+        let buffer = this.buffers.get('slap');
+        if (!buffer) {
+            buffer = this.renderSlap(this.context!);
+            this.buffers.set('slap', buffer);
+        }
+        this.playBuffer(buffer, 0.72, 0, when);
+    }
+
     stopAll() {
         this.active.forEach(source => source.stop());
         this.active.clear();
@@ -253,6 +264,24 @@ export class GuitarSynth {
     private fadeTail(data: Float32Array, sampleRate: number, seconds: number) {
         const fade = Math.min(Math.floor(sampleRate * seconds), data.length);
         for (let i = 0; i < fade; i++) data[data.length - 1 - i] *= i / fade;
+    }
+
+    private renderSlap(context: AudioContext) {
+        const sampleRate = context.sampleRate;
+        const buffer = context.createBuffer(1, Math.floor(sampleRate * 0.24), sampleRate);
+        const data = buffer.getChannelData(0);
+        let lowNoise = 0;
+        for (let i = 0; i < data.length; i++) {
+            const t = i / sampleRate;
+            const noise = Math.random() * 2 - 1;
+            lowNoise = lowNoise * 0.58 + noise * 0.42;
+            const contact = lowNoise * Math.exp(-t * 75) * 0.72;
+            const click = noise * Math.exp(-t * 190) * 0.18;
+            const body = Math.sin(2 * Math.PI * 92 * t) * Math.exp(-t * 32) * 0.3;
+            data[i] = contact + click + body;
+        }
+        this.fadeTail(data, sampleRate, 0.025);
+        return buffer;
     }
 
     private createBodyImpulse(context: AudioContext) {
