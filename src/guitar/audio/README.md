@@ -42,4 +42,6 @@
 5. **琴体**：96/196/410Hz 模态与 `createBodyImpulse`，最后调整 `bodyGain` 和 compressor。
 6. **扫弦**：`renderChord` 的 `strumStep` 与 `noteGain`。
 
+输出端在 compressor 后接入 `AnalyserNode`，`AudioVisualizer.vue` 用全屏 Canvas 和 `requestAnimationFrame` 以 60fps 上限读取实际时域波形；未发声时仅绘制低对比度环境细线。
+
 所有采样均在本机生成并缓存，无网络音频资源。`resume()` 必须由用户手势触发。若继续升级，可加入双向波导、按把位改变有效弦长、按弦噪声，或以实测民谣吉他 IR 替换合成琴体响应；保持 `pluck()` / `strum()` API 即可。

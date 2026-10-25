@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { GuitarSynth } from './audio/GuitarSynth';
+import AudioVisualizer from './audio/AudioVisualizer.vue';
+import Arrangement from './arrangement/Arrangement.vue';
 import {
     CHORDS, MAX_FRET, NOTE_NAMES, TUNINGS,
     findVoicing, noteName, pitchClass, scalePitchClasses, voicingLabel,
@@ -37,6 +39,8 @@ const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i);
 const markers = [3, 5, 7, 9, 15, 17, 19];
 
 function isVisible(midi: number) {
+    // 和弦播放期间临时展示完整指板，组成音高亮，其余音名半透明。
+    if (chordTones.value) return true;
     return showScale.value && scaleNotes.value.has(pitchClass(midi));
 }
 function isDimmed(midi: number) {
@@ -66,6 +70,10 @@ function selectKey(key: number) {
 function changeVolume() {
     synth.setVolume(volume.value);
 }
+function dragChord(event: DragEvent, chord: ChordDefinition) {
+    event.dataTransfer!.effectAllowed = 'copy';
+    event.dataTransfer!.setData('application/x-guitar-chord', JSON.stringify({ root: selectedRoot.value, suffix: chord.suffix }));
+}
 onBeforeUnmount(() => {
     synth.stopAll();
     window.clearTimeout(playingTimer);
@@ -74,6 +82,7 @@ onBeforeUnmount(() => {
 
 <template>
     <main class="studio">
+        <AudioVisualizer :synth="synth" />
         <header class="hero">
             <div>
                 <p class="eyebrow"><span></span> ACOUSTIC LAB · 01</p>
@@ -175,7 +184,7 @@ onBeforeUnmount(() => {
                     <small>CHOOSE A CHORD</small>
                 </div>
                 <div class="chord-list">
-                    <button v-for="chord in CHORDS" :key="chord.suffix" @click="playChord(chord)">
+                    <button v-for="chord in CHORDS" :key="chord.suffix" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
                         <span>{{ NOTE_NAMES[selectedRoot] }}<sup>{{ chord.suffix }}</sup></span>
                         <small>{{ chord.name }}</small>
                     </button>
@@ -194,13 +203,15 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="shape"><small>指法 · 从六弦到一弦</small><span>{{ chordShape }}</span></div>
                 <div class="chord-list compact">
-                    <button v-for="chord in CHORDS" :key="chord.suffix" :class="{ current: chord.suffix === activeChord.suffix }" @click="playChord(chord)">
+                    <button v-for="chord in CHORDS" :key="chord.suffix" :class="{ current: chord.suffix === activeChord.suffix }" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
                         {{ NOTE_NAMES[selectedRoot] }}<sup>{{ chord.suffix }}</sup>
                     </button>
                 </div>
                 <button class="replay" title="再次播放" aria-label="再次播放当前和弦" @click="playChord(activeChord)">↻</button>
             </section>
         </transition>
+
+        <Arrangement :tuning-id="tuningId" :root="selectedRoot" :chord-suffix="activeChord?.suffix ?? ''" />
 
         <footer>
             <span>EXTENDED KARPLUS–STRONG SYNTHESIS</span>
@@ -221,7 +232,7 @@ onBeforeUnmount(() => {
 body { margin: 0; min-width: 360px; background: radial-gradient(circle at 80% 0, #fffdf6 0, transparent 35%), #f4f2ec; }
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-.studio { width: min(1480px, calc(100% - 72px)); margin: 0 auto; padding: 46px 0 26px; }
+.studio { position: relative; z-index: 1; width: min(1480px, calc(100% - 72px)); margin: 0 auto; padding: 46px 0 26px; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 30px; }
 .eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 12px; color: #9b6941; font-size: 10px; letter-spacing: 2.6px; font-weight: 700; }
 .eyebrow span { width: 22px; height: 1px; background: #b27a4c; }
@@ -299,12 +310,12 @@ h1 em { color: #77796e; font-style: normal; }
 .note.tonic.chord-tone { background: #b77943; color: white; }
 .is-playing .note { transform: scale(.88); filter: brightness(1.12); }
 .guitar-string { position: absolute; z-index: 1; left: 0; right: -2px; top: 50%; transform: translateY(-50%); pointer-events: none; background: linear-gradient(to bottom, #5d574c 0%, #e8e2cf 25%, #a7a08d 48%, #f4ead1 62%, #5c5347 100%); box-shadow: 0 1px 1px #1b100a99; }
-.gauge-0 { height: 4px; background: repeating-linear-gradient(90deg, #7e725d 0, #d0c4a5 1px, #8f826a 2px, #d5c9aa 3px); }
-.gauge-1 { height: 3.5px; background: repeating-linear-gradient(90deg, #81745f 0, #d2c6a8 1px, #978970 2px, #ded2b3 3px); }
-.gauge-2 { height: 3px; background: repeating-linear-gradient(90deg, #8d816b 0, #ddd2b7 1px, #9e927a 2px); }
-.gauge-3 { height: 2px; }
-.gauge-4 { height: 1.5px; }
-.gauge-5 { height: 1px; }
+.gauge-0 { height: 1px; }
+.gauge-1 { height: 1.5px; }
+.gauge-2 { height: 2px; }
+.gauge-3 { height: 3px; background: repeating-linear-gradient(90deg, #8d816b 0, #ddd2b7 1px, #9e927a 2px); }
+.gauge-4 { height: 3.5px; background: repeating-linear-gradient(90deg, #81745f 0, #d2c6a8 1px, #978970 2px, #ded2b3 3px); }
+.gauge-5 { height: 4px; background: repeating-linear-gradient(90deg, #7e725d 0, #d0c4a5 1px, #8f826a 2px, #d5c9aa 3px); }
 .position-marks { position: absolute; pointer-events: none; left: 94px; right: 0; top: 0; bottom: 0; z-index: 2; }
 .position-marks > i { position: absolute; top: 46%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f0e8d2, #c9bda2 70%, #8c8068); box-shadow: inset 0 1px 2px #fff8, 0 1px 2px #2a1b1099; opacity: .8; }
 .position-marks > i.double-one { top: 25%; }
@@ -359,7 +370,7 @@ footer p { margin: 0; }
 .chord-rise-enter-from, .chord-rise-leave-to { opacity: 0; transform: translateY(6px); }
 @keyframes equalize { to { height: 5px; opacity: .5; } }
 @media (max-width: 1100px) {
-    .studio { width: calc(100% - 40px); padding-top: 30px; }
+    .studio { position: relative; z-index: 1; width: calc(100% - 40px); padding-top: 30px; }
     .key-description { display: none; }
     .control-bar { gap: 18px; }
     .chord-tip { display: none; }
@@ -368,7 +379,7 @@ footer p { margin: 0; }
     .tuning-options button small { display: none; }
 }
 @media (max-width: 760px) {
-    .studio { width: calc(100% - 24px); padding-top: 24px; }
+    .studio { position: relative; z-index: 1; width: calc(100% - 24px); padding-top: 24px; }
     .hero { align-items: flex-start; }
     .standard-tuning { display: none; }
     h1 { font-size: 30px; }

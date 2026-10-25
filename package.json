@@ -36,6 +36,7 @@
         "github-markdown-css": "^5.8.1",
         "gl-matrix": "^3.4.3",
         "gradient-parser": "^1.0.2",
+        "html2canvas": "^1.4.1",
         "markdown-it": "^14.1.0",
         "mime": "^4.0.4",
         "naive-ui": "^2.39.0",

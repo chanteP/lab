@@ -24,6 +24,7 @@ export class GuitarSynth {
     private master: GainNode | null = null;
     private dry: GainNode | null = null;
     private body: ConvolverNode | null = null;
+    private analyserNode: AnalyserNode | null = null;
     private buffers = new Map<string, AudioBuffer>();
     private active = new Set<AudioBufferSourceNode>();
     volume = 0.8;
@@ -40,7 +41,10 @@ export class GuitarSynth {
         compressor.attack.value = 0.008;
         compressor.release.value = 0.24;
         master.gain.value = this.volume;
-        master.connect(compressor).connect(context.destination);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.72;
+        master.connect(compressor).connect(analyser).connect(context.destination);
 
         const dry = context.createGain();
         dry.gain.value = 0.94;
@@ -55,7 +59,12 @@ export class GuitarSynth {
         this.master = master;
         this.dry = dry;
         this.body = body;
+        this.analyserNode = analyser;
         return context;
+    }
+
+    get analyser() {
+        return this.analyserNode;
     }
 
     async resume() {
