@@ -7,12 +7,21 @@ export interface ArrangedChord {
     strings: number[];
 }
 
+export interface MeasureChord {
+    id: string;
+    beat: number;
+    chord: ArrangedChord;
+}
+
 export interface Measure {
     id: string;
-    chord: ArrangedChord | null;
+    chords: MeasureChord[];
+    lyrics: string[];
     patternId: string;
-    lyric?: string;
     note?: string;
+    /** IndexedDB 旧版本迁移字段。 */
+    chord?: ArrangedChord | null;
+    lyric?: string;
 }
 
 export interface Arrangement {

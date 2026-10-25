@@ -10,7 +10,7 @@
 - 键盘演奏：数字 1–7 为当前调顺阶和弦；A–' 为白键（F=C4），Q–] 为黑键。
 - `audio/GuitarSynth.ts`：Web Audio 物理建模、琴体响应、单音与扫弦。
 - `audio/AudioVisualizer.vue`：全屏 Canvas，以 60fps 上限绘制真实音频输出波形。
-- `arrangement/`：谱子编排、节奏型、四品按法编辑、IndexedDB 谱子库和 PNG 导出；详见其目录文档。
+- `arrangement/`：谱子多拍点和弦编排、逐拍歌词、节奏型、四品按法编辑/识别、IndexedDB 谱子库和 PNG 导出；详见其目录文档。
 - `audio/README.md`：音色公式、参数意义与迭代建议。
 
 ## 交互约定

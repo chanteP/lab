@@ -75,7 +75,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown));
                 </div>
                 <footer>
                     <button class="cancel" @click="emit('close')">取消</button>
-                    <button class="save" @click="save">保存按法</button>
+                    <button class="save-chord" @click="save">使用这个和弦</button>
                 </footer>
             </section>
         </div>
@@ -112,6 +112,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keydown));
 .chord-editor footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .chord-editor footer button { padding: 9px 20px; border-radius: 6px; cursor: pointer; font-size: 11px; }
 .chord-editor footer .cancel { border: 1px solid #d8d2c7; background: transparent; color: #85857c; }
-.chord-editor footer .save { border: 1px solid #9d6d44; background: var(--note-color); color: white; }
+.chord-editor footer .save-chord { min-width: 126px; border: 1px solid #8f623e !important; background-color: #8f623e !important; color: #fff !important; box-shadow: 0 3px 9px #79503226; }
+.chord-editor footer .save-chord:hover { background-color: #7c5233 !important; }
 @media (max-width: 520px) { .chord-editor { padding: 18px; } .editor-diagram { grid-template-columns: 28px repeat(6,1fr); } }
 </style>

@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { GuitarSynth } from './audio/GuitarSynth';
 import AudioVisualizer from './audio/AudioVisualizer.vue';
 import Arrangement from './arrangement/Arrangement.vue';
+import ChordEditor from './arrangement/ChordEditor.vue';
+import type { ArrangedChord } from './arrangement/types';
 import {
     CHORDS, MAX_FRET, NOTE_NAMES, TUNINGS,
     findVoicing, noteName, pitchClass, scalePitchClasses, voicingLabel,
-    type ChordDefinition,
+    type ChordDefinition, type ChordIdentity, type Voicing,
 } from './theory/chords';
 import { noteColorStyle } from './theory/noteColors';
 
@@ -17,6 +19,10 @@ const tuningId = ref('standard');
 const showScale = ref(true);
 const selectedRoot = ref(0);
 const activeChord = ref<ChordDefinition | null>(null);
+const manualVoicing = ref<Voicing | null>(null);
+const manualChordName = ref('');
+const manualChordTones = ref<Set<number> | null>(null);
+const editingChord = ref<ArrangedChord | null>(null);
 const volume = ref(0.8);
 const playing = ref<number | null>(null);
 let playingTimer = 0;
@@ -26,18 +32,47 @@ const displayStrings = computed(() => tuning.value.strings.map((midi, stringInde
     midi, stringIndex, number: 6 - stringIndex,
 })).reverse());
 const scaleNotes = computed(() => scalePitchClasses(tonic.value));
-const chordTones = computed(() => activeChord.value
+const chordTones = computed(() => manualChordTones.value ?? (activeChord.value
     ? new Set(activeChord.value.intervals.map(interval => (selectedRoot.value + interval) % 12))
-    : null);
-const selectedChordName = computed(() => `${NOTE_NAMES[selectedRoot.value]}${activeChord.value?.suffix ?? ''}`);
+    : null));
+const selectedChordName = computed(() => manualChordName.value || `${NOTE_NAMES[selectedRoot.value]}${activeChord.value?.suffix ?? ''}`);
 const chordShape = computed(() => activeChord.value
-    ? voicingLabel(findVoicing(selectedRoot.value, activeChord.value, tuning.value.strings).frets)
+    ? voicingLabel((manualVoicing.value ?? findVoicing(selectedRoot.value, activeChord.value, tuning.value.strings)).frets)
     : '');
 const intervalNames: Record<number, string> = { 0: '1', 3: '♭3', 4: '3', 5: '4', 7: '5', 10: '♭7', 11: '7', 14: '9' };
 const chordFormula = computed(() => activeChord.value?.intervals.map(interval => intervalNames[interval]).join(' · ') ?? '');
 const chordNotePitchClasses = computed(() => activeChord.value?.intervals.map(interval => (selectedRoot.value + interval) % 12) ?? []);
 const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i);
 const markers = [3, 5, 7, 9, 15, 17, 19];
+
+const currentVoicing = computed(() => manualVoicing.value ?? (activeChord.value
+    ? findVoicing(selectedRoot.value, activeChord.value, tuning.value.strings) : null));
+function clearManualChord() {
+    manualVoicing.value = null;
+    manualChordName.value = '';
+    manualChordTones.value = null;
+}
+function openChordFinder() {
+    if (!activeChord.value || !currentVoicing.value) return;
+    editingChord.value = {
+        root: selectedRoot.value, suffix: activeChord.value.suffix, name: selectedChordName.value,
+        frets: [...currentVoicing.value.frets], midi: [...currentVoicing.value.midi], strings: [...tuning.value.strings],
+    };
+}
+async function saveChordFinder(frets: Array<number | null>, midi: number[], identity: ChordIdentity) {
+    const baseSuffix = identity.suffix.split('/')[0];
+    selectedRoot.value = identity.root;
+    activeChord.value = CHORDS.find(chord => chord.suffix === baseSuffix) ?? activeChord.value;
+    manualVoicing.value = { frets, midi };
+    manualChordName.value = identity.name;
+    manualChordTones.value = identity.tones;
+    editingChord.value = null;
+    await synth.strum(manualVoicing.value, tuning.value.strings);
+}
+function replayActiveChord() {
+    if (manualVoicing.value) void synth.strum(manualVoicing.value, tuning.value.strings);
+    else if (activeChord.value) void playChord(activeChord.value);
+}
 
 function isVisible(midi: number) {
     // 和弦播放期间临时展示完整指板，组成音高亮，其余音名半透明。
@@ -55,10 +90,12 @@ function flash(midi: number) {
 async function playNote(midi: number, stringIndex: number) {
     selectedRoot.value = pitchClass(midi);
     activeChord.value = null;
+    clearManualChord();
     flash(midi);
     await synth.pluck(midi, { stringIndex });
 }
 async function playChord(chord: ChordDefinition) {
+    clearManualChord();
     activeChord.value = chord;
     const voicing = findVoicing(selectedRoot.value, chord, tuning.value.strings);
     await synth.strum(voicing, tuning.value.strings);
@@ -67,16 +104,20 @@ function selectKey(key: number) {
     tonic.value = key;
     selectedRoot.value = key;
     activeChord.value = null;
+    clearManualChord();
 }
 function changeVolume() {
     synth.setVolume(volume.value);
 }
 function dragChord(event: DragEvent, chord: ChordDefinition) {
     event.dataTransfer!.effectAllowed = 'copy';
-    event.dataTransfer!.setData('application/x-guitar-chord', JSON.stringify({ root: selectedRoot.value, suffix: chord.suffix }));
+    const payload = manualVoicing.value && chord.suffix === activeChord.value?.suffix
+        ? { chord: { root: selectedRoot.value, suffix: chord.suffix, name: selectedChordName.value, frets: [...manualVoicing.value.frets], midi: [...manualVoicing.value.midi], strings: [...tuning.value.strings] } }
+        : { root: selectedRoot.value, suffix: chord.suffix };
+    event.dataTransfer!.setData('application/x-guitar-chord', JSON.stringify(payload));
 }
 const whiteKeys: Record<string, number> = { a: 55, s: 57, d: 59, f: 60, g: 62, h: 64, j: 65, k: 67, l: 69, ';': 71, "'": 72 };
-const blackKeys: Record<string, number> = { q: 56, w: 58, e: 61, r: 63, t: 66, y: 68, u: 70, i: 73, o: 75, p: 78, '[': 80, ']': 82 };
+const blackKeys: Record<string, number> = { w: 56, e: 58, t: 61, y: 63, o: 66, p: 68, '[': 70, ']': 73 };
 function handleKeyboard(event: KeyboardEvent) {
     if (event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
     const target = event.target as HTMLElement | null;
@@ -227,19 +268,21 @@ onBeforeUnmount(() => {
                     <div><small>音程构成</small><strong>{{ chordFormula }}</strong></div>
                     <div><small>组成音</small><span class="chord-note-list"><i v-for="note in chordNotePitchClasses" :key="note" :style="noteColorStyle(note)">{{ NOTE_NAMES[note] }}</i></span></div>
                 </div>
-                <div class="shape"><small>指法 · 从六弦到一弦</small><span>{{ chordShape }}</span></div>
+                <button class="shape" title="点击编辑按法并识别和弦" @click="openChordFinder"><small>指法 · 点击编辑识别</small><span>{{ chordShape }}</span></button>
                 <div class="chord-list compact">
                     <button v-for="chord in CHORDS" :key="chord.suffix" :style="noteColorStyle(selectedRoot)" :class="{ current: chord.suffix === activeChord.suffix }" draggable="true" @dragstart="dragChord($event, chord)" @click="playChord(chord)">
                         {{ NOTE_NAMES[selectedRoot] }}<sup>{{ chord.suffix }}</sup>
                     </button>
                 </div>
-                <button class="replay" title="再次播放" aria-label="再次播放当前和弦" @click="playChord(activeChord)">↻</button>
+                <button class="replay" title="再次播放" aria-label="再次播放当前和弦" @click="replayActiveChord">↻</button>
             </section>
         </transition>
 
         <div class="keyboard-guide"><span><b>1–7</b> 调内和弦</span><span><b>A–'</b> 白键 · F = C4</span><span><b>Q–]</b> 黑键</span><small>编辑按法或输入文字时自动停用</small></div>
 
         <Arrangement :synth="synth" :tuning-id="tuningId" :root="selectedRoot" :chord-suffix="activeChord?.suffix ?? ''" />
+
+        <ChordEditor v-if="editingChord" :chord="editingChord" @close="editingChord = null" @save="saveChordFinder" />
 
         <footer>
             <span>EXTENDED KARPLUS–STRONG SYNTHESIS</span>
@@ -395,7 +438,8 @@ footer { display: flex; justify-content: space-between; align-items: center; pad
 .harmony small { display: block; margin-bottom: 6px; color: #a7a499; font-size: 8px; }
 .harmony strong, .harmony span { color: #8e603b; font-family: Georgia, serif; font-size: 13px; font-weight: 400; letter-spacing: 1px; }
 .harmony span { color: #55594f; font-size: 15px; }
-.shape { padding-left: 18px; border-left: 1px solid #e3ded4; white-space: nowrap; }
+.shape { padding: 5px 0 5px 18px; border: 0; border-left: 1px solid #e3ded4; background: transparent; white-space: nowrap; text-align: left; cursor: pointer; }
+.shape:hover span { color: #9b6c43; }
 .shape small { display: block; font-size: 8px; color: #a7a499; margin-bottom: 7px; }
 .shape span { font-family: monospace; color: #69695f; font-size: 11px; letter-spacing: 1px; }
 .active-chord .chord-list.compact { order: 20; flex-basis: 100%; }

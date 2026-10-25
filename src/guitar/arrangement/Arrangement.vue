@@ -4,9 +4,9 @@ import { CHORDS, NOTE_NAMES, TUNINGS, findVoicing, noteName, type ChordIdentity 
 import { noteColorStyle } from '../theory/noteColors';
 import type { GuitarSynth } from '../audio/GuitarSynth';
 import ChordEditor from './ChordEditor.vue';
-import { METERS, DEFAULT_PATTERN, patternById, patternsForMeter, fretForStep } from './patterns';
+import { METERS, DEFAULT_PATTERN, patternById, patternsForMeter } from './patterns';
 import { CURRENT_SONG_KEY, deleteArrangement, getArrangement, listArrangements, saveArrangement } from './store';
-import type { ArrangedChord, Arrangement, Measure } from './types';
+import type { ArrangedChord, Arrangement, Measure, MeasureChord, RhythmStep } from './types';
 
 const props = defineProps<{ tuningId: string; root: number; chordSuffix: string; synth: GuitarSynth }>();
 const LAST_PATTERN_KEY = 'guitar:last-rhythm-pattern';
@@ -16,7 +16,11 @@ const defaultPattern = (meter: string) => {
     const remembered = patternById(lastPattern.value);
     return remembered.meter === meter ? remembered.id : patternsForMeter(meter)[0].id;
 };
-const emptyMeasures = (meter: string) => Array.from({ length: 4 }, () => ({ id: uid(), chord: null, patternId: defaultPattern(meter) }));
+const meterBeats = (meter: string) => Number(meter.split('/')[0]);
+const emptyMeasure = (meter: string): Measure => ({
+    id: uid(), chords: [], lyrics: Array(meterBeats(meter)).fill(''), patternId: defaultPattern(meter), note: '',
+});
+const emptyMeasures = (meter: string) => Array.from({ length: 4 }, () => emptyMeasure(meter));
 const createSong = (index = 1): Arrangement => ({
     id: uid(), name: `未命名谱子 ${index}`, meter: '4/4', bpm: 80,
     tuningId: props.tuningId, measures: emptyMeasures('4/4'), updatedAt: Date.now(),
@@ -29,7 +33,9 @@ const ready = ref(false);
 const loading = ref(false);
 const saveState = ref('正在读取');
 const dragTarget = ref<string | null>(null);
+const dropBeat = ref(0);
 const editingMeasure = ref<Measure | null>(null);
+const editingBeat = ref(-1);
 const exporting = ref(false);
 const playbackState = ref<'stopped' | 'playing' | 'paused'>('stopped');
 const currentMeasure = ref(-1);
@@ -41,30 +47,50 @@ let saveTimer = 0;
 let transportTimer = 0;
 let transportAnchor = 0;
 let transportVersion = 0;
+
 const availablePatterns = computed(() => patternsForMeter(song.value.meter));
-const editingChord = computed(() => editingMeasure.value?.chord ?? null);
+const beatCount = computed(() => meterBeats(song.value.meter));
+const totalSteps = computed(() => availablePatterns.value[0].steps.length);
+const stepsPerBeat = computed(() => totalSteps.value / beatCount.value);
+const editingSlot = computed(() => editingMeasure.value?.chords.find(slot => slot.beat === editingBeat.value) ?? null);
+const editingChord = computed(() => editingSlot.value?.chord ?? null);
 const usedChords = computed(() => {
     const unique = new Map<string, ArrangedChord>();
-    song.value.measures.forEach(measure => {
-        if (measure.chord) unique.set(`${measure.chord.name}:${measure.chord.frets.join(',')}`, measure.chord);
-    });
+    song.value.measures.forEach(measure => measure.chords.forEach(slot => {
+        unique.set(`${slot.chord.name}:${slot.chord.frets.join(',')}`, slot.chord);
+    }));
     return [...unique.values()];
 });
 
-async function replaceSong(next: Arrangement) {
+function normalizeSong(input: Arrangement): Arrangement {
+    const next: Arrangement = JSON.parse(JSON.stringify(input));
+    const beats = meterBeats(next.meter);
+    next.measures = next.measures.map(measure => {
+        if (!Array.isArray(measure.chords)) {
+            measure.chords = measure.chord ? [{ id: uid(), beat: 0, chord: measure.chord }] : [];
+        }
+        const oldLyrics = Array.isArray(measure.lyrics) ? measure.lyrics : [measure.lyric ?? ''];
+        measure.lyrics = Array.from({ length: beats }, (_, index) => oldLyrics[index] ?? '');
+        measure.chords = measure.chords.filter(slot => slot.beat >= 0 && slot.beat < beats).sort((a, b) => a.beat - b.beat);
+        delete measure.chord;
+        delete measure.lyric;
+        return measure;
+    });
+    return next;
+}
+async function replaceSong(input: Arrangement) {
     stopPlayback();
     loading.value = true;
     window.clearTimeout(saveTimer);
-    song.value = JSON.parse(JSON.stringify(next));
+    const next = normalizeSong(input);
+    song.value = next;
     selectedId.value = next.id;
     localStorage.setItem(CURRENT_SONG_KEY, next.id);
     await nextTick();
     loading.value = false;
     saveState.value = '已保存';
 }
-async function refreshList() {
-    songs.value = await listArrangements();
-}
+async function refreshList() { songs.value = await listArrangements(); }
 async function persist() {
     if (!ready.value || loading.value) return;
     const snapshot: Arrangement = JSON.parse(JSON.stringify(song.value));
@@ -102,33 +128,63 @@ async function removeSong() {
     else await newSong();
 }
 function addMeasure() {
-    song.value.measures.push({ id: uid(), chord: null, patternId: defaultPattern(song.value.meter) });
+    const measure = emptyMeasure(song.value.meter);
+    song.value.measures.push(measure);
+    return measure;
 }
 function removeMeasure(measure: Measure) {
-    if (song.value.measures.length <= 1) return;
     song.value.measures = song.value.measures.filter(item => item.id !== measure.id);
 }
-function assignChord(measure: Measure, root: number, suffix: string) {
+function makeChord(root: number, suffix: string) {
     const definition = CHORDS.find(chord => chord.suffix === suffix);
-    if (!definition) return;
+    if (!definition) return null;
     const tuning = TUNINGS.find(item => item.id === props.tuningId) ?? TUNINGS[0];
     const voicing = findVoicing(root, definition, tuning.strings);
-    const chord: ArrangedChord = {
-        root, suffix, name: `${NOTE_NAMES[root]}${suffix}`,
-        frets: voicing.frets, midi: voicing.midi, strings: [...tuning.strings],
-    };
-    measure.chord = chord;
+    return { root, suffix, name: `${NOTE_NAMES[root]}${suffix}`, frets: voicing.frets, midi: voicing.midi, strings: [...tuning.strings] } as ArrangedChord;
+}
+function putChord(measure: Measure, chord: ArrangedChord, beat: number) {
+    const existing = measure.chords.find(slot => slot.beat === beat);
+    if (existing) existing.chord = JSON.parse(JSON.stringify(chord));
+    else measure.chords.push({ id: uid(), beat, chord: JSON.parse(JSON.stringify(chord)) });
+    measure.chords.sort((a, b) => a.beat - b.beat);
     song.value.tuningId = props.tuningId;
-    if (patternById(measure.patternId).meter !== song.value.meter) measure.patternId = defaultPattern(song.value.meter);
+}
+function assignChord(measure: Measure, root: number, suffix: string, beat = 0) {
+    const chord = makeChord(root, suffix);
+    if (chord) putChord(measure, chord, beat);
+}
+function firstOpenBeat(measure: Measure) {
+    const open = Array.from({ length: beatCount.value }, (_, beat) => beat).find(beat => !measure.chords.some(slot => slot.beat === beat));
+    return open ?? 0;
+}
+function readDrag(event: DragEvent) {
+    try {
+        return JSON.parse(event.dataTransfer?.getData('application/x-guitar-chord') || '') as { root?: number; suffix?: string; chord?: ArrangedChord };
+    } catch { return null; }
+}
+function applyDrop(event: DragEvent, measure: Measure, beat: number) {
+    const data = readDrag(event);
+    if (!data) return;
+    if (data.chord) putChord(measure, data.chord, beat);
+    else if (data.root !== undefined && data.suffix !== undefined) assignChord(measure, data.root, data.suffix, beat);
+}
+function hoverDrop(event: DragEvent, measure: Measure) {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    dropBeat.value = Math.max(0, Math.min(beatCount.value - 1, Math.floor((event.clientX - rect.left) / rect.width * beatCount.value)));
+    dragTarget.value = measure.id;
+    event.dataTransfer!.dropEffect = 'copy';
 }
 function dropChord(event: DragEvent, measure: Measure) {
     event.preventDefault();
+    hoverDrop(event, measure);
+    applyDrop(event, measure, dropBeat.value);
     dragTarget.value = null;
-    try {
-        const data = JSON.parse(event.dataTransfer?.getData('application/x-guitar-chord') || '') as { root?: number; suffix?: string; chord?: ArrangedChord };
-        if (data.chord) measure.chord = JSON.parse(JSON.stringify(data.chord));
-        else if (data.root !== undefined && data.suffix !== undefined) assignChord(measure, data.root, data.suffix);
-    } catch { /* 非本页面的拖入内容直接忽略。 */ }
+}
+function dropNewMeasure(event: DragEvent) {
+    event.preventDefault();
+    const measure = addMeasure();
+    applyDrop(event, measure, 0);
+    dragTarget.value = null;
 }
 function dragUsedChord(event: DragEvent, chord: ArrangedChord) {
     event.dataTransfer!.effectAllowed = 'copy';
@@ -138,26 +194,59 @@ function choosePattern(measure: Measure) {
     lastPattern.value = measure.patternId;
     localStorage.setItem(LAST_PATTERN_KEY, lastPattern.value);
 }
+function editChord(measure: Measure, slot: MeasureChord) {
+    editingMeasure.value = measure;
+    editingBeat.value = slot.beat;
+}
 function saveFingering(frets: Array<number | null>, midi: number[], identity: ChordIdentity) {
-    if (!editingMeasure.value?.chord) return;
-    editingMeasure.value.chord.frets = frets;
-    editingMeasure.value.chord.midi = midi;
-    editingMeasure.value.chord.root = identity.root;
-    editingMeasure.value.chord.suffix = identity.suffix;
-    editingMeasure.value.chord.name = identity.name;
+    const slot = editingSlot.value;
+    if (!slot) return;
+    slot.chord.frets = frets;
+    slot.chord.midi = midi;
+    slot.chord.root = identity.root;
+    slot.chord.suffix = identity.suffix;
+    slot.chord.name = identity.name;
     editingMeasure.value = null;
+    editingBeat.value = -1;
 }
-function normalizeBpm() {
-    song.value.bpm = Math.max(30, Math.min(240, Math.round(song.value.bpm || 80)));
+function slotDuration(measure: Measure, slot: MeasureChord) {
+    const next = measure.chords.find(candidate => candidate.beat > slot.beat);
+    return (next?.beat ?? beatCount.value) - slot.beat;
 }
-const stepDuration = computed(() => 60 / song.value.bpm / 2);
-const measureDuration = computed(() => patternsForMeter(song.value.meter)[0].steps.length * stepDuration.value);
-const totalDuration = computed(() => song.value.measures.length * measureDuration.value);
+function slotAtStep(measure: Measure, stepIndex: number) {
+    const beat = Math.floor(stepIndex / stepsPerBeat.value);
+    return [...measure.chords].reverse().find(slot => slot.beat <= beat) ?? null;
+}
+function stepAt(measure: Measure, stepIndex: number): RhythmStep | null {
+    const slot = slotAtStep(measure, stepIndex);
+    if (!slot) return null;
+    const localStep = stepIndex - slot.beat * stepsPerBeat.value;
+    return patternById(measure.patternId).steps[localStep] ?? null;
+}
+function tabMark(measure: Measure, stepIndex: number, string: number) {
+    const slot = slotAtStep(measure, stepIndex);
+    const step = stepAt(measure, stepIndex);
+    if (!slot || !step?.strings.includes(string)) return '';
+    if (step.slap || step.muted) return '×';
+    if (step.stroke) return '•';
+    const fret = slot.chord.frets[6 - string];
+    return fret === null || fret === undefined ? '×' : String(fret);
+}
+function strokeMark(measure: Measure, stepIndex: number) {
+    const step = stepAt(measure, stepIndex);
+    if (!step) return '·';
+    return step.slap ? '✕' : step.stroke === 'down' ? '↓' : step.stroke === 'up' ? '↑' : '·';
+}
+function openString(measure: Measure, string: number) {
+    const chord = measure.chords[0]?.chord;
+    return chord ? chord.strings[6 - string] : (TUNINGS.find(item => item.id === song.value.tuningId) ?? TUNINGS[0]).strings[6 - string];
+}
+function normalizeBpm() { song.value.bpm = Math.max(30, Math.min(240, Math.round(song.value.bpm || 80))); }
 
-function clearTransportClock() {
-    window.clearInterval(transportTimer);
-    transportTimer = 0;
-}
+const stepDuration = computed(() => 60 / song.value.bpm / 2);
+const measureDuration = computed(() => totalSteps.value * stepDuration.value);
+const totalDuration = computed(() => song.value.measures.length * measureDuration.value);
+function clearTransportClock() { window.clearInterval(transportTimer); transportTimer = 0; }
 function updateTransport() {
     const position = Math.max(0, props.synth.now - transportAnchor);
     playbackProgress.value = Math.min(1, position / Math.max(0.01, totalDuration.value));
@@ -165,45 +254,36 @@ function updateTransport() {
     currentStep.value = Math.floor((position % measureDuration.value) / stepDuration.value);
     if (position >= totalDuration.value) stopPlayback();
 }
-function startTransportClock() {
-    clearTransportClock();
-    transportTimer = window.setInterval(updateTransport, 40);
-    updateTransport();
-}
+function startTransportClock() { clearTransportClock(); transportTimer = window.setInterval(updateTransport, 40); updateTransport(); }
 async function schedulePlayback(offset: number, version: number) {
     await props.synth.resume();
     transportAnchor = props.synth.now + 0.2 - offset;
     for (let measureIndex = 0; measureIndex < song.value.measures.length; measureIndex++) {
         const measure = song.value.measures[measureIndex];
-        if (!measure.chord) continue;
-        const pattern = patternById(measure.patternId);
-        const chord = measure.chord;
-        for (let stepIndex = 0; stepIndex < pattern.steps.length; stepIndex++) {
-            const eventTime = measureIndex * measureDuration.value + stepIndex * stepDuration.value;
-            if (eventTime < offset - 0.001) continue;
-            const when = transportAnchor + eventTime;
-            const step = pattern.steps[stepIndex];
-            if (version !== transportVersion) return;
-            if (step.slap) {
-                await props.synth.slap(when);
-            } else if (step.stroke) {
-                await props.synth.strum({ frets: chord.frets, midi: chord.midi }, chord.strings, when, step.muted ? 0.22 : 0.82);
-            } else {
-                for (const string of step.strings) {
+        for (const slot of measure.chords) {
+            const chord = slot.chord;
+            const length = slotDuration(measure, slot) * stepsPerBeat.value;
+            const pattern = patternById(measure.patternId);
+            for (let localStep = 0; localStep < length; localStep++) {
+                const eventTime = measureIndex * measureDuration.value + (slot.beat * stepsPerBeat.value + localStep) * stepDuration.value;
+                if (eventTime < offset - 0.001) continue;
+                const when = transportAnchor + eventTime;
+                const step = pattern.steps[localStep];
+                if (!step || version !== transportVersion) return;
+                if (step.slap) await props.synth.slap(when);
+                else if (step.stroke) await props.synth.strum({ frets: chord.frets, midi: chord.midi }, chord.strings, when, step.muted ? 0.22 : 0.82);
+                else for (const string of step.strings) {
                     const stringIndex = 6 - string;
                     const fret = chord.frets[stringIndex];
                     if (fret === null || fret === undefined) continue;
-                    await props.synth.pluck(chord.strings[stringIndex] + fret, {
-                        stringIndex, when, velocity: 0.62,
-                        pan: (stringIndex - 2.5) * 0.055,
-                    });
+                    await props.synth.pluck(chord.strings[stringIndex] + fret, { stringIndex, when, velocity: 0.62, pan: (stringIndex - 2.5) * 0.055 });
                 }
             }
         }
     }
 }
 async function play() {
-    if (playbackState.value === 'playing') return;
+    if (playbackState.value === 'playing' || !song.value.measures.length) return;
     const offset = playbackState.value === 'paused' ? playbackOffset.value : 0;
     const version = ++transportVersion;
     playbackState.value = 'playing';
@@ -228,7 +308,6 @@ function stopPlayback() {
     clearTransportClock();
     props.synth.stopAll();
 }
-
 async function exportPng() {
     if (!sheetPaper.value || exporting.value) return;
     exporting.value = true;
@@ -236,9 +315,7 @@ async function exportPng() {
         await nextTick();
         const { default: html2canvas } = await import('html2canvas');
         const canvas = await html2canvas(sheetPaper.value, { backgroundColor: '#f8f6f0', scale: 2, useCORS: true });
-        const blob = await new Promise<Blob>((resolve, reject) => {
-            canvas.toBlob(value => value ? resolve(value) : reject(new Error('PNG 编码失败')), 'image/png');
-        });
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('PNG 编码失败')), 'image/png'));
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.download = `${song.value.name.replace(/[\\/:*?"<>|]/g, '_')}.png`;
@@ -247,14 +324,15 @@ async function exportPng() {
         link.click();
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } finally {
-        exporting.value = false;
-    }
+    } finally { exporting.value = false; }
 }
 
 watch(() => song.value.meter, meter => {
+    const beats = meterBeats(meter);
     song.value.measures.forEach(measure => {
         if (patternById(measure.patternId).meter !== meter) measure.patternId = defaultPattern(meter);
+        measure.chords = measure.chords.filter(slot => slot.beat < beats);
+        measure.lyrics = Array.from({ length: beats }, (_, index) => measure.lyrics[index] ?? '');
     });
 });
 watch(() => [song.value.meter, song.value.bpm, song.value.measures], () => { if (playbackState.value !== 'stopped') stopPlayback(); }, { deep: true });
@@ -274,10 +352,7 @@ onMounted(async () => {
     ready.value = true;
     saveState.value = '已自动保存';
 });
-onBeforeUnmount(() => {
-    window.clearTimeout(saveTimer);
-    stopPlayback();
-});
+onBeforeUnmount(() => { window.clearTimeout(saveTimer); stopPlayback(); });
 </script>
 
 <template>
@@ -290,7 +365,6 @@ onBeforeUnmount(() => {
                 <button class="export" :disabled="exporting" @click="exportPng">{{ exporting ? '导出中…' : '导出图片' }}</button>
             </div>
         </header>
-
         <div class="song-controls">
             <input v-model="song.name" class="song-name" aria-label="谱子名称" maxlength="60">
             <label>节拍<select v-model="song.meter"><option v-for="meter in METERS" :key="meter" :value="meter">{{ meter }}</option></select></label>
@@ -301,43 +375,36 @@ onBeforeUnmount(() => {
                 <button :disabled="playbackState === 'stopped'" @click="stopPlayback">■ <span>停止</span></button>
                 <span class="transport-position">{{ currentMeasure < 0 ? '—' : currentMeasure + 1 }} / {{ song.measures.length }}</span>
             </div>
-            <span class="save-state"><i></i>{{ saveState }}</span>
-            <span class="drag-reminder">拖拽和弦到谱面小节</span>
-            <div class="transport-progress" :class="{ active: playbackState !== 'stopped' }"><i :style="{ width: `${playbackProgress * 100}%` }"></i></div>
+            <span class="save-state"><i></i>{{ saveState }}</span><span class="drag-reminder">拖到拍点，或拖到末尾新增小节</span>
+            <div class="transport-progress"><i :style="{ width: `${playbackProgress * 100}%` }"></i></div>
         </div>
-
         <div ref="sheetPaper" class="sheet-paper" :class="{ exporting }">
             <div class="sheet-meta"><strong>{{ song.name }}</strong><div v-if="usedChords.length" class="used-chords"><small>本谱和弦</small><div><button v-for="chord in usedChords" :key="`${chord.name}:${chord.frets.join(',')}`" draggable="true" :style="noteColorStyle(chord.root)" title="拖动此按法到小节" @dragstart="dragUsedChord($event, chord)">{{ chord.name }}</button></div></div><span>{{ song.meter }} · ♩ = {{ song.bpm }} · {{ TUNINGS.find(t => t.id === song.tuningId)?.name }}</span></div>
-            <div class="measure-grid">
-                <article
-                    v-for="(measure, index) in song.measures" :key="measure.id" class="measure"
-                    :class="{ 'drag-over': dragTarget === measure.id, empty: !measure.chord, playing: currentMeasure === index && playbackState !== 'stopped' }"
-                    @dragover.prevent="dragTarget = measure.id" @dragleave="dragTarget = null" @drop="dropChord($event, measure)"
-                >
-                    <div class="measure-number">{{ String(index + 1).padStart(2, '0') }}<button v-if="song.measures.length > 1" title="删除小节" @click="removeMeasure(measure)">×</button></div>
-                    <template v-if="measure.chord">
-                        <button class="fingering-button" title="编辑和弦按法" @click="editingMeasure = measure">
-                            <strong :style="noteColorStyle(measure.chord.root)">{{ measure.chord.name }}</strong><span>{{ measure.chord.frets.map(f => f === null ? '×' : f).join(' ') }}</span><i>编辑按法</i>
+            <div class="measure-grid" :class="{ 'no-measures': !song.measures.length }">
+                <article v-for="(measure, index) in song.measures" :key="measure.id" class="measure"
+                    :class="{ 'drag-over': dragTarget === measure.id, empty: !measure.chords.length, playing: currentMeasure === index && playbackState !== 'stopped' }"
+                    @dragover.prevent="hoverDrop($event, measure)" @dragleave="dragTarget = null" @drop="dropChord($event, measure)">
+                    <div class="measure-number">{{ String(index + 1).padStart(2, '0') }}<button title="删除小节" @click="removeMeasure(measure)">×</button></div>
+                    <div class="chord-lane">
+                        <button v-if="!measure.chords.length" class="empty-chord" @click="assignChord(measure, root, chordSuffix, firstOpenBeat(measure))">＋ 和弦</button>
+                        <button v-for="slot in measure.chords" :key="slot.id" class="fingering-button" :style="{ left: `${slot.beat / beatCount * 100}%`, width: `${slotDuration(measure, slot) / beatCount * 100}%` }" title="编辑和弦按法" @click="editChord(measure, slot)">
+                            <strong :style="noteColorStyle(slot.chord.root)">{{ slot.chord.name }}</strong><i>编辑</i>
                         </button>
-                        <select v-model="measure.patternId" class="pattern-select" aria-label="节奏型" @change="choosePattern(measure)">
-                            <option v-for="pattern in availablePatterns" :key="pattern.id" :value="pattern.id">{{ pattern.name }}</option>
-                        </select>
-                        <div class="tab-staff" :style="{ '--steps': patternById(measure.patternId).steps.length }">
-                            <div v-for="string in 6" :key="string" class="tab-row">
-                                <span class="tab-string-name" :style="noteColorStyle(measure.chord.strings[6 - string])">{{ noteName(measure.chord.strings[6 - string]) }}</span>
-                                <div class="tab-line"></div>
-                                <div v-for="(step, stepIndex) in patternById(measure.patternId).steps" :key="stepIndex" class="tab-step" :class="{ current: currentMeasure === index && currentStep === stepIndex && playbackState !== 'stopped' }">
-                                    <b v-if="step.strings.includes(string)" :class="{ strum: step.stroke }">{{ step.slap ? '×' : step.stroke ? (step.muted ? '×' : '•') : fretForStep(string, measure.chord.frets) }}</b>
-                                </div>
-                            </div>
-                            <div class="stroke-row"><span>♪</span><i v-for="(step, stepIndex) in patternById(measure.patternId).steps" :key="stepIndex" :class="{ current: currentMeasure === index && currentStep === stepIndex && playbackState !== 'stopped' }">{{ step.slap ? '✕' : step.stroke === 'down' ? '↓' : step.stroke === 'up' ? '↑' : '·' }}</i></div>
+                        <button v-if="measure.chords.length && measure.chords.length < beatCount" class="add-beat-chord" title="在空闲拍添加当前和弦" @click="assignChord(measure, root, chordSuffix, firstOpenBeat(measure))">＋</button>
+                    </div>
+                    <select v-model="measure.patternId" class="pattern-select" aria-label="节奏型" @change="choosePattern(measure)"><option v-for="pattern in availablePatterns" :key="pattern.id" :value="pattern.id">{{ pattern.name }}</option></select>
+                    <div class="tab-staff" :style="{ '--steps': totalSteps }">
+                        <div v-for="string in 6" :key="string" class="tab-row">
+                            <span class="tab-string-name" :style="noteColorStyle(openString(measure, string))">{{ noteName(openString(measure, string)) }}</span><div class="tab-line"></div>
+                            <div v-for="stepIndex in totalSteps" :key="stepIndex" class="tab-step" :class="{ current: currentMeasure === index && currentStep === stepIndex - 1 && playbackState !== 'stopped' }"><b v-if="tabMark(measure, stepIndex - 1, string)" :class="{ strum: stepAt(measure, stepIndex - 1)?.stroke }">{{ tabMark(measure, stepIndex - 1, string) }}</b></div>
                         </div>
-                        <input v-model="measure.lyric" class="measure-lyric" placeholder="歌词" aria-label="小节歌词">
-                        <input v-model="measure.note" class="measure-note" placeholder="备注" aria-label="小节备注">
-                    </template>
-                    <button v-else class="empty-measure" title="拖入和弦，或先点击上方和弦再点击此处" @click="assignChord(measure, root, chordSuffix)"><span>＋</span><strong>拖入或点击放入</strong><small>DROP CHORD HERE</small></button>
+                        <div class="stroke-row"><span>♪</span><i v-for="stepIndex in totalSteps" :key="stepIndex" :class="{ current: currentMeasure === index && currentStep === stepIndex - 1 && playbackState !== 'stopped' }">{{ strokeMark(measure, stepIndex - 1) }}</i></div>
+                    </div>
+                    <div class="lyric-grid" :style="{ gridTemplateColumns: `repeat(${beatCount}, minmax(0, 1fr))` }"><input v-for="beat in beatCount" :key="beat" v-model="measure.lyrics[beat - 1]" class="measure-lyric" :placeholder="`第${beat}拍歌词`" :aria-label="`第${index + 1}小节第${beat}拍歌词`"></div>
+                    <input v-model="measure.note" class="measure-note" placeholder="备注" aria-label="小节备注">
+                    <div v-if="dragTarget === measure.id" class="drop-preview" :style="{ left: `${dropBeat / beatCount * 100}%`, width: `${100 / beatCount}%` }"><span>第 {{ dropBeat + 1 }} 拍</span></div>
                 </article>
-                <button class="add-measure" @click="addMeasure"><span>＋</span>添加小节</button>
+                <button class="add-measure" :class="{ 'drag-over': dragTarget === 'new' }" @click="addMeasure" @dragover.prevent="dragTarget = 'new'" @dragleave="dragTarget = null" @drop="dropNewMeasure"><span>＋</span>{{ song.measures.length ? '添加小节 / 拖入和弦自动新增' : '没有小节，拖入和弦自动创建' }}</button>
             </div>
             <div class="sheet-footer"><span>ACOUSTIC SONGBOOK</span><span>{{ song.measures.length }} MEASURES</span></div>
         </div>
@@ -438,6 +505,22 @@ onBeforeUnmount(() => {
 .measure-lyric:focus, .measure-note:focus { border-bottom-color: #b7926d; background: #faf6ed; }
 .measure-lyric::placeholder, .measure-note::placeholder { color: #c2baab; }
 .sheet-footer { display: flex; justify-content: space-between; margin-top: 18px; color: #b0aa9d; font-size: 6px; letter-spacing: 1.4px; }
+
+.chord-lane { position: relative; height: 30px; margin: 4px 0 5px; }
+.chord-lane .fingering-button { position: absolute; top: 0; height: 28px; margin: 0; padding: 0 4px; overflow: hidden; white-space: nowrap; }
+.chord-lane .fingering-button strong { overflow: hidden; font-size: 16px; text-overflow: ellipsis; }
+.chord-lane .fingering-button i { position: absolute; right: 3px; bottom: 0; font-size: 6px; }
+.empty-chord { height: 27px; padding: 0; border: 0; background: transparent; color: #b4aa99; font-size: 9px; cursor: pointer; }
+.add-beat-chord { position: absolute; right: 0; top: 1px; width: 20px; height: 24px; border: 0; background: transparent; color: #b4a893; cursor: pointer; opacity: 0; }
+.chord-lane:hover .add-beat-chord { opacity: 1; }
+.lyric-grid { display: grid; margin-top: 5px; }
+.lyric-grid .measure-lyric { min-width: 0; margin: 0; padding: 3px 2px; border-right: 1px dotted #e1d8c9; font-size: 8px; }
+.lyric-grid .measure-lyric:last-child { border-right: 0; }
+.drop-preview { position: absolute; z-index: 6; top: 0; bottom: 0; border-left: 2px solid #a8764c; background: #b8895612; pointer-events: none; }
+.drop-preview span { position: absolute; top: 34px; left: 3px; padding: 2px 4px; border-radius: 3px; background: #a8764c; color: white; font-size: 7px; white-space: nowrap; }
+.add-measure.drag-over { background: #f1e5d4; color: #93633d; box-shadow: inset 0 0 0 1px #b38b60; }
+.no-measures .add-measure { min-height: 160px; border: 1px dashed #cbbca7; text-align: center; }
+.measure.empty .tab-staff { opacity: .58; }
 @media (max-width: 1100px) { .arranger-heading { align-items: flex-start; flex-direction: column; } .library-actions { width: 100%; } .library-actions label { flex: 1; } .library-actions select { width: 100%; } .measure-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 650px) { .arranger { margin-top: 30px; padding-top: 24px; } .arranger-heading h2 { font-size: 24px; } .library-actions { flex-wrap: wrap; } .library-actions label { flex-basis: 100%; } .song-controls { flex-wrap: wrap; gap: 10px; }
 .transport { display: flex; align-items: center; gap: 4px; padding-left: 14px; border-left: 1px solid #e2ded4; }
