@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { GuitarSynth } from './audio/GuitarSynth';
 import {
-    CHORDS, MAX_FRET, NOTE_NAMES, OPEN_STRINGS, STRING_NAMES,
+    CHORDS, MAX_FRET, NOTE_NAMES, TUNINGS,
     findVoicing, noteName, pitchClass, scalePitchClasses, voicingLabel,
     type ChordDefinition,
 } from './theory/chords';
@@ -10,22 +10,29 @@ import {
 const synth = new GuitarSynth();
 const keys = [0, 2, 4, 5, 7, 9, 11];
 const tonic = ref(0);
+const tuningId = ref('standard');
 const showScale = ref(true);
 const selectedRoot = ref(0);
 const activeChord = ref<ChordDefinition | null>(null);
-const activeVoicing = ref<number[]>([]);
 const volume = ref(0.8);
 const playing = ref<number | null>(null);
 let playingTimer = 0;
 
+const tuning = computed(() => TUNINGS.find(item => item.id === tuningId.value) ?? TUNINGS[0]);
+const displayStrings = computed(() => tuning.value.strings.map((midi, stringIndex) => ({
+    midi, stringIndex, number: 6 - stringIndex,
+})).reverse());
 const scaleNotes = computed(() => scalePitchClasses(tonic.value));
 const chordTones = computed(() => activeChord.value
     ? new Set(activeChord.value.intervals.map(interval => (selectedRoot.value + interval) % 12))
     : null);
 const selectedChordName = computed(() => `${NOTE_NAMES[selectedRoot.value]}${activeChord.value?.suffix ?? ''}`);
 const chordShape = computed(() => activeChord.value
-    ? voicingLabel(findVoicing(selectedRoot.value, activeChord.value).frets)
+    ? voicingLabel(findVoicing(selectedRoot.value, activeChord.value, tuning.value.strings).frets)
     : '');
+const intervalNames: Record<number, string> = { 0: '1', 3: '♭3', 4: '3', 5: '4', 7: '5', 10: '♭7', 11: '7', 14: '9' };
+const chordFormula = computed(() => activeChord.value?.intervals.map(interval => intervalNames[interval]).join(' · ') ?? '');
+const chordNotes = computed(() => activeChord.value?.intervals.map(interval => NOTE_NAMES[(selectedRoot.value + interval) % 12]).join(' · ') ?? '');
 const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i);
 const markers = [3, 5, 7, 9, 15, 17, 19];
 
@@ -43,21 +50,18 @@ function flash(midi: number) {
 async function playNote(midi: number, stringIndex: number) {
     selectedRoot.value = pitchClass(midi);
     activeChord.value = null;
-    activeVoicing.value = [];
     flash(midi);
     await synth.pluck(midi, { stringIndex });
 }
 async function playChord(chord: ChordDefinition) {
     activeChord.value = chord;
-    const voicing = findVoicing(selectedRoot.value, chord);
-    activeVoicing.value = voicing.midi;
-    await synth.strum(voicing.midi);
+    const voicing = findVoicing(selectedRoot.value, chord, tuning.value.strings);
+    await synth.strum(voicing, tuning.value.strings);
 }
 function selectKey(key: number) {
     tonic.value = key;
     selectedRoot.value = key;
     activeChord.value = null;
-    activeVoicing.value = [];
 }
 function changeVolume() {
     synth.setVolume(volume.value);
@@ -76,9 +80,9 @@ onBeforeUnmount(() => {
                 <h1>钢弦之上<span>，</span><em>自由发声。</em></h1>
                 <p class="subtitle">一块可以弹奏的指板。找到音，听见和弦。</p>
             </div>
-            <div class="standard-tuning" aria-label="标准调弦">
-                <span>STANDARD TUNING</span>
-                <strong>E · A · D · G · B · E</strong>
+            <div class="standard-tuning" :aria-label="tuning.name">
+                <span>{{ tuning.name.toUpperCase() }} · 6 → 1</span>
+                <strong>{{ tuning.strings.map(noteName).join(' · ') }}</strong>
             </div>
         </header>
 
@@ -102,6 +106,15 @@ onBeforeUnmount(() => {
                 <input v-model.number="volume" type="range" min="0" max="1" step="0.05" aria-label="音量" @input="changeVolume">
             </label>
         </section>
+        <section class="tuning-bar" aria-label="调弦设置">
+            <span class="tuning-label">调弦 <small>TUNING</small></span>
+            <div class="tuning-options">
+                <button v-for="item in TUNINGS" :key="item.id" :class="{ selected: tuningId === item.id }" @click="tuningId = item.id">
+                    {{ item.name }}<small>{{ item.description }}</small>
+                </button>
+            </div>
+            <span class="tuning-note">切换后，音名与和弦指法会自动适配</span>
+        </section>
 
         <section class="instrument-panel">
             <div class="panel-heading">
@@ -116,28 +129,28 @@ onBeforeUnmount(() => {
                     </div>
                     <div class="neck">
                         <div class="string-labels" aria-hidden="true">
-                            <span v-for="(name, i) in STRING_NAMES" :key="i"><b>{{ name }}</b><small>{{ i + 1 }}</small></span>
+                            <span v-for="string in displayStrings" :key="string.stringIndex"><b>{{ noteName(string.midi) }}</b><small>{{ string.number }}</small></span>
                         </div>
                         <div class="fret-grid">
-                            <template v-for="(openMidi, stringIndex) in OPEN_STRINGS" :key="stringIndex">
-                                <div v-for="fret in frets" :key="fret" class="fret-cell" :class="[`string-${stringIndex}`, { open: fret === 0 }]">
+                            <template v-for="(string, rowIndex) in displayStrings" :key="string.stringIndex">
+                                <div v-for="fret in frets" :key="fret" class="fret-cell" :class="[`string-${rowIndex}`, { open: fret === 0 }]">
                                     <i v-if="fret === 1" class="fret-marker" :class="{
                                         'double-top': fret === 12,
                                         'double-bottom': fret === 12,
                                     }"></i>
                                     <button
                                         class="note-hit"
-                                        :class="{ 'is-playing': playing === openMidi + fret }"
-                                        :aria-label="`${stringIndex + 1}弦 ${fret}品 ${noteName(openMidi + fret)}`"
-                                        @click="playNote(openMidi + fret, stringIndex)"
+                                        :class="{ 'is-playing': playing === string.midi + fret }"
+                                        :aria-label="`${string.number}弦 ${fret}品 ${noteName(string.midi + fret)}`"
+                                        @click="playNote(string.midi + fret, string.stringIndex)"
                                     >
-                                        <span v-if="isVisible(openMidi + fret)" class="note" :class="{
-                                            tonic: pitchClass(openMidi + fret) === tonic,
-                                            dimmed: isDimmed(openMidi + fret),
-                                            'chord-tone': chordTones?.has(pitchClass(openMidi + fret)),
-                                        }">{{ noteName(openMidi + fret) }}</span>
+                                        <span v-if="isVisible(string.midi + fret)" class="note" :class="{
+                                            tonic: pitchClass(string.midi + fret) === tonic,
+                                            dimmed: isDimmed(string.midi + fret),
+                                            'chord-tone': chordTones?.has(pitchClass(string.midi + fret)),
+                                        }">{{ noteName(string.midi + fret) }}</span>
                                     </button>
-                                    <span class="guitar-string" :class="`gauge-${stringIndex}`"></span>
+                                    <span class="guitar-string" :class="`gauge-${rowIndex}`"></span>
                                 </div>
                             </template>
                         </div>
@@ -175,6 +188,10 @@ onBeforeUnmount(() => {
             <section v-if="activeChord" class="chord-panel active-chord" aria-label="当前和弦">
                 <div class="now-playing"><span>NOW PLAYING</span><i></i><i></i><i></i><i></i></div>
                 <div class="current-chord"><strong>{{ selectedChordName }}</strong><span>{{ activeChord.name }}</span></div>
+                <div class="harmony">
+                    <div><small>音程构成</small><strong>{{ chordFormula }}</strong></div>
+                    <div><small>组成音</small><span>{{ chordNotes }}</span></div>
+                </div>
                 <div class="shape"><small>指法 · 从六弦到一弦</small><span>{{ chordShape }}</span></div>
                 <div class="chord-list compact">
                     <button v-for="chord in CHORDS" :key="chord.suffix" :class="{ current: chord.suffix === activeChord.suffix }" @click="playChord(chord)">
@@ -236,7 +253,18 @@ h1 em { color: #77796e; font-style: normal; }
 .volume-control svg { width: 17px; height: 17px; stroke: #96988f; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .volume-control input { appearance: none; width: 65px; height: 3px; background: #d8d6cd; border-radius: 4px; accent-color: #a47146; }
 .volume-control input::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; background: #a47146; border-radius: 50%; }
-.instrument-panel { margin-top: 22px; border-radius: 13px; background: #fff; border: 1px solid #deddd5; overflow: hidden; box-shadow: 0 12px 34px #3d342a0a; }
+
+.tuning-bar { display: flex; align-items: center; gap: 18px; margin-top: 12px; padding: 11px 18px; border: 1px solid #e4e2da; border-radius: 10px; background: rgba(255,255,255,.55); }
+.tuning-label { color: #565a51; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.tuning-label small { display: block; margin-top: 4px; color: #a0a198; font-size: 7px; letter-spacing: 1.3px; font-weight: 500; }
+.tuning-options { display: flex; gap: 6px; }
+.tuning-options button { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #66695f; cursor: pointer; font-size: 11px; transition: .18s; }
+.tuning-options button small { color: #a3a298; font-family: Georgia, serif; font-size: 8px; letter-spacing: .5px; }
+.tuning-options button:hover { background: #f2eee6; }
+.tuning-options button.selected { border-color: #d5c1a8; background: #f1e9dd; color: #8e603b; }
+.tuning-options button.selected small { color: #a47c55; }
+.tuning-note { margin-left: auto; color: #aaa99f; font-size: 9px; white-space: nowrap; }
+.instrument-panel { margin-top: 14px; border-radius: 13px; background: #fff; border: 1px solid #deddd5; overflow: hidden; box-shadow: 0 12px 34px #3d342a0a; }
 .panel-heading { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid #e6e3db; background: #faf9f6; }
 .panel-heading > div { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #4c5048; }
 .panel-heading small { font-size: 8px; letter-spacing: 1.5px; color: #a09f96; font-weight: 500; margin-left: 4px; }
@@ -292,7 +320,7 @@ h1 em { color: #77796e; font-style: normal; }
 .chord-root { display: grid; grid-template-columns: auto auto auto; align-items: baseline; column-gap: 5px; min-width: 135px; color: #85877e; font-size: 11px; }
 .chord-root strong { color: #9b6a41; font-family: Georgia, serif; font-size: 29px; font-weight: 400; }
 .chord-root small { grid-column: 1 / -1; color: #aaa99f; font-size: 7px; letter-spacing: 1.3px; margin-top: 3px; }
-.chord-list { display: grid; grid-template-columns: repeat(7, minmax(74px, 1fr)); gap: 8px; flex: 1; }
+.chord-list { display: grid; grid-template-columns: repeat(8, minmax(68px, 1fr)); gap: 8px; flex: 1; }
 .chord-list button { min-height: 56px; padding: 7px 9px; border: 1px solid #e1ded4; border-radius: 7px; background: #faf9f6; color: #4c5048; cursor: pointer; transition: .18s; }
 .chord-list button:hover, .chord-list button.current { border-color: #b28a62; background: #f3ebdf; transform: translateY(-1px); }
 .chord-list button > span { font-family: Georgia, serif; font-size: 17px; }
@@ -301,7 +329,7 @@ h1 em { color: #77796e; font-style: normal; }
 .chord-tip { border-left: 1px solid #e5e2d9; padding-left: 19px; color: #919289; font-size: 10px; line-height: 1.7; white-space: nowrap; }
 .chord-tip > span { color: #ac8059; margin-right: 5px; }
 .chord-tip small { font-size: 8px; color: #b0afa6; }
-.active-chord { gap: 20px; background: #fdfbf6; border-color: #d7c4ab; }
+.active-chord { gap: 16px 20px; flex-wrap: wrap; background: #fdfbf6; border-color: #d7c4ab; }
 .now-playing { display: flex; align-items: flex-end; gap: 2px; height: 28px; color: #a47b53; }
 .now-playing span { font-size: 7px; letter-spacing: 1px; align-self: center; margin-right: 5px; writing-mode: vertical-rl; }
 .now-playing i { width: 2px; height: 12px; background: #b18a62; animation: equalize .6s ease-in-out infinite alternate; }
@@ -311,9 +339,16 @@ h1 em { color: #77796e; font-style: normal; }
 .current-chord { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .current-chord strong { font-family: Georgia, serif; font-size: 32px; color: #8e603b; font-weight: 400; }
 .current-chord span { font-size: 10px; color: #96958b; }
+
+.harmony { display: flex; align-items: center; gap: 22px; padding-left: 18px; border-left: 1px solid #e3ded4; }
+.harmony > div { white-space: nowrap; }
+.harmony small { display: block; margin-bottom: 6px; color: #a7a499; font-size: 8px; }
+.harmony strong, .harmony span { color: #8e603b; font-family: Georgia, serif; font-size: 13px; font-weight: 400; letter-spacing: 1px; }
+.harmony span { color: #55594f; font-size: 15px; }
 .shape { padding-left: 18px; border-left: 1px solid #e3ded4; white-space: nowrap; }
 .shape small { display: block; font-size: 8px; color: #a7a499; margin-bottom: 7px; }
 .shape span { font-family: monospace; color: #69695f; font-size: 11px; letter-spacing: 1px; }
+.active-chord .chord-list.compact { order: 20; flex-basis: 100%; }
 .chord-list.compact button { min-height: 38px; font-family: Georgia, serif; font-size: 14px; }
 .replay { flex: 0 0 35px; height: 35px; border: 1px solid #d8c6b0; border-radius: 50%; background: transparent; color: #9e7149; font-size: 20px; cursor: pointer; }
 footer { display: flex; align-items: center; gap: 18px; padding: 24px 3px 0; color: #a7a69d; font-size: 9px; }
@@ -329,6 +364,8 @@ footer p { margin: 0; }
     .control-bar { gap: 18px; }
     .chord-tip { display: none; }
     .shape { display: none; }
+    .tuning-note { display: none; }
+    .tuning-options button small { display: none; }
 }
 @media (max-width: 760px) {
     .studio { width: calc(100% - 24px); padding-top: 24px; }
@@ -341,10 +378,15 @@ footer p { margin: 0; }
     .key-buttons { flex: 1; justify-content: space-between; }
     .volume-control { margin-left: auto; }
     .panel-heading small, .panel-heading p { display: none; }
+    .tuning-bar { align-items: flex-start; gap: 12px; padding: 12px; overflow-x: auto; }
+    .tuning-options { flex: 1; justify-content: space-between; }
+    .tuning-options button { padding: 7px 9px; white-space: nowrap; }
+    .harmony { order: 5; flex-basis: 100%; border-left: 0; border-top: 1px solid #e8e2d8; padding: 12px 0 0; justify-content: flex-start; gap: 35px; }
+    .active-chord .chord-list.compact { order: 20; }
     .chord-panel { align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 15px; }
     .chord-root { min-width: 115px; }
     .chord-list { order: 3; flex-basis: 100%; grid-template-columns: repeat(4, 1fr); }
-    .active-chord .chord-list { grid-template-columns: repeat(7, 1fr); overflow-x: auto; }
+    .active-chord .chord-list { grid-template-columns: repeat(8, 1fr); overflow-x: auto; }
     .active-chord .chord-list button { min-width: 50px; }
     .replay { margin-left: auto; }
     footer > span:first-child { display: none; }
