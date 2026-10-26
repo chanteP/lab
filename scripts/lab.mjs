@@ -9,8 +9,10 @@
 //   node scripts/lab.mjs serve [--port 8501]          本地静态预览 docs/
 import { createServer as createHttpServer } from 'node:http';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, createReadStream } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { extname, join } from 'node:path';
 import { build, createServer } from 'vite';
+import { build as bundle } from 'esbuild';
 import { pageConfig, rootDir } from './vite.mjs';
 import { fullHTML, readPageMeta } from './page-html.mjs';
 
@@ -51,6 +53,28 @@ function requirePage() {
     return page;
 }
 
+function findSpecs(dir) {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        return entry.isDirectory() ? findSpecs(path) : entry.name.endsWith('.spec.ts') ? [path] : [];
+    });
+}
+
+// Page-local specs are lab infrastructure: a failed processing test must never publish stale output.
+async function runPageSpecs(page) {
+    const specs = findSpecs(join(rootDir, 'src', page));
+    for (const spec of specs) {
+        const name = spec.slice(join(rootDir, 'src', page).length + 1).replaceAll(/[\\/]/g, '-').replace(/\.ts$/, '.mjs');
+        const outfile = join(rootDir, '.temp', 'spec', page, name);
+        mkdirSync(join(outfile, '..'), { recursive: true });
+        await bundle({ entryPoints: [spec], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['@wasmedia/wlibraw'], logLevel: 'silent' });
+        console.log(`[lab] spec ${page}: ${name}`);
+        const result = spawnSync(process.execPath, ['--test', outfile], { stdio: 'inherit' });
+        if (result.status !== 0) throw new Error(`Page spec failed: ${spec}`);
+    }
+}
+
 const commands = {
     list() {
         for (const page of listPages()) {
@@ -76,6 +100,7 @@ const commands = {
 
     async build() {
         const page = requirePage();
+        await runPageSpecs(page);
         const outDir = flags.out ? join(rootDir, flags.out) : undefined;
         const target = outDir ?? join(rootDir, 'docs', page);
         console.log(`[lab] build ${page} -> ${target}`);

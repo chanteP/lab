@@ -1,0 +1,14 @@
+{
+    "title": "Camera Raw Lab — Browser RAW Photo Editor",
+    "description": "Edit RAW, JPEG and PNG photos locally with professional color controls, curves, histogram, Camera Raw XMP presets, DNG saving and JPEG export.",
+    "keywords": "RAW editor, Camera Raw, WebGL, DNG, ARW, photo color grading, XMP presets",
+    "robots": "index, follow",
+    "canonical": "https://lab.neetproject.com/cameraRaw/index.html",
+    "og:title": "Camera Raw Lab — Browser RAW Photo Editor",
+    "og:type": "website",
+    "og:url": "https://lab.neetproject.com/cameraRaw/index.html",
+    "og:description": "A local-first RAW and color editing workspace with curves, HSL, calibration, histogram and batch editing.",
+    "twitter:card": "summary",
+    "twitter:title": "Camera Raw Lab",
+    "twitter:description": "Professional browser-based RAW development and color editing."
+}

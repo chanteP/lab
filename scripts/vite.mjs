@@ -94,6 +94,8 @@ export function pageConfig(page, { outDir } = {}) {
             alias: { '@': join(rootDir, 'src') },
         },
         assetsInclude: ['**/*.glb', '**/*.gltf', '**/*.skel', '**/*.atlas', '**/*.wasm', '**/*.wat'],
+        // LibRaw uses ES-module workers and a separately emitted WASM asset.
+        ...(page === 'cameraRaw' ? { worker: { format: 'es' } } : {}),
         build: {
             outDir: outDir ?? join(rootDir, 'docs', page),
             emptyOutDir: true,
