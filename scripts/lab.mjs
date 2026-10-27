@@ -121,6 +121,33 @@ const commands = {
         const esc = (s) =>
             String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+        const latestFileTime = (dir) => {
+            if (!existsSync(dir)) return 0;
+            return readdirSync(dir, { withFileTypes: true }).reduce((latest, entry) => {
+                const path = join(dir, entry.name);
+                const mtime = entry.isDirectory() ? latestFileTime(path) : statSync(path).mtimeMs;
+                return Math.max(latest, mtime);
+            }, statSync(dir).mtimeMs);
+        };
+
+        const pageDates = (page) => {
+            const history = spawnSync('git', ['log', '--format=%aI', '--', `src/${page}`, `docs/${page}`], {
+                cwd: rootDir,
+                encoding: 'utf8',
+            });
+            const commits = history.status === 0 ? history.stdout.trim().split('\n').filter(Boolean) : [];
+            const fallbackTime = Math.max(latestFileTime(join(rootDir, 'src', page)), latestFileTime(join(docsDir, page)));
+            const fallback = fallbackTime ? new Date(fallbackTime).toISOString() : null;
+            return {
+                createdAt: commits.at(-1) ?? fallback,
+                modifiedAt: commits[0] ?? fallback,
+            };
+        };
+
+        const dateText = (date) => date?.slice(0, 10) ?? '—';
+        const timeTag = (date) =>
+            date ? `<time datetime="${date}">${dateText(date)}</time>` : `<span>${dateText(date)}</span>`;
+
         // 备注来自 src/<page>/meta.json 的 title/description，面向访客，不含个人信息
         const pages = routes.map((page) => {
             const meta = readPageMeta(page);
@@ -134,11 +161,22 @@ const commands = {
         const tools = pages.filter((p) => p.seo);
         const experiments = pages.filter((p) => !p.seo);
 
-        const card = ({ page, title, description }) => `        <a class="card" href="${page}/">
-            <h3>${esc(title)}</h3>
-            ${description ? `<p>${esc(description)}</p>` : ''}
-            <span class="path">/${page}/</span>
+        const card = ({ page, title, description }) => {
+            const { createdAt, modifiedAt } = pageDates(page);
+            return `        <a class="card" href="${page}/">
+            <div class="card-content">
+                <h3>${esc(title)}</h3>
+                ${description ? `<p>${esc(description)}</p>` : ''}
+            </div>
+            <div class="card-footer">
+                <span class="path">/${page}/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span>${timeTag(createdAt)}</span>
+                    <span class="date"><span class="date-label">Updated</span>${timeTag(modifiedAt)}</span>
+                </div>
+            </div>
         </a>`;
+        };
 
         const section = (name, list) =>
             list.length
@@ -195,8 +233,10 @@ ${section('Experiments', experiments)}
     gap: 14px;
 }
 .site-index .card {
-    display: block;
+    display: flex;
+    flex-direction: column;
     box-sizing: border-box;
+    min-height: 176px;
     padding: 18px 20px 14px;
     background: #fff;
     border: 1px solid #ececec;
@@ -226,12 +266,45 @@ ${section('Experiments', experiments)}
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.site-index .card-content {
+    margin-bottom: 16px;
+}
+.site-index .card-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #f0f1f4;
+}
 .site-index .card .path {
-    display: inline-block;
-    margin-top: 12px;
-    font-size: 12px;
+    flex: none;
+    font-size: 11px;
+    line-height: 1.5;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #aab4c8;
+}
+.site-index .dates {
+    display: grid;
+    flex: none;
+    gap: 2px;
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: right;
+}
+.site-index .date {
+    display: flex;
+    justify-content: flex-end;
+    gap: 5px;
+    white-space: nowrap;
+}
+.site-index .date-label {
+    color: #b0b5c0;
+}
+.site-index .date time {
+    color: #8d96a8;
+    font-variant-numeric: tabular-nums;
 }
 </style>`;
 

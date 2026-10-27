@@ -82,8 +82,10 @@ textarea, input, select{
     gap: 14px;
 }
 .site-index .card {
-    display: block;
+    display: flex;
+    flex-direction: column;
     box-sizing: border-box;
+    min-height: 176px;
     padding: 18px 20px 14px;
     background: #fff;
     border: 1px solid #ececec;
@@ -113,12 +115,45 @@ textarea, input, select{
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+.site-index .card-content {
+    margin-bottom: 16px;
+}
+.site-index .card-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #f0f1f4;
+}
 .site-index .card .path {
-    display: inline-block;
-    margin-top: 12px;
-    font-size: 12px;
+    flex: none;
+    font-size: 11px;
+    line-height: 1.5;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #aab4c8;
+}
+.site-index .dates {
+    display: grid;
+    flex: none;
+    gap: 2px;
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: right;
+}
+.site-index .date {
+    display: flex;
+    justify-content: flex-end;
+    gap: 5px;
+    white-space: nowrap;
+}
+.site-index .date-label {
+    color: #b0b5c0;
+}
+.site-index .date time {
+    color: #8d96a8;
+    font-variant-numeric: tabular-nums;
 }
 </style>
 </head>
@@ -133,54 +168,134 @@ textarea, input, select{
         <h2>Tools</h2>
         <div class="grid">
         <a class="card" href="cameraRaw/">
-            <h3>Camera Raw Lab — Browser RAW Photo Editor</h3>
-            <p>Edit RAW, JPEG and PNG photos locally with professional color controls, curves, histogram, Camera Raw XMP presets, DNG saving and JPEG export.</p>
-            <span class="path">/cameraRaw/</span>
+            <div class="card-content">
+                <h3>Camera Raw Lab — Browser RAW Photo Editor</h3>
+                <p>Edit RAW, JPEG and PNG photos locally with professional color controls, curves, histogram, Camera Raw XMP presets, DNG saving and JPEG export.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/cameraRaw/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2026-10-27T01:48:42+08:00">2026-10-27</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-27T14:24:05+08:00">2026-10-27</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="colorCalibration/">
-            <h3>Display Color Calibration Tool - Monitor Color Test</h3>
-            <p>Professional display color calibration tool for accurate color testing and monitor calibration. Test your monitor's color accuracy with our comprehensive color calibration tool.</p>
-            <span class="path">/colorCalibration/</span>
+            <div class="card-content">
+                <h3>Display Color Calibration Tool - Monitor Color Test</h3>
+                <p>Professional display color calibration tool for accurate color testing and monitor calibration. Test your monitor's color accuracy with our comprehensive color calibration tool.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/colorCalibration/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2025-11-04T21:26:06+08:00">2025-11-04</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="font/">
-            <h3>Font Tools Online</h3>
-            <p>Explore and debug various fonts with our free online tool. Easily clip fonts, draw baselines, and compare font metrics like size and spacing. Perfect for designers and developers.</p>
-            <span class="path">/font/</span>
+            <div class="card-content">
+                <h3>Font Tools Online</h3>
+                <p>Explore and debug various fonts with our free online tool. Easily clip fonts, draw baselines, and compare font metrics like size and spacing. Perfect for designers and developers.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/font/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-07-26T15:04:52+08:00">2024-07-26</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="gradient/">
-            <h3>CSS Gradient Generator - Create and Preview Custom Gradients Online</h3>
-            <p>A powerful tool for generating custom CSS gradients. Easily create, edit, and preview linear and radial gradients with our intuitive interface. Experiment with color stops, angles, and more to design the perfect gradient for your project.</p>
-            <span class="path">/gradient/</span>
+            <div class="card-content">
+                <h3>CSS Gradient Generator - Create and Preview Custom Gradients Online</h3>
+                <p>A powerful tool for generating custom CSS gradients. Easily create, edit, and preview linear and radial gradients with our intuitive interface. Experiment with color stops, angles, and more to design the perfect gradient for your project.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/gradient/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2020-01-21T15:11:30+08:00">2020-01-21</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="guitar/">
-            <h3>钢弦吉他指板</h3>
-            <p>可弹奏的 20 品民谣吉他指板，支持七个大调音阶、和弦联动与物理建模钢弦音色。</p>
-            <span class="path">/guitar/</span>
+            <div class="card-content">
+                <h3>钢弦吉他指板</h3>
+                <p>可弹奏的 20 品民谣吉他指板，支持七个大调音阶、和弦联动与物理建模钢弦音色。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/guitar/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2026-10-25T14:34:58+08:00">2026-10-25</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-25T22:48:46+08:00">2026-10-25</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="markdown/">
-            <h3>Markdown Resume Renderer - Create and Print Your Resume</h3>
-            <p>A powerful online tool for rendering Markdown formatted resumes. Easily create, customize, and print your professional resume with Markdown syntax. 简洁高效，轻松生成简历。</p>
-            <span class="path">/markdown/</span>
+            <div class="card-content">
+                <h3>Markdown Resume Renderer - Create and Print Your Resume</h3>
+                <p>A powerful online tool for rendering Markdown formatted resumes. Easily create, customize, and print your professional resume with Markdown syntax. 简洁高效，轻松生成简历。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/markdown/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2025-02-08T17:57:40+08:00">2025-02-08</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="model3d/">
-            <h3>Form 3D - 浏览器参数化建模</h3>
-            <p>纯前端 3D 建模工具，支持草图拉伸、布尔运算、倒角与圆角，项目保存在浏览器本地，可导出高精度 STL 和 GLB 模型。</p>
-            <span class="path">/model3d/</span>
+            <div class="card-content">
+                <h3>Form 3D - 浏览器参数化建模</h3>
+                <p>纯前端 3D 建模工具，支持草图拉伸、布尔运算、倒角与圆角，项目保存在浏览器本地，可导出高精度 STL 和 GLB 模型。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/model3d/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2026-10-27T15:21:55+08:00">2026-10-27</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-27T15:21:55+08:00">2026-10-27</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="modelAnimation/">
-            <h3>3D Model Preview - FBX, STL, GLTF, GLB Viewer</h3>
-            <p>Explore and preview 3D models in various formats including FBX, STL, GLTF, and GLB. Experience high-quality 3D visualization with our user-friendly interface.</p>
-            <span class="path">/modelAnimation/</span>
+            <div class="card-content">
+                <h3>3D Model Preview - FBX, STL, GLTF, GLB Viewer</h3>
+                <p>Explore and preview 3D models in various formats including FBX, STL, GLTF, and GLB. Experience high-quality 3D visualization with our user-friendly interface.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/modelAnimation/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-12-24T17:47:53+08:00">2024-12-24</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="photo/">
-            <h3>View Image EXIF Metadata and Geolocation</h3>
-            <p>Explore and analyze image EXIF metadata and geolocation data with our comprehensive tool. Discover hidden information within your photos.</p>
-            <span class="path">/photo/</span>
+            <div class="card-content">
+                <h3>View Image EXIF Metadata and Geolocation</h3>
+                <p>Explore and analyze image EXIF metadata and geolocation data with our comprehensive tool. Discover hidden information within your photos.</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/photo/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-09-27T16:55:55+08:00">2024-09-27</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="photographer/">
-            <h3>摄影助手 - 焦距与光圈分析工具</h3>
-            <p>摄影助手是一款专业的照片分析工具，帮助摄影师统计和分析照片的焦距分布和光圈分布，提升摄影技巧和作品质量。</p>
-            <span class="path">/photographer/</span>
+            <div class="card-content">
+                <h3>摄影助手 - 焦距与光圈分析工具</h3>
+                <p>摄影助手是一款专业的照片分析工具，帮助摄影师统计和分析照片的焦距分布和光圈分布，提升摄影技巧和作品质量。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/photographer/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2025-01-08T20:31:44+08:00">2025-01-08</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:25:53+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         </div>
     </section>
@@ -188,79 +303,199 @@ textarea, input, select{
         <h2>Experiments</h2>
         <div class="grid">
         <a class="card" href="base64/">
-            <h3>Base64 编解码工具</h3>
-            <p>文本与文件的 Base64 编码 / 解码转换工具。</p>
-            <span class="path">/base64/</span>
+            <div class="card-content">
+                <h3>Base64 编解码工具</h3>
+                <p>文本与文件的 Base64 编码 / 解码转换工具。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/base64/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-08-15T18:11:46+08:00">2024-08-15</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="baseGlRenderTest/">
-            <h3>WebGL 渲染测试</h3>
-            <p>WebGL 全屏 shader 渲染管线测试页面。</p>
-            <span class="path">/baseGlRenderTest/</span>
+            <div class="card-content">
+                <h3>WebGL 渲染测试</h3>
+                <p>WebGL 全屏 shader 渲染管线测试页面。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/baseGlRenderTest/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-09-12T19:42:58+08:00">2024-09-12</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="cloud/">
-            <h3>云朵渲染</h3>
-            <p>WebGL shader 实时渲染的体积云效果 demo。</p>
-            <span class="path">/cloud/</span>
+            <div class="card-content">
+                <h3>云朵渲染</h3>
+                <p>WebGL shader 实时渲染的体积云效果 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/cloud/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-09-10T17:49:01+08:00">2024-09-10</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="fboTest/">
-            <h3>WebGL FBO 测试</h3>
-            <p>WebGL 帧缓冲（FBO）离屏渲染测试 demo。</p>
-            <span class="path">/fboTest/</span>
+            <div class="card-content">
+                <h3>WebGL FBO 测试</h3>
+                <p>WebGL 帧缓冲（FBO）离屏渲染测试 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/fboTest/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2025-02-18T17:34:58+08:00">2025-02-18</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="ffmpeg/">
-            <h3>浏览器视频处理</h3>
-            <p>基于 ffmpeg.wasm，在浏览器内运行 ffmpeg 命令处理音视频文件。</p>
-            <span class="path">/ffmpeg/</span>
+            <div class="card-content">
+                <h3>浏览器视频处理</h3>
+                <p>基于 ffmpeg.wasm，在浏览器内运行 ffmpeg 命令处理音视频文件。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/ffmpeg/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-12-04T16:48:10+08:00">2023-12-04</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="fileParser/">
-            <h3>二进制文件解析</h3>
-            <p>用自定义字段描述脚本解析二进制文件结构，内置 wxapkg / glb 预设。</p>
-            <span class="path">/fileParser/</span>
+            <div class="card-content">
+                <h3>二进制文件解析</h3>
+                <p>用自定义字段描述脚本解析二进制文件结构，内置 wxapkg / glb 预设。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/fileParser/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2020-02-13T15:23:37+08:00">2020-02-13</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="fileParser2/">
-            <h3>二进制文件解析 v2</h3>
-            <p>通过语法描述定义二进制格式并解析文件内容的实验工具（ANTLR）。</p>
-            <span class="path">/fileParser2/</span>
+            <div class="card-content">
+                <h3>二进制文件解析 v2</h3>
+                <p>通过语法描述定义二进制格式并解析文件内容的实验工具（ANTLR）。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/fileParser2/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-10-09T14:08:12+08:00">2023-10-09</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="flower/">
-            <h3>程序化花朵</h3>
-            <p>Canvas 程序化生成并渲染花朵动画的实验页面。</p>
-            <span class="path">/flower/</span>
+            <div class="card-content">
+                <h3>程序化花朵</h3>
+                <p>Canvas 程序化生成并渲染花朵动画的实验页面。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/flower/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-10-09T21:13:19+08:00">2023-10-09</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="moon/">
-            <h3>月球渲染</h3>
-            <p>WebGL 月球光照渲染 demo。</p>
-            <span class="path">/moon/</span>
+            <div class="card-content">
+                <h3>月球渲染</h3>
+                <p>WebGL 月球光照渲染 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/moon/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-10-12T20:30:39+08:00">2023-10-12</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="orientation/">
-            <h3>设备方向可视化</h3>
-            <p>读取并可视化设备陀螺仪 / 方向传感器数据的 demo。</p>
-            <span class="path">/orientation/</span>
+            <div class="card-content">
+                <h3>设备方向可视化</h3>
+                <p>读取并可视化设备陀螺仪 / 方向传感器数据的 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/orientation/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-09-04T14:25:32+08:00">2024-09-04</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="panorama/">
-            <h3>全景图预览</h3>
-            <p>WebGL 全景图片查看器 demo。</p>
-            <span class="path">/panorama/</span>
+            <div class="card-content">
+                <h3>全景图预览</h3>
+                <p>WebGL 全景图片查看器 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/panorama/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-12-04T19:21:47+08:00">2023-12-04</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="qrcode/">
-            <h3>二维码生成</h3>
-            <p>输入文本或链接，即时生成二维码图片的工具。</p>
-            <span class="path">/qrcode/</span>
+            <div class="card-content">
+                <h3>二维码生成</h3>
+                <p>输入文本或链接，即时生成二维码图片的工具。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/qrcode/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-08-15T18:11:46+08:00">2024-08-15</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="rain/">
-            <h3>雨天效果</h3>
-            <p>WebGL shader 模拟玻璃上的雨天水滴效果 demo。</p>
-            <span class="path">/rain/</span>
+            <div class="card-content">
+                <h3>雨天效果</h3>
+                <p>WebGL shader 模拟玻璃上的雨天水滴效果 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/rain/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2024-06-25T17:24:08+08:00">2024-06-25</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="scorePlayer/">
-            <h3>滚动跟谱播放器</h3>
-            <p>导入简谱 JSON（和弦 + 简谱 + 歌词），合成播放、光标跟随、自动滚动，支持变速、移调、吉他指法图。</p>
-            <span class="path">/scorePlayer/</span>
+            <div class="card-content">
+                <h3>滚动跟谱播放器</h3>
+                <p>导入简谱 JSON（和弦 + 简谱 + 歌词），合成播放、光标跟随、自动滚动，支持变速、移调、吉他指法图。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/scorePlayer/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2026-10-14T00:14:57+08:00">2026-10-14</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-14T15:55:12+08:00">2026-10-14</time></span>
+                </div>
+            </div>
         </a>
         <a class="card" href="wave/">
-            <h3>波浪渲染</h3>
-            <p>WebGL shader 波浪效果 demo。</p>
-            <span class="path">/wave/</span>
+            <div class="card-content">
+                <h3>波浪渲染</h3>
+                <p>WebGL shader 波浪效果 demo。</p>
+            </div>
+            <div class="card-footer">
+                <span class="path">/wave/</span>
+                <div class="dates">
+                    <span class="date"><span class="date-label">Created</span><time datetime="2023-10-10T20:41:24+08:00">2023-10-10</time></span>
+                    <span class="date"><span class="date-label">Updated</span><time datetime="2026-10-13T18:37:30+08:00">2026-10-13</time></span>
+                </div>
+            </div>
         </a>
         </div>
     </section>
