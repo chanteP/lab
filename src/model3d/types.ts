@@ -4,9 +4,27 @@ export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
 export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments: number };
 
+export interface ModelFolder {
+    id: string;
+    name: string;
+    parentId: string | null;
+}
+
+export interface SketchPlane {
+    id: string;
+    name: string;
+    kind: 'XZ' | 'XY' | 'YZ';
+    origin: Vec3;
+    normal: Vec3;
+    u: Vec3;
+    v: Vec3;
+    visible: boolean;
+}
+
 export interface ModelEntity {
     id: string;
     name: string;
+    parentId: string | null;
     kind: EntityKind;
     color: string;
     visible: boolean;
@@ -18,6 +36,7 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
+    planeId?: string;
     operation?: BooleanOperation;
     operands?: [string, string];
     edge?: EdgeTreatment | null;
@@ -27,6 +46,8 @@ export interface ModelDocument {
     version: 1;
     unit: 'mm';
     entities: ModelEntity[];
+    folders: ModelFolder[];
+    planes: SketchPlane[];
 }
 
 export interface ProjectRecord {
@@ -48,12 +69,13 @@ export const ENTITY_NAMES: Record<EntityKind, string> = {
 };
 
 export function createDocument(): ModelDocument {
-    return { version: 1, unit: 'mm', entities: [] };
+    return { version: 1, unit: 'mm', entities: [], folders: [], planes: [] };
 }
 
 export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): ModelEntity {
     const base: ModelEntity = {
         id,
+        parentId: null,
         kind,
         name: ENTITY_NAMES[kind],
         color: '#789e9b',
@@ -71,6 +93,14 @@ export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): 
 
 export function cloneDocument(document: ModelDocument): ModelDocument {
     return JSON.parse(JSON.stringify(document));
+}
+
+export function normalizeDocument(document: ModelDocument): ModelDocument {
+    document.folders = Array.isArray(document.folders) ? document.folders : [];
+    document.planes = Array.isArray(document.planes) ? document.planes : [];
+    document.entities.forEach((entity) => entity.parentId = entity.parentId || null);
+    document.folders.forEach((folder) => folder.parentId = folder.parentId || null);
+    return document;
 }
 
 export function isDocument(value: any): value is ModelDocument {

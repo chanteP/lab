@@ -7,14 +7,15 @@ import {
     ChevronDownOutline, CloseOutline, CloudDoneOutline, CopyOutline, CreateOutline, CubeOutline,
     CutOutline, DocumentOutline, DownloadOutline, EllipseOutline, EyeOffOutline, EyeOutline, FolderOpenOutline,
     GridOutline, HelpCircleOutline, LayersOutline, MoveOutline, RepeatOutline, ResizeOutline,
-    ShapesOutline, TrashOutline, NavigateOutline,
+    ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline, ScaleOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type EditPhase, type ViewTool } from './Viewport';
+import EntityTree, { type OutlinerNode } from './EntityTree.vue';
 import { exportGLB, exportProject, exportSTL } from './exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './store';
 import {
-    cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument,
-    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3,
+    cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
+    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane,
 } from './types';
 
 const message = useMessage();
@@ -49,6 +50,16 @@ const sketchDepth = ref(10);
 const selectedSketchPoint = ref(-1);
 const editingSketchId = ref<string | null>(null);
 const stats = ref({ vertices: 0, triangles: 0, objects: 0 });
+const measureMode = ref(false);
+const scaleBar = ref({ width: 76, label: '50 mm' });
+const activePlaneId = ref<string | null>(null);
+const showAddPlane = ref(false);
+const planeKind = ref<'XZ' | 'XY' | 'YZ'>('XZ');
+const planeOffset = ref(0);
+const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
+const showRename = ref(false);
+const renameValue = ref('');
+const renameTarget = ref<OutlinerNode | null>(null);
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
@@ -58,6 +69,8 @@ const canRedo = computed(() => (historyVersion.value, redoStack.length > 0));
 const canBoolean = computed(() => selectedEntities.value.length === 2);
 const saveLabel = computed(() => saveState.value === 'saved' ? '已保存到本机' : saveState.value === 'saving' ? '保存中…' : '有未保存更改');
 const sketchClosed = computed(() => sketchPoints.value.length >= 3);
+const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
+const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
 const contextVisible = computed(() => sketchMode.value || !!selected.value || selectedEntities.value.length > 1 || ['pushPull', 'fillet', 'chamfer'].includes(activeTool.value));
 const dimensionFields = computed(() => {
     const item = selected.value;
@@ -76,6 +89,23 @@ const activeVector = computed(() => {
     if (activeTool.value === 'rotate') return { key: 'rotation' as const, label: '旋转', value: selected.value.rotation, step: 15 };
     if (activeTool.value === 'scale') return { key: 'scale' as const, label: '缩放', value: selected.value.scale, step: 0.1 };
     return null;
+});
+
+const treeNodes = computed(() => {
+    // Folders and entities share one parent graph, so either can contain nested nodes.
+    const build = (parentId: string | null, trail: string[] = []): OutlinerNode[] => {
+        const folders = document.value.folders.filter((item) => item.parentId === parentId).map((folder) => ({ folder, order: 0 }));
+        const entities = document.value.entities.filter((item) => item.parentId === parentId).map((entity) => ({ entity, order: 1 }));
+        return [...folders, ...entities].flatMap((entry: any) => {
+            const item = entry.folder || entry.entity;
+            if (trail.includes(item.id)) return [];
+            return [{
+                id: item.id, kind: entry.folder ? 'folder' : 'entity', name: item.name, visible: item.visible,
+                children: build(item.id, [...trail, item.id]),
+            } as OutlinerNode];
+        });
+    };
+    return build(null);
 });
 
 function uid() { return crypto.randomUUID(); }
@@ -144,7 +174,8 @@ async function openProject(id: string, saveCurrent = true) {
     cancelSketch();
     restoring = true;
     project.value = next;
-    document.value = cloneDocument(next.document);
+    document.value = normalizeDocument(cloneDocument(next.document));
+    activePlaneId.value = document.value.planes[0]?.id || null;
     selectedIds.value = [];
     undoStack.length = 0;
     redoStack.length = 0;
@@ -153,6 +184,7 @@ async function openProject(id: string, saveCurrent = true) {
     setTool('select');
     await nextTick();
     viewport?.sync(document.value);
+    viewport?.setActivePlane(activePlane.value);
     viewport?.fit();
     restoring = false;
     saveState.value = 'saved';
@@ -161,15 +193,11 @@ async function reloadProjects() { projects.value = await listProjects(); }
 async function newProject() {
     await flushSave();
     const next = createProject(newProjectName.value.trim() || '未命名项目');
-    const box = createEntity('box', uid());
-    box.name = '立方体 1';
-    next.document.entities.push(box);
     await putProject(next);
     await reloadProjects();
     showNewProject.value = false;
     newProjectName.value = '未命名项目';
     await openProject(next.id);
-    selectedIds.value = [box.id];
 }
 async function duplicateProject() {
     const copy = createProject(`${project.value.name} 副本`);
@@ -184,9 +212,6 @@ async function removeProject() {
     await reloadProjects();
     if (!projects.value.length) {
         const next = createProject('未命名项目');
-        const box = createEntity('box', uid());
-        box.name = '立方体 1';
-        next.document.entities.push(box);
         await putProject(next);
         await reloadProjects();
     }
@@ -204,17 +229,10 @@ function selectEntity(id: string | null, additive = false) {
         : [id];
 }
 function setTool(tool: ViewTool) {
+    if (measureMode.value) { measureMode.value = false; viewport?.setMeasureMode(false); }
     if (sketchMode.value) cancelSketch();
     activeTool.value = tool;
     viewport?.setTool(tool);
-}
-function addEntity(kind: 'box' | 'cylinder' | 'sphere') {
-    pushHistory();
-    const entity = createEntity(kind, uid());
-    entity.name = uniqueName(kind);
-    document.value.entities.push(entity);
-    selectedIds.value = [entity.id];
-    setTool('select');
 }
 function updateEntity(key: keyof ModelEntity, value: any) {
     if (!selected.value || value === null) return;
@@ -239,7 +257,12 @@ function removeSelected() {
             if (operand) operand.visible = true;
         });
     });
+    ids.forEach((id) => {
+        document.value.folders.filter((folder) => folder.parentId === id).forEach((folder) => folder.parentId = null);
+        document.value.entities.filter((entity) => entity.parentId === id).forEach((entity) => entity.parentId = null);
+    });
     document.value.entities = document.value.entities.filter((item) => !ids.includes(item.id));
+    document.value.folders = document.value.folders.filter((item) => !ids.includes(item.id));
     selectedIds.value = [];
 }
 function duplicateSelected() {
@@ -261,7 +284,7 @@ function applyBoolean(operation: BooleanOperation) {
     pushHistory();
     const names = { union: '并集', subtract: '差集', intersect: '交集' };
     const entity: ModelEntity = {
-        id: uid(), name: `${names[operation]} ${document.value.entities.filter((item) => item.kind === 'boolean').length + 1}`,
+        id: uid(), parentId: null, name: `${names[operation]} ${document.value.entities.filter((item) => item.kind === 'boolean').length + 1}`,
         kind: 'boolean', color: a.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
         operation, operands: [a.id, b.id], edge: null,
     };
@@ -301,7 +324,7 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
     }
     if (!directBase) return;
     if (edgeTool) {
-        const size = Math.round(THREE.MathUtils.clamp((directBase.edge?.size || 3) + delta, 0.1, edgeLimitFor(directBase)) * 10) / 10;
+        const size = Math.round(THREE.MathUtils.clamp((directBase.edge?.size || 3) + delta, 0.1, edgeLimitFor(directBase)) * 10000) / 10000;
         item.edge = { ...directBase.edge!, size };
         return;
     }
@@ -313,7 +336,7 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
     else if (item.kind === 'extrude') key = 'depth';
     else if (item.kind === 'sphere') key = 'radius';
     const baseValue = directBase[key] || 1;
-    const nextValue = Math.round(Math.max(0.1, baseValue + delta * (item.kind === 'sphere' ? 0.5 : sign)) * 10) / 10;
+    const nextValue = Math.round(Math.max(0.1, baseValue + delta * (item.kind === 'sphere' ? 0.5 : sign)) * 10000) / 10000;
     item[key] = nextValue;
     const shouldOffset = item.kind === 'box' || (item.kind === 'cylinder' && axis === 1) || (item.kind === 'extrude' && axis === 1);
     if (shouldOffset) {
@@ -325,8 +348,11 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
 
 function startSketch() {
     if (sketchMode.value) return;
+    if (!document.value.planes.length && selected.value?.kind !== 'extrude') { showAddPlane.value = true; return message.info('请先添加一个绘制平面'); }
     const editing = selected.value?.kind === 'extrude' ? selected.value : null;
     editingSketchId.value = editing?.id || null;
+    if (editing?.planeId) activePlaneId.value = editing.planeId;
+    if (!activePlaneId.value && !editing) activePlaneId.value = document.value.planes[0].id;
     sketchPoints.value = editing?.points ? cloneEntity(editing).points! : [];
     sketchDepth.value = editing?.depth || 10;
     selectedSketchPoint.value = -1;
@@ -394,8 +420,9 @@ function finishSketch() {
         const entity = createEntity('extrude', uid());
         entity.name = uniqueName('extrude');
         entity.points = points;
+        entity.planeId = activePlaneId.value!;
         entity.depth = sketchDepth.value;
-        entity.position = [0, sketchDepth.value / 2, 0];
+        entity.position = [0, 0, 0];
         document.value.entities.push(entity);
         id = entity.id;
     }
@@ -410,6 +437,104 @@ function cancelSketch() {
     editingSketchId.value = null;
     viewport?.setSketchMode(false);
 }
+
+function createFolder() {
+    pushHistory();
+    const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId: null };
+    document.value.folders.push(folder);
+    selectedIds.value = [folder.id];
+}
+function openNodeContext(node: OutlinerNode, event: MouseEvent) {
+    if (!selectedIds.value.includes(node.id)) selectedIds.value = [node.id];
+    contextMenu.value = { node, x: Math.min(event.clientX, window.innerWidth - 150), y: Math.min(event.clientY, window.innerHeight - 100) };
+}
+function requestRename(node: OutlinerNode) {
+    renameTarget.value = node;
+    renameValue.value = node.name;
+    showRename.value = true;
+    contextMenu.value = null;
+}
+function applyRename() {
+    const target = renameTarget.value;
+    const name = renameValue.value.trim();
+    if (!target || !name) return;
+    pushHistory();
+    const collection = target.kind === 'folder' ? document.value.folders : document.value.entities;
+    const item = collection.find((entry) => entry.id === target.id);
+    if (item) item.name = name;
+    showRename.value = false;
+}
+function deleteContextNodes() {
+    const menu = contextMenu.value;
+    if (!menu) return;
+    const ids = selectedIds.value.includes(menu.node.id) ? [...selectedIds.value] : [menu.node.id];
+    const referenced = document.value.entities.find((item) => item.kind === 'boolean' && item.operands?.some((id) => ids.includes(id)) && !ids.includes(item.id));
+    if (referenced) { contextMenu.value = null; return message.warning(`请先删除依赖它的「${referenced.name}」`); }
+    pushHistory();
+    ids.forEach((id) => {
+        const entity = document.value.entities.find((item) => item.id === id);
+        if (entity?.kind === 'boolean') entity.operands?.forEach((operandId) => {
+            const operand = document.value.entities.find((item) => item.id === operandId);
+            if (operand) operand.visible = true;
+        });
+        if (document.value.folders.some((folder) => folder.id === id)) {
+            document.value.folders.filter((folder) => folder.parentId === id).forEach((folder) => folder.parentId = null);
+            document.value.entities.filter((entity) => entity.parentId === id).forEach((entity) => entity.parentId = null);
+        }
+    });
+    document.value.entities = document.value.entities.filter((item) => !ids.includes(item.id));
+    document.value.folders = document.value.folders.filter((item) => !ids.includes(item.id));
+    selectedIds.value = [];
+    contextMenu.value = null;
+}
+function reparentNodes(ids: string[], targetId: string | null) {
+    // A node may contain folders or entities, but dragging into its own descendant is rejected.
+    const nodes = new Map<string, { parentId: string | null }>();
+    document.value.folders.forEach((item) => nodes.set(item.id, item));
+    document.value.entities.forEach((item) => nodes.set(item.id, item));
+    let cursor = targetId;
+    while (cursor) {
+        if (ids.includes(cursor)) return message.warning('不能移动到节点自身或其子节点下');
+        cursor = nodes.get(cursor)?.parentId || null;
+    }
+    const valid = ids.filter((id) => id !== targetId && nodes.has(id));
+    if (!valid.length) return;
+    pushHistory();
+    valid.forEach((id) => nodes.get(id)!.parentId = targetId);
+}
+function createPlane() {
+    pushHistory();
+    const kind = planeKind.value;
+    const plane: SketchPlane = {
+        id: uid(), name: `${kind} 平面 ${document.value.planes.length + 1}`, kind, visible: true,
+        origin: kind === 'XZ' ? [0, planeOffset.value, 0] : kind === 'XY' ? [0, 0, planeOffset.value] : [planeOffset.value, 0, 0],
+        normal: kind === 'XZ' ? [0, -1, 0] : kind === 'XY' ? [0, 0, 1] : [1, 0, 0],
+        u: kind === 'YZ' ? [0, 1, 0] : [1, 0, 0],
+        v: kind === 'XZ' ? [0, 0, 1] : kind === 'XY' ? [0, 1, 0] : [0, 0, 1],
+    };
+    document.value.planes.push(plane);
+    activePlaneId.value = plane.id;
+    showAddPlane.value = false;
+    viewport?.setActivePlane(plane);
+}
+function changeActivePlane(id: string) {
+    activePlaneId.value = id;
+    viewport?.setActivePlane(activePlane.value);
+    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value);
+}
+function toggleMeasure() {
+    if (measureMode.value) {
+        measureMode.value = false;
+        viewport?.setMeasureMode(false);
+    } else {
+        setTool('select');
+        measureMode.value = true;
+        viewport?.setMeasureMode(true);
+    }
+}
+function preventContextMenu(event: Event) { event.preventDefault(); }
+function preventBrowserZoom(event: WheelEvent) { if (event.ctrlKey || event.metaKey) event.preventDefault(); }
+function preventGesture(event: Event) { event.preventDefault(); }
 
 async function runExport(type: 'stl' | 'glb') {
     if (!document.value.entities.some((item) => item.visible)) return message.warning('没有可导出的可见实体');
@@ -434,7 +559,7 @@ async function onImportFile(event: Event) {
         const data = JSON.parse(await file.text());
         if (!isDocument(data)) throw new Error('不是有效的 Form 3D 项目文件');
         const next = createProject(file.name.replace(/\.model\.json$|\.json$/g, '') || '导入项目');
-        next.document = cloneDocument(data);
+        next.document = normalizeDocument(cloneDocument(data));
         await putProject(next);
         await reloadProjects();
         await openProject(next.id);
@@ -448,10 +573,11 @@ function entityIcon(kind: ModelEntity['kind']) {
     if (kind === 'sphere') return EllipseOutline;
     return CubeOutline;
 }
-function fitView() { viewport?.fit(); }
+function fitView() { viewport?.fit(true); }
 function onKeyDown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+    if ((event.metaKey || event.ctrlKey) && ['Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract'].includes(event.code)) { event.preventDefault(); return; }
     if ((event.metaKey || event.ctrlKey) && event.code === 'KeyS') { event.preventDefault(); flushSave(); return; }
     if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
     if (event.metaKey || event.ctrlKey || event.code === 'Space') return;
@@ -496,10 +622,16 @@ onMounted(async () => {
         onSketchSelect: selectSketchPoint,
         onSketchComplete: finishSketch,
         onSpaceChange: (active) => spaceActive.value = active,
+        onMeasureChange: (active) => measureMode.value = active,
+        onScale: (value) => scaleBar.value = value,
         onStats: (value) => stats.value = value,
     });
     viewport.sync(document.value);
     window.addEventListener('keydown', onKeyDown);
+    window.document.addEventListener('contextmenu', preventContextMenu);
+    window.document.addEventListener('wheel', preventBrowserZoom, { passive: false });
+    window.document.addEventListener('gesturestart', preventGesture);
+    window.document.addEventListener('gesturechange', preventGesture);
     window.addEventListener('beforeunload', flushSave);
     try {
         await reloadProjects();
@@ -507,10 +639,6 @@ onMounted(async () => {
         const initial = projects.value.find((item) => item.id === active) || projects.value[0];
         if (initial) await openProject(initial.id, false);
         else {
-            const box = createEntity('box', uid());
-            box.name = '立方体 1';
-            document.value.entities.push(box);
-            selectedIds.value = [box.id];
             await flushSave();
             await reloadProjects();
             setActiveProjectId(project.value.id);
@@ -523,13 +651,17 @@ onBeforeUnmount(() => {
     clearTimeout(saveTimer);
     flushSave();
     window.removeEventListener('keydown', onKeyDown);
+    window.document.removeEventListener('contextmenu', preventContextMenu);
+    window.document.removeEventListener('wheel', preventBrowserZoom);
+    window.document.removeEventListener('gesturestart', preventGesture);
+    window.document.removeEventListener('gesturechange', preventGesture);
     window.removeEventListener('beforeunload', flushSave);
     viewport?.dispose();
 });
 </script>
 
 <template>
-    <div class="studio-shell">
+    <div class="studio-shell" @click="contextMenu = null">
         <header class="topbar">
             <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>FORM</strong><span>3D STUDIO</span></div></div>
             <div class="topbar-project"><span class="local-badge"><i></i> 本地项目</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /></div>
@@ -555,13 +687,11 @@ onBeforeUnmount(() => {
         <div class="workspace">
             <aside class="left-panel panel">
                 <section class="objects-section">
-                    <div class="section-label">实体 <span>{{ document.entities.length }}</span></div>
+                    <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ document.entities.length }}</i></span></div>
                     <div class="object-list">
-                        <div v-if="!document.entities.length" class="empty-objects">使用画布左侧工具开始建模</div>
-                        <div v-for="item in document.entities" :key="item.id" class="object-row" :class="{ selected: selectedIds.includes(item.id), muted: !item.visible }" @click="selectEntity(item.id, $event.metaKey || $event.ctrlKey || $event.shiftKey)">
-                            <NIcon class="object-type"><component :is="entityIcon(item.kind)" /></NIcon><span>{{ item.name }}</span>
-                            <button class="visibility" @click.stop="pushHistory(); item.visible = !item.visible"><NIcon><component :is="item.visible ? EyeOutline : EyeOffOutline" /></NIcon></button>
-                        </div>
+                        <div v-if="!treeNodes.length" class="empty-objects">使用画布左侧工具开始建模</div>
+                        <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectEntity" @context="openNodeContext" @drop="reparentNodes"
+                            @toggle="(id) => { const item = document.entities.find(entity => entity.id === id); if (item) { pushHistory(); item.visible = !item.visible; } }" />
                     </div>
                 </section>
                 <section class="project-section">
@@ -587,10 +717,8 @@ onBeforeUnmount(() => {
                         <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'scale' }" @click="setTool('scale')"><NIcon><ResizeOutline /></NIcon></button></template>缩放 · S</NTooltip>
                     </div>
                     <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button @click="addEntity('box')"><NIcon><CubeOutline /></NIcon></button></template>创建立方体</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button @click="addEntity('cylinder')"><NIcon><ShapesOutline /></NIcon></button></template>创建圆柱体</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button @click="addEntity('sphere')"><NIcon><EllipseOutline /></NIcon></button></template>创建球体</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: sketchMode }" @click="startSketch"><NIcon><CreateOutline /></NIcon></button></template>绘制 / 编辑草图</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button @click="showAddPlane = true"><NIcon><LayersOutline /></NIcon></button></template>添加绘制平面</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: sketchMode }" @click="startSketch"><NIcon><CreateOutline /></NIcon></button></template>在平面绘制 / 编辑草图</NTooltip>
                     </div>
                     <div class="tool-group">
                         <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'pushPull' }" @click="setTool('pushPull')"><NIcon><ArrowUpOutline /></NIcon></button></template>推拉 · 拖动模型面</NTooltip>
@@ -618,10 +746,11 @@ onBeforeUnmount(() => {
                     <template v-if="sketchMode">
                         <div class="context-title"><NIcon><CreateOutline /></NIcon><strong>{{ editingSketchId ? '编辑草图' : '绘制草图' }}</strong><span>单击添加点，拖动顶点调整</span></div>
                         <div class="context-fields">
-                            <label>厚度<NInputNumber :value="sketchDepth" :min="0.1" size="small" @update:value="updateSketchDepth" /></label>
+                            <NSelect v-if="!editingSketchId" :value="activePlaneId" :options="planeOptions" size="small" class="plane-select" @update:value="changeActivePlane" />
+                            <label>厚度<NInputNumber :precision="4" :value="sketchDepth" :min="0.1" size="small" @update:value="updateSketchDepth" /></label>
                             <template v-if="selectedSketchPoint >= 0 && sketchPoints[selectedSketchPoint]">
-                                <label>X<NInputNumber :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
-                                <label>Z<NInputNumber :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
+                                <label>X<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
+                                <label>Z<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
                             </template>
                             <NButton size="small" type="primary" :disabled="!sketchClosed" @click="finishSketch">完成</NButton>
                             <button class="context-close" @click="cancelSketch"><NIcon><CloseOutline /></NIcon></button>
@@ -634,14 +763,14 @@ onBeforeUnmount(() => {
                     <template v-else-if="selected">
                         <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'pushPull'">拖动模型面，向上增大尺寸</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
                         <div v-if="activeVector" class="context-fields vector-fields">
-                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
+                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
                         <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">
-                            <label>距离<NInputNumber :value="selected.edge?.size || 0" :min="0" :max="selected ? edgeLimitFor(selected) : 0" size="small" @update:value="updateEntity('edge', { type: activeTool, size: $event || 0, segments: selected.edge?.segments || 6 })" /></label>
+                            <label>距离<NInputNumber :precision="4" :value="selected.edge?.size || 0" :min="0" :max="selected ? edgeLimitFor(selected) : 0" size="small" @update:value="updateEntity('edge', { type: activeTool, size: $event || 0, segments: selected.edge?.segments || 6 })" /></label>
                             <button class="text-button" @click="clearEdge">清除边处理</button>
                         </div>
                         <div v-else class="context-fields">
-                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<NInputNumber :value="field.value" :min="0.1" size="small" :show-button="false" @update:value="updateEntity(field.key, $event)" /></label>
+                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<NInputNumber :precision="4" :value="field.value" :min="0.1" size="small" :show-button="false" @update:value="updateEntity(field.key, $event)" /></label>
                             <label v-if="selected.kind === 'extrude'" class="context-action"><NButton size="small" secondary @click="startSketch">编辑轮廓</NButton></label>
                             <input class="context-color" type="color" :value="selected.color" title="实体颜色" @input="updateEntity('color', ($event.target as HTMLInputElement).value)" />
                         </div>
@@ -651,6 +780,13 @@ onBeforeUnmount(() => {
                     </template>
                 </section>
 
+                <div class="viewport-utilities">
+                    <div class="measure-actions">
+                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><NIcon><ScaleOutline /></NIcon></button></template>测量两个面之间的距离</NTooltip>
+                        <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图（保持方向）</NTooltip>
+                    </div>
+                    <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
+                </div>
                 <div class="gizmo-label">拖动旋转 · 点击切换视图</div>
                 <div class="viewport-status"><span :class="{ accent: spaceActive }">空格 + 拖拽平移</span><i></i><span>空白拖拽旋转</span><i></i><span>⌘ 单击多选</span><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
@@ -658,15 +794,29 @@ onBeforeUnmount(() => {
 
         <NModal v-model:show="showNewProject" preset="card" title="新建项目" style="width: 420px" :bordered="false">
             <label class="modal-field">项目名称<NInput v-model:value="newProjectName" autofocus placeholder="未命名项目" @keyup.enter="newProject" /></label>
-            <p class="modal-note">新项目将包含一个立方体，所有数据保存在当前浏览器。</p>
+            <p class="modal-note">新项目为空白项目，所有数据保存在当前浏览器。</p>
             <div class="modal-actions"><NButton @click="showNewProject = false">取消</NButton><NButton type="primary" @click="newProject">创建项目</NButton></div>
+        </NModal>
+        <div v-if="contextMenu" class="entity-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
+            <button @click="requestRename(contextMenu.node)"><NIcon><PencilOutline /></NIcon>重命名</button>
+            <button class="danger" @click="deleteContextNodes"><NIcon><TrashOutline /></NIcon>删除</button>
+        </div>
+        <NModal v-model:show="showRename" preset="card" title="重命名" style="width: 380px" :bordered="false">
+            <NInput v-model:value="renameValue" autofocus @keyup.enter="applyRename" />
+            <div class="modal-actions"><NButton @click="showRename = false">取消</NButton><NButton type="primary" @click="applyRename">确定</NButton></div>
+        </NModal>
+        <NModal v-model:show="showAddPlane" preset="card" title="添加绘制平面" style="width: 420px" :bordered="false">
+            <div class="plane-form"><label>坐标平面<NSelect v-model:value="planeKind" :options="[{ label: 'XZ · 地面', value: 'XZ' }, { label: 'XY · 前视', value: 'XY' }, { label: 'YZ · 侧视', value: 'YZ' }]" /></label>
+                <label>法向偏移<NInputNumber :precision="4" v-model:value="planeOffset" :step="5"><template #suffix>mm</template></NInputNumber></label></div>
+            <p class="modal-note">草图只能绘制在显式平面上，顶点保存为该平面的局部坐标。</p>
+            <div class="modal-actions"><NButton @click="showAddPlane = false">取消</NButton><NButton type="primary" @click="createPlane">添加平面</NButton></div>
         </NModal>
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">
                 <section><strong>画布与坐标球</strong><p>空白拖拽旋转，空格拖拽平移。拖动右下角坐标球可旋转视角，点击 X / Y / Z 轴端点切换正交方向视图。</p></section>
-                <section><strong>草图与精准点编辑</strong><p>逐点绘制封闭轮廓，直接拖动顶点，或选中顶点后输入 X / Z 坐标。厚度可随时输入。选中已有拉伸实体后再点草图工具，可继续编辑轮廓。</p></section>
+                <section><strong>草图与精准点编辑</strong><p>先添加 XZ / XY / YZ 平面，再在平面局部坐标中逐点绘制。顶点可拖动或输入数值，厚度可随时调整；已有拉伸实体可重新进入编辑。</p></section>
                 <section><strong>面推拉与边处理</strong><p>推拉工具按住模型面上下拖动即可改变尺寸。圆角或倒角工具在模型上拖动调整距离，也可在顶部输入精确数值。</p></section>
-                <section><strong>选择与变换</strong><p>V / G / R / S 切换选择、移动、旋转和缩放。⌘ / Ctrl 单击多选两个实体后可执行布尔运算，F 适合画布。</p></section>
+                <section><strong>测量与实体树</strong><p>尺子工具依次点击两个面，显示总距离和 XYZ 分量，第三次点击退出。实体树支持多选、嵌套拖拽、文件夹和右键重命名/删除。</p></section>
             </div>
         </NModal>
         <input ref="importInput" type="file" accept=".json,.model.json" hidden @change="onImportFile" />

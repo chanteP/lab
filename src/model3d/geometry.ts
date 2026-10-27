@@ -53,7 +53,7 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
     object.updateMatrixWorld(true);
 }
 
-function baseGeometry(entity: ModelEntity, quality: GeometryQuality): THREE.BufferGeometry {
+function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
     const q = qualityValues(quality);
     const edge = entity.edge;
     if (entity.kind === 'box') {
@@ -76,9 +76,11 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality): THREE.Buff
     }
     const shape = new THREE.Shape();
     const points = entity.points || [];
+    const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
     if (points.length < 3) return new THREE.BufferGeometry();
-    shape.moveTo(points[0][0], -points[0][1]);
-    points.slice(1).forEach(([x, z]) => shape.lineTo(x, -z));
+    // Plane sketches store local U/V coordinates. Legacy sketches retain their original X/Z mapping.
+    shape.moveTo(points[0][0], plane ? points[0][1] : -points[0][1]);
+    points.slice(1).forEach(([x, y]) => shape.lineTo(x, plane ? y : -y));
     shape.closePath();
     const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
@@ -91,10 +93,22 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality): THREE.Buff
         bevelSegments: edge?.type === 'fillet' ? q.edge : 1,
         curveSegments: 12,
     });
-    geometry.rotateX(-Math.PI / 2);
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
-    geometry.translate(0, -(box.min.y + box.max.y) / 2, 0);
+    if (plane) {
+        geometry.translate(0, 0, -(box.min.z + box.max.z) / 2);
+        const u = new THREE.Vector3(...plane.u);
+        const v = new THREE.Vector3(...plane.v);
+        const normal = new THREE.Vector3(...plane.normal);
+        const basis = new THREE.Matrix4().makeBasis(u, v, normal);
+        basis.setPosition(new THREE.Vector3(...plane.origin));
+        geometry.applyMatrix4(basis);
+    } else {
+        geometry.rotateX(-Math.PI / 2);
+        geometry.computeBoundingBox();
+        const legacyBox = geometry.boundingBox!;
+        geometry.translate(0, -(legacyBox.min.y + legacyBox.max.y) / 2, 0);
+    }
     return geometry;
 }
 
@@ -111,7 +125,7 @@ export function buildEntityMesh(
     if (stack.includes(entity.id)) throw new Error('检测到循环布尔引用');
     let mesh: THREE.Mesh;
     if (entity.kind !== 'boolean') {
-        mesh = new THREE.Mesh(baseGeometry(entity, quality), createMaterial(entity.color));
+        mesh = new THREE.Mesh(baseGeometry(entity, quality, document), createMaterial(entity.color));
     } else {
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);
