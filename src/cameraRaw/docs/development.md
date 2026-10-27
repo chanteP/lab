@@ -47,6 +47,7 @@
 - `io/metadata.ts` / `export.ts`：JPEG APP1 原字节保留；RAW/PNG 来源导出 JPEG 时映射常用拍摄和 GPS 字段。
 - `store.ts`：当前图、选区、批量同步、按需解码与对象 URL 生命周期。Ctrl/Cmd 多选保留同步源。
 - `io/webmcp.ts`：注册 WebMCP 工具，并暴露相同的 `window.cameraRawMCP` 本地 agent 调用入口。详见 `docs/webmcp.md`。
+- `io/presetStore.ts` + `components/PresetPanel.vue`：IndexedDB 预设库，支持导入、保存、删除和按强度插值应用；切换面板时保留应用前快照与强度状态。
 - 桌面为一屏工作台；窄屏右栏作为可开关抽屉，胶片栏保持横向滚动。
 
 ## Changelog
@@ -55,3 +56,4 @@
 - 2026-10-27：完成 RAW Worker、WebGL2 调色、直方图/对比视图、XMP、DNG/JPEG 导出、多选胶片栏与响应式界面；加入 LibRaw 回读及批量同步测试。
 - 2026-10-27：修正普通图片纹理方向；预览区加入指针中心滚轮/触控板缩放、空格/触摸拖动，禁用浏览器缩放和右键；原图/对比移入胶片工具横条。
 - 2026-10-27：分离图片与曲线 LUT 的纹理翻转状态，修复曲线通道错位；加入逐图撤销/恢复、混色 HSL Tab、颜色渐变滑杆和 WebMCP/本地 Agent 工具。
+- 2026-10-27：增加 IndexedDB 预设面板与强度插值、已调整面板标记、曲线通道颜色点、转盘双击复位；Hue 映射缩至 ±60° 并清理渐变端点。

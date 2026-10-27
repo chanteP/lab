@@ -63,7 +63,7 @@ vec3 applyMixer(vec3 c) {
     for (int i = 0; i < 8; i++) {
         float d = abs(hsl.x - centerAt(i)); d = min(d, 360. - d);
         float w = clamp(1. - d / 45., 0., 1.);
-        hsl.x += uMixer[i].x * w;
+        hsl.x += uMixer[i].x * .6 * w;
         hsl.y *= 1. + uMixer[i].y / 100. * w;
         hsl.z += uMixer[i].z / 200. * w;
     }

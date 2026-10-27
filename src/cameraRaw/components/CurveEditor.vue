@@ -45,7 +45,7 @@ function keyMove(event: KeyboardEvent, index: number) {
 <template>
     <div class="curve-editor">
         <div class="curve-channels" role="tablist" aria-label="曲线通道">
-            <button v-for="item in channels" :key="item.id" type="button" role="tab" :aria-selected="channel === item.id" :class="{ active: channel === item.id }" @click="channel = item.id; active = -1">{{ item.label }}</button>
+            <button v-for="item in channels" :key="item.id" type="button" role="tab" :aria-selected="channel === item.id" :class="{ active: channel === item.id }" @click="channel = item.id; active = -1"><i class="channel-marker" :class="`marker-${item.id}`" aria-hidden="true" />{{ item.label }}</button>
         </div>
         <svg ref="svg" class="curve-grid" viewBox="0 0 256 256" @pointerdown="addPoint" @pointermove="movePoint" @pointerup="active = -1" @pointerleave="active = -1">
             <defs><pattern id="smallGrid" width="64" height="64" patternUnits="userSpaceOnUse"><path d="M 64 0 L 0 0 0 64" fill="none" stroke="#4a4a4a" stroke-width="1" /></pattern></defs>
@@ -59,7 +59,8 @@ function keyMove(event: KeyboardEvent, index: number) {
 </template>
 
 <style lang="scss" scoped>
-.curve-channels { display: flex; margin-bottom: 9px; border-bottom: 1px solid #4a4a4a; button { flex: 1; height: 27px; border: 0; background: transparent; color: #aaa; cursor: pointer; &.active { color: #fff; box-shadow: inset 0 -2px #64b9e8; } } }
+.curve-channels { display: flex; margin-bottom: 9px; border-bottom: 1px solid #4a4a4a; button { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1; height: 27px; border: 0; background: transparent; color: #aaa; cursor: pointer; &.active { color: #fff; box-shadow: inset 0 -2px #64b9e8; } } }
+.channel-marker { width: 6px; height: 6px; border-radius: 50%; background: #aaa; }.marker-r { background: #ed6060; }.marker-g { background: #58c875; }.marker-b { background: #5a91ed; }
 .curve-grid { display: block; width: 100%; aspect-ratio: 1; touch-action: none; user-select: none; }
 .curve-point { fill: #222; stroke: #fff; stroke-width: 2; cursor: move; &:focus { fill: #5eb8e7; outline: none; } }
 .curve-axis { display: flex; justify-content: space-between; color: #888; font-size: 9px; }

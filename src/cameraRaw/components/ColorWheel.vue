@@ -15,11 +15,12 @@ function update(event: PointerEvent) {
     const hue = (Math.atan2(y, x) * 180 / Math.PI + 90 + 360) % 360, saturation = Math.min(100, Math.hypot(x, y) * 2 / .92 * 100);
     emit('update:modelValue', { ...props.modelValue, hue, saturation });
 }
+function reset() { emit('update:modelValue', { ...props.modelValue, hue: 0, saturation: 0 }); }
 </script>
 
 <template>
     <div class="wheel-control">
-        <div ref="wheel" class="color-wheel" role="slider" tabindex="0" :aria-label="props.label" :aria-valuenow="Math.round(props.modelValue.saturation)" @pointerdown="update" @pointermove="update">
+        <div ref="wheel" class="color-wheel" role="slider" tabindex="0" :aria-label="props.label" :aria-valuenow="Math.round(props.modelValue.saturation)" title="拖动调整，双击复位" @pointerdown="update" @pointermove="update" @dblclick.stop.prevent="reset">
             <span class="wheel-center" /><span class="wheel-handle" :style="position" />
         </div>
         <span>{{ props.label }}</span>

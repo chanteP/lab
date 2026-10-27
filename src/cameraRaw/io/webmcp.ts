@@ -4,6 +4,7 @@ import type { Adjustments, ImageAsset } from '../types';
 import { ensureBitmap } from './raw';
 import { downloadBlob, renderExport } from './export';
 import { parsePreset, serializePreset } from './preset';
+import { putPreset } from './presetStore';
 
 type ToolResult = { content: { type: string; text: string }[]; structuredContent?: unknown; isError?: boolean };
 type ToolDefinition = { name: string; description: string; inputSchema: Record<string, unknown>; execute: (args: Record<string, any>) => Promise<unknown> | unknown };
@@ -94,10 +95,15 @@ const tools: ToolDefinition[] = [
     },
     {
         name: 'camera_raw_preset', description: '应用 Camera Raw XMP/JSON 预设，或导出当前图片的 XMP 预设。',
-        inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['apply', 'export'] }, id: { type: 'string' }, xmp: { type: 'string', description: 'apply 时传入 XMP 或 JSON 文本' } }, required: ['action'] },
-        execute: (args) => {
+        inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['apply', 'export'] }, id: { type: 'string' }, name: { type: 'string' }, xmp: { type: 'string', description: 'apply 时传入 XMP 或 JSON 文本' } }, required: ['action'] },
+        execute: async (args) => {
             const asset = target(args.id);
-            if (args.action === 'apply') { if (!args.xmp) throw new Error('apply 需要 xmp'); asset.adjustments = parsePreset(args.xmp); return result({ applied: true, adjustments: asset.adjustments }); }
+            if (args.action === 'apply') {
+                if (!args.xmp) throw new Error('apply 需要 xmp');
+                asset.adjustments = parsePreset(args.xmp);
+                if (typeof indexedDB !== 'undefined') await putPreset({ name: args.name || 'Agent 预设', xmp: serializePreset(asset.adjustments, args.name || 'Agent 预设'), source: 'agent' });
+                return result({ applied: true, adjustments: asset.adjustments });
+            }
             return result({ name: `${asset.name.replace(/\.[^.]+$/, '')}.xmp`, xmp: serializePreset(asset.adjustments) });
         },
     },

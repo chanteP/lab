@@ -1,6 +1,7 @@
 import type { Adjustments, Grade, MixerColor } from '../types';
 
 export const clamp = (v: number, min = 0, max = 1) => Math.max(min, Math.min(max, v));
+export const MIXER_HUE_SCALE = .6;
 export const luminance = (rgb: number[]) => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
 
 export function hue2rgb(p: number, q: number, t: number): number {
@@ -55,7 +56,7 @@ export function applyMixer(rgb: number[], mixer: Adjustments['mixer']): number[]
         const distance = Math.min(Math.abs(h - center), 360 - Math.abs(h - center));
         const weight = clamp(1 - distance / 45);
         const adj = mixer[name];
-        hue += adj.hue * weight;
+        hue += adj.hue * MIXER_HUE_SCALE * weight;
         saturation *= 1 + adj.saturation / 100 * weight;
         lightness += adj.luminance / 200 * weight;
     }

@@ -5,9 +5,11 @@ import { MIXER_COLORS, MIXER_LABELS } from '../types';
 import SliderField from './SliderField.vue';
 import CurveEditor from './CurveEditor.vue';
 import ColorWheel from './ColorWheel.vue';
+import { MIXER_HUE_SCALE } from '../engine/color';
+import PresetPanel from './PresetPanel.vue';
 
 defineProps<{ modelValue: Adjustments; panel: string; camera?: string; lens?: string }>();
-const emit = defineEmits<{ reset: [] }>();
+const emit = defineEmits<{ reset: []; 'update:modelValue': [value: Adjustments] }>();
 const mixerMode = ref<'hue' | 'saturation' | 'luminance'>('hue');
 const mixerModeLabel = computed(() => ({ hue: '色相', saturation: '饱和度', luminance: '明亮度' }[mixerMode.value]));
 const hueGradient = 'linear-gradient(90deg, #ed4040, #e2d741, #42b957, #38c6bd, #397bd8, #8951bf, #d548a5, #ed4040)';
@@ -17,9 +19,9 @@ const saturationGradient = 'linear-gradient(90deg, #777, #c64c81)';
 const mixerCenters: Record<MixerColor, number> = { red: 0, orange: 30, yellow: 60, green: 120, aqua: 180, blue: 225, purple: 275, magenta: 315 };
 function mixerGradient(color: MixerColor) {
     const h = mixerCenters[color];
-    if (mixerMode.value === 'hue') return `linear-gradient(90deg, hsl(${h - 100} 75% 50%), hsl(${h} 75% 50%), hsl(${h + 100} 75% 50%))`;
-    if (mixerMode.value === 'saturation') return `linear-gradient(90deg, hsl(${h} 0% 50%), hsl(${h} 100% 50%))`;
-    return `linear-gradient(90deg, #111, hsl(${h} 75% 50%), #eee)`;
+    if (mixerMode.value === 'hue') return `linear-gradient(90deg, hsl(${h - 100 * MIXER_HUE_SCALE} 75% 50%) 0%, hsl(${h} 75% 50%) 50%, hsl(${h + 100 * MIXER_HUE_SCALE} 75% 50%) 100%)`;
+    if (mixerMode.value === 'saturation') return `linear-gradient(90deg, hsl(${h} 0% 50%) 0%, hsl(${h} 100% 50%) 100%)`;
+    return `linear-gradient(90deg, #111 0%, hsl(${h} 75% 50%) 50%, #eee 100%)`;
 }
 const whiteBalance = ref('asShot');
 const wbPresets: Record<string, [number, number]> = { daylight: [5, 0], cloudy: [15, 2], shade: [25, 3], tungsten: [-45, -5], fluorescent: [-25, 20], flash: [10, 1] };
@@ -31,7 +33,7 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
 
 <template>
     <section class="adjustment-panel">
-        <header><h2>{{ { basic: '基本', curve: '曲线', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学' }[panel] }}</h2><button type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
+        <header><h2>{{ { basic: '基本', curve: '曲线', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学', presets: '预设' }[panel] }}</h2><button v-if="panel !== 'presets'" type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
         <div v-if="panel === 'basic'" class="panel-body">
             <label class="select-row"><span>白平衡</span><select :value="whiteBalance" @change="setWhiteBalance(($event.target as HTMLSelectElement).value, modelValue)"><option value="asShot">原照设置</option><option value="daylight">日光</option><option value="cloudy">阴天</option><option value="shade">阴影</option><option value="tungsten">白炽灯</option><option value="fluorescent">荧光灯</option><option value="flash">闪光灯</option></select></label>
             <SliderField v-model="modelValue.temperature" label="色温" :gradient="temperatureGradient" /><SliderField v-model="modelValue.tint" label="色调" :gradient="tintGradient" />
@@ -63,12 +65,13 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
             <h3>绿原色</h3><SliderField v-model="modelValue.calibration.greenHue" label="色相" :gradient="hueGradient" /><SliderField v-model="modelValue.calibration.greenSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #42b957)" />
             <h3>蓝原色</h3><SliderField v-model="modelValue.calibration.blueHue" label="色相" :gradient="hueGradient" /><SliderField v-model="modelValue.calibration.blueSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #397bd8)" />
         </div>
-        <div v-else class="panel-body">
+        <div v-else-if="panel === 'optics'" class="panel-body">
             <div class="profile-info"><span>相机</span><strong>{{ camera || '未识别' }}</strong><span>镜头</span><strong>{{ lens || '未识别；使用手动校正' }}</strong></div>
             <SliderField v-model="modelValue.optics.distortion" label="畸变" /><SliderField v-model="modelValue.optics.chromaticAberration" label="色差" />
             <div class="separator" /><SliderField v-model="modelValue.optics.vignette" label="暗角" /><SliderField v-model="modelValue.optics.midpoint" label="中点" :min="0" />
             <p class="hint">手动光学调整。自动镜头配置文件仅在可靠识别镜头后启用。</p>
         </div>
+        <PresetPanel v-show="panel === 'presets'" :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" />
     </section>
 </template>
 

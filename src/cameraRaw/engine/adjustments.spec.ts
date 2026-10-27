@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDefaultAdjustments, mergeAdjustments } from './adjustments.ts';
+import { blendAdjustments, createDefaultAdjustments, mergeAdjustments } from './adjustments.ts';
 import { applyCurves, createCurveLut, evaluateCurve, normalizePoints } from './curve.ts';
 import { applyMixer, applyTone, calibrationMatrix, gradeFor, hslToRgb, opticsCoordinate, rgbToHsl, whiteBalance } from './color.ts';
 
@@ -30,6 +30,15 @@ test('composite RGB curve affects every channel before independent channel curve
     near(independent[0], .4); near(independent[1], .8); near(independent[2], .8);
 });
 
+test('preset strength blends scalar, nested and curve values without compounding', () => {
+    const base = createDefaultAdjustments(), target = createDefaultAdjustments();
+    target.exposure = 2; target.mixer.blue.hue = 100;
+    target.curves.rgb = [{ x: 0, y: 0 }, { x: .5, y: 1 }, { x: 1, y: 1 }];
+    assert.deepEqual(blendAdjustments(base, target, 0), base); assert.deepEqual(blendAdjustments(base, target, 1), target);
+    const half = blendAdjustments(base, target, .5);
+    near(half.exposure, 1); near(half.mixer.blue.hue, 50); near(half.curves.rgb[8].y, .75);
+});
+
 test('HSL and RGB conversion round trips representative colors', () => {
     for (const rgb of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [.2, .4, .8], [.5, .5, .5]]) {
         const out = hslToRgb(...rgbToHsl(rgb) as [number, number, number]);
@@ -42,6 +51,11 @@ test('color mixer changes target colors and leaves neutral colors unchanged', ()
     assert.ok(applyMixer([1, 0, 0], a.mixer).every((v, i, arr) => Math.abs(v - arr[0]) < 1e-5));
     assert.deepEqual(applyMixer([.5, .5, .5], a.mixer), [.5, .5, .5]);
     assert.notDeepEqual(applyMixer([0, 0, 1], a.mixer), [0, 0, 1]);
+});
+
+test('mixer hue uses the Camera Raw-like bounded sixty degree range', () => {
+    const a = createDefaultAdjustments(); a.mixer.red.hue = 100;
+    near(rgbToHsl(applyMixer([1, 0, 0], a.mixer))[0], 60);
 });
 
 test('calibration defaults to identity and primaries respond independently', () => {

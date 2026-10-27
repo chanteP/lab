@@ -1,5 +1,6 @@
 import type { Adjustments, Curves, MixerColor } from '../types';
 import { MIXER_COLORS } from '../types';
+import { evaluateCurve } from './curve';
 
 export const defaultCurves = (): Curves => ({
     rgb: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
@@ -51,4 +52,28 @@ export function mergeAdjustments(base: Adjustments, patch: Partial<Adjustments>)
 
 export function hasAdjustments(value: Adjustments): boolean {
     return JSON.stringify(value) !== JSON.stringify(createDefaultAdjustments());
+}
+
+export function blendAdjustments(base: Adjustments, target: Adjustments, amount: number): Adjustments {
+    const t = Math.max(0, Math.min(1, amount));
+    if (t === 0) return cloneAdjustments(base);
+    if (t === 1) return cloneAdjustments(target);
+    const result = cloneAdjustments(base), lerp = (a: number, b: number) => a + (b - a) * t;
+    const scalars = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'texture', 'clarity', 'dehaze', 'vibrance', 'saturation'] as const;
+    for (const key of scalars) result[key] = lerp(base[key], target[key]);
+    for (const channel of ['rgb', 'r', 'g', 'b'] as const) {
+        result.curves[channel] = Array.from({ length: 17 }, (_, i) => {
+            const x = i / 16;
+            return { x, y: lerp(evaluateCurve(base.curves[channel], x), evaluateCurve(target.curves[channel], x)) };
+        });
+    }
+    for (const color of MIXER_COLORS) for (const key of ['hue', 'saturation', 'luminance'] as const) result.mixer[color][key] = lerp(base.mixer[color][key], target.mixer[color][key]);
+    for (const range of ['shadows', 'midtones', 'highlights'] as const) {
+        for (const key of ['hue', 'saturation', 'luminance'] as const) result.grading[range][key] = lerp(base.grading[range][key], target.grading[range][key]);
+    }
+    result.grading.blending = lerp(base.grading.blending, target.grading.blending);
+    result.grading.balance = lerp(base.grading.balance, target.grading.balance);
+    for (const key of Object.keys(result.calibration) as (keyof Adjustments['calibration'])[]) result.calibration[key] = lerp(base.calibration[key], target.calibration[key]);
+    for (const key of Object.keys(result.optics) as (keyof Adjustments['optics'])[]) result.optics[key] = lerp(base.optics[key], target.optics[key]);
+    return result;
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NIcon } from 'naive-ui';
-import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SyncOutline, TrashOutline } from '@vicons/ionicons5';
+import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SyncOutline, TrashOutline } from '@vicons/ionicons5';
 import { activeAsset, assets, busy, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import { createDefaultAdjustments } from './engine/adjustments';
 import { parsePreset, serializePreset } from './io/preset';
@@ -9,6 +9,7 @@ import { saveAsset } from './io/export';
 import { downloadBlob } from './io/export';
 import { disposeRaw } from './io/raw';
 import { initWebMCP } from './io/webmcp';
+import { putPreset } from './io/presetStore';
 import ImageViewer from './components/ImageViewer.vue';
 import AdjustmentPanel from './components/AdjustmentPanel.vue';
 import FilmStrip from './components/FilmStrip.vue';
@@ -19,6 +20,7 @@ const panels = [
     { id: 'basic', label: '基本', icon: OptionsOutline }, { id: 'curve', label: '曲线', icon: PulseOutline },
     { id: 'grading', label: '分级', icon: ContrastOutline }, { id: 'mixer', label: '混色', icon: ColorPaletteOutline },
     { id: 'calibration', label: '校准', icon: ApertureOutline }, { id: 'optics', label: '光学', icon: CameraOutline },
+    { id: 'presets', label: '预设', icon: BookmarksOutline },
 ];
 const panel = ref('basic'), compare = ref(0), split = ref(.5), zoom = ref(1), histogramMode = ref<'rgb' | 'luminance'>('rgb');
 const mobilePanelOpen = ref(false);
@@ -29,13 +31,26 @@ const camera = computed(() => String(activeAsset.value?.metadata.Make || activeA
 const cameraModel = computed(() => String(activeAsset.value?.metadata.Model || activeAsset.value?.metadata.model || ''));
 const lens = computed(() => String(activeAsset.value?.metadata.LensModel || activeAsset.value?.metadata.lens || ''));
 const dimensions = computed(() => activeAsset.value ? `${activeAsset.value.width} × ${activeAsset.value.height}` : '');
+const modifiedPanels = computed(() => {
+    const a = activeAsset.value?.adjustments, modified = new Set<string>(); if (!a) return modified;
+    const d = createDefaultAdjustments();
+    const basicKeys = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'texture', 'clarity', 'dehaze', 'vibrance', 'saturation'] as const;
+    if (basicKeys.some((key) => a[key] !== d[key])) modified.add('basic');
+    for (const key of ['curves', 'grading', 'mixer', 'calibration', 'optics'] as const) if (JSON.stringify(a[key]) !== JSON.stringify(d[key])) modified.add(key);
+    return modified;
+});
 let toastTimer: ReturnType<typeof setTimeout>;
 
 watch(notice, (message) => { if (!message) return; toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; notice.value = ''; }, 3200); });
 function chooseFiles(event: Event) { const input = event.target as HTMLInputElement; void importFiles(Array.from(input.files ?? [])); input.value = ''; }
 async function choosePreset(event: Event) {
     const input = event.target as HTMLInputElement, file = input.files?.[0]; if (!file || !activeAsset.value) return;
-    try { activeAsset.value.adjustments = parsePreset(await file.text()); notice.value = `已应用预设 ${file.name}`; }
+    try {
+        const parsed = parsePreset(await file.text()), name = file.name.replace(/\.(xmp|json)$/i, '');
+        activeAsset.value.adjustments = parsed;
+        await putPreset({ name, xmp: serializePreset(parsed, name), source: 'import' });
+        notice.value = `已应用并保存预设 ${file.name}`;
+    }
     catch (error) { notice.value = `预设导入失败：${error instanceof Error ? error.message : String(error)}`; }
     input.value = '';
 }
@@ -114,7 +129,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
 
             <aside class="right-panel">
                 <div class="histogram-head"><div class="histogram-tools"><span>直方图</span><button type="button" :title="histogramMode === 'rgb' ? '切换为明度直方图' : '切换为 RGB 直方图'" @click="histogramMode = histogramMode === 'rgb' ? 'luminance' : 'rgb'"><NIcon><AnalyticsOutline /></NIcon>{{ histogramMode === 'rgb' ? 'RGB' : '明度' }}</button></div><Histogram :pixels="histogram" :mode="histogramMode" /></div>
-                <nav class="panel-tabs" aria-label="调整面板"><button v-for="item in panels" :key="item.id" type="button" :class="{ active: panel === item.id }" :aria-label="item.label" :title="item.label" @click="panel = item.id; mobilePanelOpen = true"><NIcon><component :is="item.icon" /></NIcon><span>{{ item.label }}</span></button></nav>
+                <nav class="panel-tabs" aria-label="调整面板"><button v-for="item in panels" :key="item.id" type="button" :class="{ active: panel === item.id }" :aria-label="item.label" :title="item.label" @click="panel = item.id; mobilePanelOpen = true"><NIcon><component :is="item.icon" /></NIcon><span>{{ item.label }}</span><sup v-if="modifiedPanels.has(item.id)" aria-label="已调整">*</sup></button></nav>
                 <div class="panel-scroll"><AdjustmentPanel v-if="activeAsset" v-model="activeAsset.adjustments" :panel="panel" :camera="`${camera} ${cameraModel}`" :lens="lens" @reset="reset" /><div v-else class="no-image">打开图片后开始调整</div></div>
                 <div class="preset-actions"><button type="button" :disabled="!activeAsset" @click="presetInput?.click()">导入预设</button><button type="button" :disabled="!activeAsset" @click="exportPreset">导出预设</button></div>
             </aside>
@@ -156,7 +171,7 @@ button:disabled { opacity: .35; cursor: default !important; }
 .right-panel { display: grid; grid-template-rows: auto 54px minmax(0, 1fr) 39px; min-height: 0; border-left: 1px solid #111; background: #303030; }
 .histogram-head { padding: 0 12px 9px; border-bottom: 1px solid #444; }
 .histogram-tools { display: flex; align-items: center; justify-content: space-between; height: 34px; color: #999; font-size: 10px; button { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; color: #aaa; font-size: 9px; cursor: pointer; } }
-.panel-tabs { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid #444; button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } } }
+.panel-tabs { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid #444; button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } sup { position: absolute; top: 2px; right: 5px; color: #f0c64f; font-size: 15px; font-weight: 700; line-height: 1; } } }
 .panel-scroll { min-height: 0; overflow-y: auto; scrollbar-color: #555 #303030; }
 .no-image { padding: 35px 0; color: #777; text-align: center; }
 .preset-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 6px 11px; border-top: 1px solid #444; button { border: 1px solid #555; border-radius: 3px; background: #373737; color: #bbb; font-size: 10px; cursor: pointer; &:hover { color: white; background: #444; } } }

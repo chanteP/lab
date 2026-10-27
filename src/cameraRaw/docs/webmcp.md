@@ -39,3 +39,5 @@ const jpg = await agent.callTool('camera_raw_export', {
 ```
 
 URL 加载受浏览器 CORS 限制。任意本地路径需要先由 agent 读取并转成 base64，浏览器页面不能直接读取用户未授权的本地路径。
+
+Agent 通过 `camera_raw_preset` 应用的预设也会以 `Agent` 来源写入 IndexedDB，与界面导入和手动保存的预设显示在同一个预设面板中。
