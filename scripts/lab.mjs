@@ -156,14 +156,17 @@ const commands = {
                 title: meta?.title ?? page,
                 description: meta?.description ?? '',
                 seo: Boolean(meta?.canonical),
+                ...pageDates(page),
             };
-        });
+        }).sort(
+            (a, b) =>
+                (b.modifiedAt ? Date.parse(b.modifiedAt) : 0) - (a.modifiedAt ? Date.parse(a.modifiedAt) : 0) ||
+                a.page.localeCompare(b.page),
+        );
         const tools = pages.filter((p) => p.seo);
         const experiments = pages.filter((p) => !p.seo);
 
-        const card = ({ page, title, description }) => {
-            const { createdAt, modifiedAt } = pageDates(page);
-            return `        <a class="card" href="${page}/">
+        const card = ({ page, title, description, createdAt, modifiedAt }) => `        <a class="card" href="${page}/">
             <div class="card-content">
                 <h3>${esc(title)}</h3>
                 ${description ? `<p>${esc(description)}</p>` : ''}
@@ -176,7 +179,6 @@ const commands = {
                 </div>
             </div>
         </a>`;
-        };
 
         const section = (name, list) =>
             list.length
