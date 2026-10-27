@@ -78,7 +78,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
     const points = entity.points || [];
     if (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3)) return new THREE.BufferGeometry();
-    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128);
+    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides);
     const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: entity.depth! - size * 2,
@@ -138,7 +138,7 @@ export function buildEntityMesh(
         const type = entity.profileType || 'polygon';
         const source = entity.points || [];
         const closed = profileClosed(type);
-        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source).map((point) => new THREE.Vector3(point[0], point[1], 0)));
+        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source, 64, entity.curves, entity.sides)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source, 64, entity.curves, entity.sides).map((point) => new THREE.Vector3(point[0], point[1], 0)));
         const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
         if (plane) geometry.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)));
         else geometry.rotateX(-Math.PI / 2);

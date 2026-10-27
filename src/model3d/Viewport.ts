@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OrientationGizmo } from './OrientationGizmo';
 import { buildScene } from './geometry';
-import { profileClosed, profilePoints, type ProfileType } from './profiles';
+import { profileClosed, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
 import type { ModelDocument, Point2, SketchPlane, Vec3 } from './types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
@@ -16,11 +16,16 @@ interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
     onGeometrySelect: (id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3) => void;
     onBodySelect: (id: string) => void;
+    onPlaneSelect: (id: string) => void;
+    onPlaneTransform: (id: string, position: Vec3, quaternion: THREE.Quaternion) => void;
     onTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
     onTransformEnd: () => void;
     onDirectEdit: (id: string, normal: Vec3, delta: number, phase: EditPhase) => void;
     onSketchPoint: (point: Point2) => void;
     onSketchPointMove: (index: number, point: Point2, phase: EditPhase) => void;
+    onSketchSegment: (index: number) => void;
+    onSketchHandleMove: (segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) => void;
+    onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
     onSketchSelect: (index: number) => void;
     onSketchComplete: () => void;
     onBlankCommit: () => void;
@@ -59,7 +64,10 @@ export class Viewport {
     private sketchMode = false;
     private activePlane: SketchPlane | null = null;
     private selectedSketchPoint = -1;
-    private sketchDrag: { index: number } | null = null;
+    private sketchDrag: { index: number; handle?: 1 | 2 } | null = null;
+    private shapeDrag: { start: Point2; moved: boolean } | null = null;
+    private sketchSegmentHandled = false;
+    private sketchProfileType: ProfileType = 'polygon';
     private directDrag: { id: string; normal: Vec3; y: number } | null = null;
     private gizmoDrag: { x: number; y: number; moved: boolean } | null = null;
     private measureMode = false;
@@ -114,6 +122,11 @@ export class Viewport {
         });
         this.transform.addEventListener('objectChange', () => {
             const object = this.transform.object;
+            const planeId = object?.userData.planeId;
+            if (object && planeId) {
+                this.callbacks.onPlaneTransform(planeId, object.position.toArray(), object.quaternion.clone());
+                return;
+            }
             const id = object?.userData.entityId;
             if (!object || !id) return;
             this.callbacks.onTransform(id, object.position.toArray(),
@@ -203,6 +216,14 @@ export class Viewport {
         this.pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
         this.raycaster.setFromCamera(this.pointer, this.camera);
     }
+    private hitPlane(event: PointerEvent) {
+        this.setPointer(event);
+        const hit = this.raycaster.intersectObjects(this.planes.children, true)[0];
+        if (!hit) return null;
+        let object: THREE.Object3D | null = hit.object;
+        while (object && !object.userData.planeId) object = object.parent;
+        return object ? { id: object.userData.planeId as string, distance: hit.distance } : null;
+    }
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
         return this.raycaster.intersectObjects(this.model.children, false)[0];
@@ -234,6 +255,7 @@ export class Viewport {
     private onPointerDown(event: PointerEvent) {
         this.fitAnimation = null;
         this.pointerStart.set(event.clientX, event.clientY);
+        this.raycaster.params.Line.threshold = 1.5;
         if (event.button !== 0) return;
         if (this.isGizmoEvent(event)) {
             event.preventDefault(); event.stopImmediatePropagation();
@@ -243,19 +265,33 @@ export class Viewport {
         }
         if (this.measureMode) { this.controls.enableRotate = false; return; }
         if (this.sketchMode) {
+            this.sketchSegmentHandled = false;
             this.setPointer(event);
-            const markers = this.sketch.children.filter((item) => item.userData.pointIndex !== undefined);
+            const markers = this.sketch.children.filter((item) => item.userData.pointIndex !== undefined || item.userData.handleSegment !== undefined);
             const hit = this.raycaster.intersectObjects(markers, false)[0];
             if (hit) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                const index = hit.object.userData.pointIndex;
-                this.sketchDrag = { index };
-                this.selectedSketchPoint = index;
-                this.callbacks.onSketchSelect(index);
-                this.callbacks.onSketchPointMove(index, this.sketchPoint(event)!, 'start');
+                const handle = hit.object.userData.handleSegment !== undefined;
+                const index = handle ? hit.object.userData.handleSegment : hit.object.userData.pointIndex;
+                this.sketchDrag = handle ? { index, handle: hit.object.userData.handleIndex } : { index };
+                if (!handle) {
+                    this.selectedSketchPoint = index;
+                    this.callbacks.onSketchSelect(index);
+                    this.callbacks.onSketchPointMove(index, this.sketchPoint(event)!, 'start');
+                } else this.callbacks.onSketchHandleMove(index, hit.object.userData.handleIndex, this.sketchPoint(event)!, 'start');
                 this.controls.enabled = false;
                 this.updateMarkerColors();
+                return;
             }
+            const segmentHit = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
+            if (segmentHit) {
+                event.preventDefault(); event.stopImmediatePropagation();
+                this.sketchSegmentHandled = true;
+                this.callbacks.onSketchSegment(segmentHit.object.userData.segmentIndex);
+                return;
+            }
+            const start = this.sketchPoint(event);
+            if (start) this.shapeDrag = { start, moved: false };
             return;
         }
         const hit = this.hitEntity(event);
@@ -292,7 +328,15 @@ export class Viewport {
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const point = this.sketchPoint(event);
-            if (point) this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
+            if (point) this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'move') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
+            return;
+        }
+        if (this.shapeDrag && this.sketchMode) {
+            const point = this.sketchPoint(event);
+            if (point && this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) {
+                this.shapeDrag.moved = true;
+                this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'move');
+            }
             return;
         }
         if (this.directDrag) {
@@ -319,7 +363,7 @@ export class Viewport {
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const point = this.sketchPoint(event);
-            if (point) this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
+            if (point) this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'end') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
             this.sketchDrag = null;
             this.controls.enabled = true;
             return;
@@ -346,15 +390,25 @@ export class Viewport {
             return;
         }
         if (this.sketchMode) {
+            if (this.sketchSegmentHandled) { this.sketchSegmentHandled = false; return; }
             const point = this.sketchPoint(event);
-            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            if (point && this.shapeDrag?.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
+            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            this.shapeDrag = null;
             return;
         }
         const hit = this.hitEntity(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+        const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
+        if (planeHit && (!hit || planeHit.distance < hit.distance)) { this.callbacks.onPlaneSelect(planeHit.id); return; }
         if (hit && this.tool === 'select' && !additive) {
-            const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).toArray();
-            this.callbacks.onGeometrySelect(hit.object.userData.entityId, this.nearFaceEdge(hit, event) ? 'edge' : 'face', normal, hit.point.toArray());
+            const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray();
+            const positions = hit.object.geometry.attributes.position;
+            const bodyCenter = new THREE.Box3().setFromObject(hit.object).getCenter(new THREE.Vector3());
+            const normalVector = new THREE.Vector3(...normal).normalize();
+            // Use the body's in-plane center and the picked face's height, rather than a triangle centroid.
+            const center = bodyCenter.add(normalVector.multiplyScalar(hit.point.clone().sub(bodyCenter).dot(normalVector))).toArray();
+            this.callbacks.onGeometrySelect(hit.object.userData.entityId, this.nearFaceEdge(hit, event) ? 'edge' : 'face', normal, center as Vec3);
         } else if (!hit && ['extrude', 'offsetFace', 'fillet', 'chamfer'].includes(this.tool)) this.callbacks.onBlankCommit();
         else this.callbacks.onSelect(null, additive);
     }
@@ -370,7 +424,7 @@ export class Viewport {
     }
     private onDoubleClick(event: MouseEvent) {
         if (this.measureMode) return;
-        if (this.sketchMode) { event.preventDefault(); this.callbacks.onSketchComplete(); }
+        if (this.sketchMode) { event.preventDefault(); return; }
         else {
             const hit = this.hitEntity(event as unknown as PointerEvent);
             if (hit) this.callbacks.onBodySelect(hit.object.userData.entityId);
@@ -494,7 +548,9 @@ export class Viewport {
         });
         const id = this.selected[this.selected.length - 1];
         const object = this.model.children.find((item) => item.userData.entityId === id);
-        if (object && ['translate', 'rotate', 'scale'].includes(this.tool) && !this.sketchMode) this.transform.attach(object);
+        const planeObject = this.planes.children.find((item) => item.userData.planeId === id);
+        if (planeObject && ['translate', 'rotate'].includes(this.tool) && !this.sketchMode) this.transform.attach(planeObject);
+        else if (object && ['translate', 'rotate', 'scale'].includes(this.tool) && !this.sketchMode) this.transform.attach(object);
     }
     setTool(tool: ViewTool) {
         this.tool = tool;
@@ -506,6 +562,7 @@ export class Viewport {
         this.sketchMode = active;
         this.selectedSketchPoint = selectedIndex;
         this.sketchDrag = null;
+        this.shapeDrag = null;
         this.transform.detach();
         this.controls.enableRotate = !active;
         this.container.classList.toggle('is-sketching', active);
@@ -518,11 +575,12 @@ export class Viewport {
             ((object as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(object.userData.pointIndex === this.selectedSketchPoint ? '#ffb65c' : '#ffffff');
         });
     }
-    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon') {
+    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1) {
         this.clearGroup(this.sketch);
         this.selectedSketchPoint = selectedIndex;
+        this.sketchProfileType = profileType;
         if (!this.sketchMode || !points.length) return;
-        const displayPoints = profilePoints(profileType, points);
+        const displayPoints = profilePoints(profileType, points, 64, curves, sides);
         const vertices = displayPoints.map((point) => this.sketchWorld(point));
         if (profileClosed(profileType) && displayPoints.length >= 3) {
             const shape = new THREE.Shape();
@@ -534,9 +592,43 @@ export class Viewport {
             fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.06) : new THREE.Vector3(0, 0.06, 0));
             this.sketch.add(fill);
         }
-        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vertices), new THREE.LineBasicMaterial({ color: '#147d70', depthTest: false }));
-        line.renderOrder = 5;
-        this.sketch.add(line);
+        if (profileType === 'polygon') {
+            const count = profileClosed(profileType) ? points.length : points.length - 1;
+            for (let index = 0; index < count; index++) {
+                const a = points[index], b = points[(index + 1) % points.length];
+                const curve = curves[index];
+                const segmentPoints = curve ? new THREE.CubicBezierCurve(new THREE.Vector2(...a), new THREE.Vector2(...curve.c1), new THREE.Vector2(...curve.c2), new THREE.Vector2(...b)).getPoints(24) : [new THREE.Vector2(...a), new THREE.Vector2(...b)];
+                const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(segmentPoints.map((point) => this.sketchWorld([point.x, point.y]))), new THREE.LineBasicMaterial({ color: '#147d70', depthTest: false }));
+                line.userData.segmentIndex = index;
+                line.renderOrder = 5;
+                this.sketch.add(line);
+            }
+        } else {
+            const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(vertices), new THREE.LineBasicMaterial({ color: '#147d70', depthTest: false, dashed: profileType === 'circle' || profileType === 'ellipse' || profileType === 'regular' }));
+            line.renderOrder = 5;
+            this.sketch.add(line);
+            if (['circle', 'ellipse', 'regular'].includes(profileType) && points.length >= 2) {
+                const radiusLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([this.sketchWorld(points[0]), this.sketchWorld(points[1])]), new THREE.LineDashedMaterial({ color: '#7a8d84', dashSize: 2, gapSize: 1.5, depthTest: false }));
+                radiusLine.computeLineDistances();
+                this.sketch.add(radiusLine);
+            }
+        }
+        if (selectedSegment >= 0 && curves[selectedSegment]) {
+            const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
+            [[a, curve.c1], [b, curve.c2]].forEach(([from, to]) => {
+                const guide = new THREE.Line(new THREE.BufferGeometry().setFromPoints([this.sketchWorld(from), this.sketchWorld(to)]), new THREE.LineDashedMaterial({ color: '#dc9441', dashSize: 1.5, gapSize: 1, depthTest: false }));
+                guide.computeLineDistances();
+                this.sketch.add(guide);
+            });
+            [curve.c1, curve.c2].forEach((point, handleIndex) => {
+                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: '#e5a34d', depthTest: false }));
+                handle.position.copy(this.sketchWorld(point));
+                handle.userData.handleSegment = selectedSegment;
+                handle.userData.handleIndex = handleIndex + 1;
+                handle.renderOrder = 7;
+                this.sketch.add(handle);
+            });
+        }
         points.map((point) => this.sketchWorld(point)).forEach((point, index) => {
             const marker = new THREE.Mesh(new THREE.SphereGeometry(index === selectedIndex ? 1.35 : 1.05, 16, 12), new THREE.MeshBasicMaterial({ color: index === selectedIndex ? '#ffb65c' : '#ffffff', depthTest: false }));
             marker.position.copy(point);
@@ -582,7 +674,7 @@ export class Viewport {
     }
     normalToSketch() {
         if (!this.activePlane) return;
-        const target = this.controls.target.clone();
+        const target = new THREE.Vector3(...this.activePlane.origin);
         const direction = new THREE.Vector3(...this.activePlane.normal);
         const distance = this.camera.position.distanceTo(target);
         this.camera.position.copy(target).add(direction.multiplyScalar(distance));

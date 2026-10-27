@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { NIcon } from 'naive-ui';
-import { ChevronForwardOutline, ChevronDownOutline, CubeOutline, FolderOutline, EyeOutline, EyeOffOutline } from '@vicons/ionicons5';
+import { ChevronForwardOutline, ChevronDownOutline, CubeOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline } from '@vicons/ionicons5';
 
 export interface OutlinerNode {
     id: string;
-    kind: 'entity' | 'folder';
+    kind: 'entity' | 'folder' | 'plane';
     name: string;
     visible?: boolean;
     children: OutlinerNode[];
@@ -53,9 +53,9 @@ function drop(event: DragEvent, targetId: string | null) {
                 @dragover.prevent.stop="dropTarget = node.id" @dragleave="dropTarget = null" @drop.stop="drop($event, node.id)">
                 <button v-if="node.children.length" class="tree-disclosure" @click.stop="toggleExpanded(node.id)"><NIcon><component :is="expanded.has(node.id) ? ChevronDownOutline : ChevronForwardOutline" /></NIcon></button>
                 <span v-else class="tree-disclosure-spacer"></span>
-                <NIcon class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : CubeOutline" /></NIcon>
+                <NIcon class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : CubeOutline" /></NIcon>
                 <span>{{ node.name }}</span>
-                <button v-if="node.kind === 'entity'" class="visibility" @click.stop="emit('toggle', node.id)"><NIcon><component :is="node.visible ? EyeOutline : EyeOffOutline" /></NIcon></button>
+                <button class="visibility" @click.stop="emit('toggle', node.id)"><NIcon><component :is="node.visible ? EyeOutline : EyeOffOutline" /></NIcon></button>
             </div>
             <EntityTree v-if="node.children.length && expanded.has(node.id)" class="tree-children" :nodes="node.children" :selected-ids="selectedIds"
                 @select="(id, additive) => emit('select', id, additive)" @toggle="(id) => emit('toggle', id)"

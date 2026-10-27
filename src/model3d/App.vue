@@ -7,11 +7,11 @@ import {
     ChevronDownOutline, CloseOutline, CloudDoneOutline, CopyOutline, CreateOutline, CubeOutline,
     CutOutline, DocumentOutline, DownloadOutline, EllipseOutline, EyeOffOutline, EyeOutline, FolderOpenOutline,
     GridOutline, HelpCircleOutline, LayersOutline, MoveOutline, RepeatOutline, ResizeOutline,
-    ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline, ScaleOutline,
+    ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type EditPhase, type ViewTool } from './Viewport';
 import EntityTree, { type OutlinerNode } from './EntityTree.vue';
-import { profileClosed, type ProfileType } from './profiles';
+import { profileClosed, type ProfileType, type ProfileCurves } from './profiles';
 import { buildEntityMesh } from './geometry';
 import { exportGLB, exportProject, exportSTL } from './exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './store';
@@ -48,6 +48,9 @@ const showHelp = ref(false);
 const newProjectName = ref('未命名项目');
 const sketchMode = ref(false);
 const sketchType = ref<ProfileType>('polygon');
+const sketchCurves = ref<ProfileCurves>({});
+const sketchSides = ref(3);
+const selectedSketchSegment = ref(-1);
 const sketchPoints = ref<Point2[]>([]);
 const sketchDepth = ref(10);
 const selectedSketchPoint = ref(-1);
@@ -64,9 +67,6 @@ const measureMode = ref(false);
 const scaleBar = ref({ width: 76, label: '50 mm' });
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
-const showAddPlane = ref(false);
-const planeKind = ref<'XZ' | 'XY' | 'YZ'>('XZ');
-const planeOffset = ref(0);
 const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
 const showRename = ref(false);
 const renameValue = ref('');
@@ -79,13 +79,14 @@ const canUndo = computed(() => (historyVersion.value, undoStack.length > 0));
 const canRedo = computed(() => (historyVersion.value, redoStack.length > 0));
 const canBoolean = computed(() => selectedEntities.value.length === 2);
 const saveLabel = computed(() => saveState.value === 'saved' ? '已保存到本机' : saveState.value === 'saving' ? '保存中…' : '有未保存更改');
-const sketchClosed = computed(() => sketchType.value === 'circle' ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
+const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const extrudeBody = computed(() => operation.value?.type === 'extrude' ? document.value.entities.find((item) => item.id === operation.value!.bodyId) : null);
 const booleanDraft = computed(() => operation.value?.type === 'boolean' ? operation.value : null);
 const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
 const historySteps = computed(() => document.value.entities.filter((item) => ['sketch', 'extrude', 'boolean'].includes(item.kind)).map((item) => ({ id: item.id, name: item.name, kind: item.kind })).reverse());
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
+const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
 const contextVisible = computed(() => sketchMode.value || !!selected.value || selectedEntities.value.length > 1 || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value));
 const dimensionFields = computed(() => {
@@ -121,7 +122,8 @@ const treeNodes = computed(() => {
             } as OutlinerNode];
         });
     };
-    return build(null);
+    const planeNodes = document.value.planes.map((plane) => ({ id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible, children: [] } as OutlinerNode));
+    return [...planeNodes, ...build(null)];
 });
 
 function uid() { return crypto.randomUUID(); }
@@ -435,6 +437,7 @@ function editHistory(id: string) {
     }
 }
 function selectFromItems(id: string, additive: boolean) {
+    if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
     selectEntity(id, additive);
     if (additive) return;
     const entity = document.value.entities.find((item) => item.id === id);
@@ -515,8 +518,8 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
 
 function startSketch(editProfile = false) {
     if (sketchMode.value) return;
-    if (!document.value.planes.length && !['extrude', 'sketch'].includes(selected.value?.kind || '')) { showAddPlane.value = true; return message.info('请先添加一个绘制平面'); }
-    const editing = editProfile && selected.value?.kind === 'extrude' ? document.value.entities.find((item) => item.id === selected.value!.profileId) : selected.value?.kind === 'sketch' ? selected.value : null;
+    if (!canDraw.value && !editProfile) return;
+    const editing = editProfile && selected.value?.kind === 'extrude' ? document.value.entities.find((item) => item.id === selected.value!.profileId) : selected.value?.kind === 'sketch' ? selected.value : document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === activePlaneId.value).at(-1);
     if (!editing && selected.value && lastFace.value?.bodyId === selected.value.id && activeTool.value === 'offsetFace') {
         const normal = new THREE.Vector3(...lastFace.value.normal).normalize();
         const reference = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
@@ -534,23 +537,34 @@ function startSketch(editProfile = false) {
     if (!activePlaneId.value && !editing) activePlaneId.value = document.value.planes[0].id;
     sketchPoints.value = editing?.points ? cloneEntity(editing).points! : [];
     sketchDepth.value = editing?.depth || 10;
-    sketchType.value = editing?.profileType || sketchType.value;
+    sketchType.value = editing?.profileType || 'polygon';
+    sketchCurves.value = editing?.curves ? JSON.parse(JSON.stringify(editing.curves)) : {};
+    sketchSides.value = editing?.sides || 3;
+    selectedSketchSegment.value = -1;
     selectedSketchPoint.value = -1;
     if (!editing) selectedIds.value = [];
     setTool('select');
     sketchMode.value = true;
     viewport?.setSketchMode(true, sketchPoints.value);
+    refreshSketch();
     viewport?.setView('top');
+}
+function refreshSketch() {
+    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value);
 }
 function setSketchType(type: ProfileType) {
     sketchType.value = type;
     sketchPoints.value = [];
+    sketchCurves.value = {};
     selectedSketchPoint.value = -1;
-    viewport?.updateSketch([], -1, type);
+    selectedSketchSegment.value = -1;
+    refreshSketch();
 }
 function addSketchPoint(point: Point2) {
     if (sketchType.value === 'circle' && sketchPoints.value.length >= 2) return;
     if (sketchType.value === 'arc' && sketchPoints.value.length >= 3) return;
+    if (sketchType.value === 'ellipse' && sketchPoints.value.length >= 3) return;
+    if (sketchType.value === 'regular' && sketchPoints.value.length >= 2) return;
     if (sketchType.value === 'rectangle' && sketchPoints.value.length >= 2) return;
     const previous = sketchPoints.value[sketchPoints.value.length - 1];
     if (previous && Math.hypot(previous[0] - point[0], previous[1] - point[1]) < 0.01) return;
@@ -559,7 +573,7 @@ function addSketchPoint(point: Point2) {
         sketchPoints.value = [first, [point[0], first[1]], point, [first[0], point[1]]];
     } else sketchPoints.value.push(point);
     syncEditingSketch();
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value);
+    refreshSketch();
 }
 function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (phase === 'start') {
@@ -567,13 +581,57 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         return;
     }
     if (!sketchPoints.value[index]) return;
+    const previous = sketchPoints.value[index];
+    const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
     sketchPoints.value[index] = point;
+    Object.entries(sketchCurves.value).forEach(([key, curve]) => {
+        const segment = Number(key);
+        if (segment === index) curve.c1 = [curve.c1[0] + delta[0], curve.c1[1] + delta[1]];
+        if (segment === index - 1) curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
+    });
     syncEditingSketch();
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value);
+    refreshSketch();
+}
+function ensureSketchSegment(index: number) {
+    if (index < 0 || index >= sketchPoints.value.length) return;
+    selectedSketchSegment.value = index;
+    if (!sketchCurves.value[index]) {
+        const a = sketchPoints.value[index], b = sketchPoints.value[(index + 1) % sketchPoints.value.length];
+        sketchCurves.value[index] = { c1: [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3] };
+    }
+}
+function selectSketchSegment(index: number) {
+    ensureSketchSegment(index);
+    selectedSketchPoint.value = -1;
+    syncEditingSketch();
+    refreshSketch();
+}
+function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) {
+    if (phase === 'start') return;
+    ensureSketchSegment(segment);
+    sketchCurves.value[segment][handle === 1 ? 'c1' : 'c2'] = point;
+    syncEditingSketch();
+    refreshSketch();
 }
 function selectSketchPoint(index: number) {
     selectedSketchPoint.value = index;
+    if (index > 0 && sketchType.value === 'polygon') ensureSketchSegment(index - 1);
+    else selectedSketchSegment.value = -1;
     viewport?.setSketchSelection(index);
+    refreshSketch();
+}
+function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
+    if (phase === 'start') return;
+    if (sketchType.value === 'rectangle') sketchPoints.value = [start, [point[0], start[1]], point, [start[0], point[1]]];
+    else if (sketchType.value === 'ellipse') sketchPoints.value = [start, [point[0], start[1]], [start[0], point[1]]];
+    else sketchPoints.value = [start, point];
+    syncEditingSketch();
+    refreshSketch();
+}
+function setSketchSides(sides: number) {
+    sketchSides.value = sides;
+    syncEditingSketch();
+    refreshSketch();
 }
 function updateSketchCoordinate(axis: 0 | 1, value: number | null) {
     const index = selectedSketchPoint.value;
@@ -581,12 +639,12 @@ function updateSketchCoordinate(axis: 0 | 1, value: number | null) {
     if (editingSketchId.value) pushHistory();
     sketchPoints.value[index][axis] = Math.round(value * 10) / 10;
     syncEditingSketch();
-    viewport?.updateSketch(sketchPoints.value, index, sketchType.value);
+    refreshSketch();
 }
 function syncEditingSketch() {
     if (!editingSketchId.value) return;
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
-    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; }
+    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; }
 }
 function updateSketchDepth(value: number | null) {
     if (value === null) return;
@@ -599,7 +657,7 @@ function finishSketch() {
     if (!sketchMode.value) return;
     const points = [...sketchPoints.value];
     if (sketchType.value === 'polygon' && points.length > 1 && Math.hypot(points[0][0] - points[points.length - 1][0], points[0][1] - points[points.length - 1][1]) < 0.01) points.pop();
-    const ready = sketchType.value === 'circle' ? points.length >= 2 : points.length >= 3;
+    const ready = ['circle', 'regular'].includes(sketchType.value) ? points.length >= 2 : points.length >= 3;
     if (!ready) return message.warning('当前草图工具的定义点不足');
     let id = editingSketchId.value;
     const existing = document.value.entities.find((entity) => entity.id === id);
@@ -613,29 +671,35 @@ function finishSketch() {
         entity.name = uniqueName('sketch');
         entity.points = points;
         entity.profileType = sketchType.value;
+        entity.sides = sketchSides.value;
         entity.planeId = activePlaneId.value!;
         entity.position = [0, 0, 0];
         delete entity.depth;
         document.value.entities.push(entity);
         id = entity.id;
     }
-    const shouldExtrude = !existing && profileClosed(sketchType.value);
+    if (existing) existing.curves = JSON.parse(JSON.stringify(sketchCurves.value));
+    else document.value.entities[document.value.entities.length - 1].curves = JSON.parse(JSON.stringify(sketchCurves.value));
     cancelSketch();
     selectedIds.value = [id!];
-    if (shouldExtrude) startExtrude(id!);
-    else viewport?.fitSelection();
+    viewport?.fitSelection();
+}
+function closeSketch() {
+    sketchClosed.value ? finishSketch() : cancelSketch();
 }
 function cancelSketch() {
     sketchMode.value = false;
     sketchPoints.value = [];
     selectedSketchPoint.value = -1;
+    selectedSketchSegment.value = -1;
+    sketchCurves.value = {};
     editingSketchId.value = null;
     viewport?.setSketchMode(false);
 }
 
 function createFolder() {
     pushHistory();
-    const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId: null };
+    const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId: null, visible: true };
     document.value.folders.push(folder);
     selectedIds.value = [folder.id];
 }
@@ -698,24 +762,51 @@ function reparentNodes(ids: string[], targetId: string | null) {
     valid.forEach((id) => nodes.get(id)!.parentId = targetId);
 }
 function createPlane() {
-    pushHistory();
-    const kind = planeKind.value;
+    const useFace = !!selected.value && lastFace.value?.bodyId === selected.value.id;
+    const normal = useFace ? new THREE.Vector3(...lastFace.value!.normal).normalize() : new THREE.Vector3(0, 1, 0);
+    const reference = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const u = useFace ? reference.clone().cross(normal).normalize() : new THREE.Vector3(1, 0, 0);
+    const v = useFace ? normal.clone().cross(u).normalize() : new THREE.Vector3(0, 0, -1);
     const plane: SketchPlane = {
-        id: uid(), name: `${kind} 平面 ${document.value.planes.length + 1}`, kind, visible: true,
-        origin: kind === 'XZ' ? [0, planeOffset.value, 0] : kind === 'XY' ? [0, 0, planeOffset.value] : [planeOffset.value, 0, 0],
-        normal: kind === 'XZ' ? [0, 1, 0] : kind === 'XY' ? [0, 0, 1] : [1, 0, 0],
-        u: kind === 'YZ' ? [0, 1, 0] : [1, 0, 0],
-        v: kind === 'XZ' ? [0, 0, -1] : kind === 'XY' ? [0, 1, 0] : [0, 0, 1],
+        id: uid(), name: useFace ? `实体面平面 ${document.value.planes.length + 1}` : `XZ 平面 ${document.value.planes.length + 1}`,
+        kind: useFace ? 'XY' : 'XZ', origin: useFace ? lastFace.value!.point : [0, 0, 0], normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: true,
     };
+    pushHistory();
     document.value.planes.push(plane);
     activePlaneId.value = plane.id;
-    showAddPlane.value = false;
+    selectedIds.value = [plane.id];
     viewport?.setActivePlane(plane);
+    setTool('select');
+}
+function selectPlane(id: string) {
+    activePlaneId.value = id;
+    selectedIds.value = [id];
+    viewport?.setActivePlane(activePlane.value);
+    setTool('select');
+}
+function toggleNodeVisibility(id: string) {
+    pushHistory();
+    const setEntity = (entity: ModelEntity, visible: boolean) => entity.visible = visible;
+    const folder = document.value.folders.find((item) => item.id === id);
+    if (folder) {
+        const visible = !folder.visible;
+        const apply = (parentId: string, value: boolean) => {
+            document.value.entities.filter((item) => item.parentId === parentId).forEach((item) => setEntity(item, value));
+            document.value.folders.filter((item) => item.parentId === parentId).forEach((item) => { item.visible = value; apply(item.id, value); });
+        };
+        folder.visible = visible;
+        apply(id, visible);
+        return;
+    }
+    const plane = document.value.planes.find((item) => item.id === id);
+    if (plane) { plane.visible = !plane.visible; return; }
+    const entity = document.value.entities.find((item) => item.id === id);
+    if (entity) entity.visible = !entity.visible;
 }
 function changeActivePlane(id: string) {
     activePlaneId.value = id;
     viewport?.setActivePlane(activePlane.value);
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value);
+    refreshSketch();
 }
 function toggleMeasure() {
     if (measureMode.value) {
@@ -801,6 +892,16 @@ onMounted(async () => {
         onSelect: selectEntity,
         onGeometrySelect,
         onBodySelect,
+        onPlaneSelect: selectPlane,
+        onPlaneTransform: (id, position, quaternion) => {
+            const plane = document.value.planes.find((item) => item.id === id);
+            if (!plane) return;
+            if (!transforming) { pushHistory(); transforming = true; }
+            plane.origin = position;
+            plane.u = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion).toArray();
+            plane.v = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion).toArray();
+            plane.normal = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).toArray();
+        },
         onTransform: (id, position, rotation, scale) => {
             const item = document.value.entities.find((entity) => entity.id === id);
             if (!item) return;
@@ -817,6 +918,9 @@ onMounted(async () => {
         onDirectEdit,
         onSketchPoint: addSketchPoint,
         onSketchPointMove: moveSketchPoint,
+        onSketchSegment: selectSketchSegment,
+        onSketchHandleMove: moveSketchHandle,
+        onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
         onSketchComplete: finishSketch,
         onBlankCommit: () => operation.value ? doneOperation() : setTool('select'),
@@ -891,7 +995,7 @@ onBeforeUnmount(() => {
                     <div class="object-list">
                         <div v-if="!treeNodes.length" class="empty-objects">使用画布左侧工具开始建模</div>
                         <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @context="openNodeContext" @drop="reparentNodes"
-                            @toggle="(id) => { const item = document.entities.find(entity => entity.id === id); if (item) { pushHistory(); item.visible = !item.visible; } }" />
+                            @toggle="toggleNodeVisibility" />
                     </div>
                 </section>
                 <section class="project-section">
@@ -909,40 +1013,36 @@ onBeforeUnmount(() => {
 
             <main class="viewport-area">
                 <div ref="viewportElement" class="viewport"></div>
-                <nav class="vertical-toolbar">
-                    <div class="menu-state">{{ { Default: '默认菜单', Sketch: '草图菜单', SelectionAdaptive: '自适应选择', ToolActive: '工具执行中', HistoryEdit: 'History 编辑' }[uiState] }}</div>
+                <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode }">
+                    <div class="menu-state">建模工具</div>
                     <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'select' && !sketchMode }" @click="setTool('select')"><NIcon><NavigateOutline /></NIcon></button></template>选择 · V</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'select' }" @click="setTool('select')"><NIcon><NavigateOutline /></NIcon></button></template>选择 · V</NTooltip>
                         <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'translate' }" @click="setTool('translate')"><NIcon><MoveOutline /></NIcon></button></template>移动 · G</NTooltip>
                         <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'rotate' }" @click="setTool('rotate')"><NIcon><RepeatOutline /></NIcon></button></template>旋转 · R</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'scale' }" @click="setTool('scale')"><NIcon><ResizeOutline /></NIcon></button></template>缩放 · S</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :disabled="!!activePlane && selectedIds.includes(activePlane.id)" :class="{ active: activeTool === 'scale' }" @click="setTool('scale')"><NIcon><ResizeOutline /></NIcon></button></template>缩放 · S（平面不可用）</NTooltip>
                     </div>
                     <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button @click="showAddPlane = true"><NIcon><LayersOutline /></NIcon></button></template>添加绘制平面</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: sketchMode && sketchType === 'polygon' }" @click="sketchMode ? setSketchType('polygon') : startSketch()"><NIcon><CreateOutline /></NIcon></button></template>Line / 多段线</NTooltip>
-                        <template v-if="sketchMode">
-                            <NTooltip placement="right"><template #trigger><button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><NIcon><GridOutline /></NIcon></button></template>Rectangle · 对角矩形</NTooltip>
-                            <NTooltip placement="right"><template #trigger><button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><NIcon><EllipseOutline /></NIcon></button></template>Circle · 圆心 + 圆周</NTooltip>
-                            <NTooltip placement="right"><template #trigger><button :class="{ active: sketchType === 'arc' }" @click="setSketchType('arc')"><NIcon><AnalyticsOutline /></NIcon></button></template>Arc · 三点圆弧</NTooltip>
-                        </template>
-                    </div>
-                    <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'extrude' }" @click="selected?.kind === 'sketch' ? startExtrude(selected.id) : message.info('请先选择闭合草图 Profile')"><NIcon><ArrowUpOutline /></NIcon></button></template>Extrude · 从轮廓拉伸</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'offsetFace' }" @click="setTool('offsetFace')"><NIcon><ArrowUpOutline /></NIcon></button></template>Offset Face · 偏移所选面</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'fillet' }" @click="setTool('fillet')"><NIcon><EllipseOutline /></NIcon></button></template>圆角 · 拖动模型调整</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'chamfer' }" @click="setTool('chamfer')"><NIcon><CutOutline /></NIcon></button></template>倒角 · 拖动模型调整</NTooltip>
-                    </div>
-                    <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button :disabled="!canBoolean" @click="applyBoolean('union')"><NIcon><AddOutline /></NIcon></button></template>并集</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!canBoolean" @click="applyBoolean('subtract')"><NIcon><CutOutline /></NIcon></button></template>差集</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!canBoolean" @click="applyBoolean('intersect')"><NIcon><ShapesOutline /></NIcon></button></template>交集</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button @click="createPlane"><NIcon><LayersOutline /></NIcon></button></template>添加绘制平面</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :disabled="!canDraw" @click="startSketch()"><NIcon><CreateOutline /></NIcon></button></template>绘制形状（先选平面）</NTooltip>
                     </div>
                     <div class="toolbar-spacer"></div>
                     <div class="tool-group">
                         <NTooltip placement="right"><template #trigger><button :disabled="!selected || selected.kind === 'boolean'" @click="duplicateSelected"><NIcon><CopyOutline /></NIcon></button></template>复制实体</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!selectedIds.length" @click="removeSelected"><NIcon><TrashOutline /></NIcon></button></template>删除实体</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :disabled="!selectedIds.length" @click="removeSelected"><NIcon><TrashOutline /></NIcon></button></template>删除</NTooltip>
                         <NTooltip placement="right"><template #trigger><button :class="{ active: gridVisible }" @click="gridVisible = !gridVisible"><NIcon><GridOutline /></NIcon></button></template>地面网格</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button @click="fitView"><NIcon><CameraOutline /></NIcon></button></template>适合画布 · F</NTooltip>
+                    </div>
+                </nav>
+                <nav class="sketch-toolbar" :class="{ 'toolbar-enter': sketchMode }">
+                    <button class="sketch-close" @click="closeSketch"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>Close</strong></button>
+                    <div class="sketch-tool-list">
+                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>Line / Arc</span></button>
+                        <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
+                        <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
+                        <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
+                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }">
+                            <button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span>正多边形</span></button>
+                            <NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `正${['','','','三','四','五','六','七','八'][n]}边形`, value: n }))" @update:value="setSketchSides" />
+                        </div>
                     </div>
                 </nav>
 
@@ -1012,7 +1112,7 @@ onBeforeUnmount(() => {
 
                 <div class="viewport-utilities">
                     <div class="measure-actions">
-                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><NIcon><ScaleOutline /></NIcon></button></template>测量两个面之间的距离</NTooltip>
+                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><svg class="ruler-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8.5 8.5 3 21 15.5 15.5 21 3 8.5Z"/><path d="m7 9 2 2m1-5 2 2m-1 5 2 2m1-5 2 2"/></svg></button></template>测量两个面之间的距离</NTooltip>
                         <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图（保持方向）</NTooltip>
                     </div>
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
@@ -1035,12 +1135,7 @@ onBeforeUnmount(() => {
             <NInput v-model:value="renameValue" autofocus @keyup.enter="applyRename" />
             <div class="modal-actions"><NButton @click="showRename = false">取消</NButton><NButton type="primary" @click="applyRename">确定</NButton></div>
         </NModal>
-        <NModal v-model:show="showAddPlane" preset="card" title="添加绘制平面" style="width: 420px" :bordered="false">
-            <div class="plane-form"><label>坐标平面<NSelect v-model:value="planeKind" :options="[{ label: 'XZ · 地面', value: 'XZ' }, { label: 'XY · 前视', value: 'XY' }, { label: 'YZ · 侧视', value: 'YZ' }]" /></label>
-                <label>法向偏移<NInputNumber :precision="4" v-model:value="planeOffset" :step="5"><template #suffix>mm</template></NInputNumber></label></div>
-            <p class="modal-note">草图只能绘制在显式平面上，顶点保存为该平面的局部坐标。</p>
-            <div class="modal-actions"><NButton @click="showAddPlane = false">取消</NButton><NButton type="primary" @click="createPlane">添加平面</NButton></div>
-        </NModal>
+
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">
                 <section><strong>画布与坐标球</strong><p>空白拖拽旋转，空格拖拽平移。拖动右下角坐标球可旋转视角，点击 X / Y / Z 轴端点切换正交方向视图。</p></section>

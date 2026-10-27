@@ -7,6 +7,7 @@ export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments
 export interface ModelFolder {
     id: string;
     name: string;
+    visible: boolean;
     parentId: string | null;
 }
 
@@ -36,7 +37,9 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
-    profileType?: 'polygon' | 'rectangle' | 'circle' | 'arc';
+    profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc';
+    curves?: Record<number, { c1: Point2; c2: Point2 }>;
+    sides?: number;
     profileId?: string;
     planeId?: string;
     sideMode?: 'one' | 'symmetric';
@@ -105,7 +108,7 @@ export function normalizeDocument(document: ModelDocument): ModelDocument {
     document.folders = Array.isArray(document.folders) ? document.folders : [];
     document.planes = Array.isArray(document.planes) ? document.planes : [];
     document.entities.forEach((entity) => entity.parentId = entity.parentId || null);
-    document.folders.forEach((folder) => folder.parentId = folder.parentId || null);
+    document.folders.forEach((folder) => { folder.parentId = folder.parentId || null; folder.visible = folder.visible !== false; });
     return document;
 }
 
