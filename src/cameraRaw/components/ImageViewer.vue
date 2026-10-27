@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ImageAsset } from '../types';
 import { RawRenderer } from '../engine/renderer';
-import { clampZoom, zoomAtPoint } from '../engine/view';
+import { clampSplit, clampZoom, zoomAtPoint } from '../engine/view';
 
 const props = withDefaults(defineProps<{ asset?: ImageAsset; compare: number; split: number; zoom: number }>(), { asset: undefined });
 const emit = defineEmits<{ histogram: [pixels: Uint8ClampedArray]; 'update:split': [value: number]; 'update:zoom': [value: number] }>();
@@ -33,8 +33,13 @@ async function render() {
 function moveSplit(event: PointerEvent) {
     if (!dragging || !stage.value) return;
     const rect = stage.value.getBoundingClientRect();
-    emit('update:split', Math.max(.02, Math.min(.98, (event.clientX - rect.left) / rect.width)));
+    emit('update:split', clampSplit((event.clientX - rect.left) / rect.width));
 }
+
+function startSplit(event: PointerEvent) {
+    dragging = true; (event.currentTarget as Element).setPointerCapture(event.pointerId);
+}
+function endSplit() { dragging = false; }
 
 function wheel(event: WheelEvent) {
     if (!props.asset?.bitmap || !container.value) return;
@@ -91,7 +96,7 @@ onBeforeUnmount(() => {
         <template v-if="asset?.bitmap">
             <div ref="stage" class="canvas-stage" :style="stageStyle">
                 <canvas ref="canvas" aria-label="当前图片调整预览" />
-                <button v-if="compare === 2" class="split-line" type="button" aria-label="拖动原图对比分割线" :style="{ left: `${split * 100}%` }" @pointerdown.stop="dragging = true; ($event.target as Element).setPointerCapture($event.pointerId)" @pointermove="moveSplit" @pointerup="dragging = false"><span>‹ ›</span></button>
+                <button v-if="compare === 2" class="split-line" type="button" aria-label="拖动原图对比分割线" :style="{ left: `${split * 100}%` }" @pointerdown.stop="startSplit" @pointermove="moveSplit" @pointerup="endSplit" @pointercancel="endSplit" />
             </div>
             <div v-if="compare === 2" class="compare-labels"><span>原图</span><span>调整后</span></div>
         </template>
@@ -104,7 +109,7 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 .image-viewer { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; background-color: #1d1d1d; background-image: linear-gradient(45deg, #222 25%, transparent 25%), linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%), linear-gradient(-45deg, transparent 75%, #222 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; &.can-pan { cursor: grab; } &.panning { cursor: grabbing; } }
 .canvas-stage { position: relative; flex: none; box-shadow: 0 2px 16px #0008; canvas { display: block; } }
-.split-line { position: absolute; top: 0; bottom: 0; width: 2px; padding: 0; border: 0; background: #fff; cursor: ew-resize; touch-action: none; span { position: absolute; top: 50%; left: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%); border: 1px solid #ddd; border-radius: 50%; background: #222d; color: white; font-size: 16px; line-height: 28px; white-space: nowrap; } }
+.split-line { position: absolute; top: 0; bottom: 0; width: 12px; padding: 0; transform: translateX(-50%); border: 0; background: transparent; cursor: ew-resize; touch-action: none; &::after { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: #fff; box-shadow: 0 0 2px #000; } }
 .compare-labels { position: absolute; inset: 10px 14px auto; display: flex; justify-content: space-between; pointer-events: none; span { padding: 3px 7px; background: #0009; color: #ddd; font-size: 10px; } }
 .viewer-status { display: flex; flex-direction: column; align-items: center; gap: 9px; color: #ddd; strong { font-size: 14px; font-weight: 400; } small { color: #888; font-size: 11px; } &.error { color: #e48a8a; } }
 .spinner { width: 32px; height: 32px; border: 2px solid #ffffff26; border-top-color: #eee; border-radius: 50%; animation: spin .8s linear infinite; }

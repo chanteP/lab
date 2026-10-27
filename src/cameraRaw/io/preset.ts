@@ -29,7 +29,7 @@ export function parsePreset(text: string): Adjustments {
     const basic: Record<string, string> = {
         temperature: 'Temperature', tint: 'Tint', exposure: 'Exposure2012', contrast: 'Contrast2012',
         highlights: 'Highlights2012', shadows: 'Shadows2012', whites: 'Whites2012', blacks: 'Blacks2012',
-        texture: 'Texture', clarity: 'Clarity2012', dehaze: 'Dehaze', vibrance: 'Vibrance', saturation: 'Saturation',
+        vibrance: 'Vibrance', saturation: 'Saturation',
     };
     for (const [key, field] of Object.entries(basic)) {
         const value = num(f[field]);
@@ -67,8 +67,10 @@ export function parsePreset(text: string): Adjustments {
         const value = num(f[field]); if (value !== undefined && Number.isFinite(value)) calibration[key] = value;
     }
     if (Object.keys(calibration).length) patch.calibration = calibration;
-    const vignette = num(f.PostCropVignetteAmount);
-    if (vignette !== undefined) patch.optics = { vignette };
+    const effects: Record<string, number> = {};
+    const effectFields = { texture: 'Texture', clarity: 'Clarity2012', dehaze: 'Dehaze', vignette: 'PostCropVignetteAmount', vignetteMidpoint: 'PostCropVignetteMidpoint', grain: 'GrainAmount', grainSize: 'GrainSize', grainRoughness: 'GrainRoughness' };
+    for (const [key, fieldName] of Object.entries(effectFields)) { const value = num(f[fieldName]); if (value !== undefined && Number.isFinite(value)) effects[key] = value; }
+    if (Object.keys(effects).length) patch.effects = effects;
     return mergeAdjustments(createDefaultAdjustments(), patch);
 }
 
@@ -79,7 +81,7 @@ export function serializePreset(a: Adjustments, name = 'Camera Raw Lab Preset'):
     const lines: string[] = [];
     const add = (key: string, value: number) => lines.push(field(key, Math.round(value * 10000) / 10000));
     add('Temperature', 5500 + a.temperature * 100); add('Tint', a.tint); add('Exposure2012', a.exposure);
-    for (const [key, fieldName] of Object.entries({ contrast: 'Contrast2012', highlights: 'Highlights2012', shadows: 'Shadows2012', whites: 'Whites2012', blacks: 'Blacks2012', texture: 'Texture', clarity: 'Clarity2012', dehaze: 'Dehaze', vibrance: 'Vibrance', saturation: 'Saturation' })) add(fieldName, a[key as keyof Adjustments] as number);
+    for (const [key, fieldName] of Object.entries({ contrast: 'Contrast2012', highlights: 'Highlights2012', shadows: 'Shadows2012', whites: 'Whites2012', blacks: 'Blacks2012', vibrance: 'Vibrance', saturation: 'Saturation' })) add(fieldName, a[key as keyof Adjustments] as number);
     for (const [channel, suffix] of Object.entries({ rgb: '', r: 'Red', g: 'Green', b: 'Blue' })) {
         lines.push(field(`ToneCurvePV2012${suffix}`, a.curves[channel as CurveChannel].flatMap((p) => [Math.round(p.x * 255), Math.round(p.y * 255)]).join(', ')));
     }
@@ -90,6 +92,6 @@ export function serializePreset(a: Adjustments, name = 'Camera Raw Lab Preset'):
         add(`ColorGrade${prefix}Lum`, a.grading[range as 'shadows'].luminance);
     }
     for (const [key, fieldName] of Object.entries({ shadowTint: 'ShadowTint', redHue: 'RedHue', redSaturation: 'RedSaturation', greenHue: 'GreenHue', greenSaturation: 'GreenSaturation', blueHue: 'BlueHue', blueSaturation: 'BlueSaturation' })) add(fieldName, a.calibration[key as keyof Adjustments['calibration']]);
-    lines.push(field('PostCropVignetteAmount', a.optics.vignette));
+    for (const [key, fieldName] of Object.entries({ texture: 'Texture', clarity: 'Clarity2012', dehaze: 'Dehaze', vignette: 'PostCropVignetteAmount', vignetteMidpoint: 'PostCropVignetteMidpoint', grain: 'GrainAmount', grainSize: 'GrainSize', grainRoughness: 'GrainRoughness' })) add(fieldName, a.effects[key as keyof Adjustments['effects']]);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Camera Raw Lab">\n <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n  <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:PresetType="Normal" crs:Cluster="${esc(name)}" crs:Version="17.0">\n${lines.join('\n')}\n  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>`;
 }

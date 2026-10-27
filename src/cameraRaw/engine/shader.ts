@@ -23,6 +23,7 @@ uniform mat3 uCalibration;
 uniform float uShadowTint;
 uniform float uVibrance;
 uniform float uSaturation;
+uniform vec3 uGrain;
 uniform int uCompare;
 uniform float uSplit;
 
@@ -111,5 +112,11 @@ void main() {
     c += vec2(-uShadowTint, uShadowTint).xyx / 1000. * sw;
     float vignette = smoothstep(.65, .05, length((vUv - .5) * vec2(1.2, 1.)));
     c *= 1. + uOptics.z / 100. * mix(.25, 1., vignette);
+    float grainSize = 1. + uGrain.y / 18.;
+    vec2 grainCell = floor(gl_FragCoord.xy / grainSize);
+    float grainNoise = fract(sin(dot(grainCell, vec2(12.9898, 78.233))) * 43758.5453);
+    float grainFine = fract(sin(dot(grainCell + 17., vec2(39.3468, 11.135))) * 24634.6345);
+    grainNoise = mix(grainNoise, grainFine, uGrain.z / 300.);
+    c += (grainNoise - .5) * uGrain.x / 100. * .22 * (1. - lum(c) * .45);
     outColor = vec4(toSrgb(clamp(c, 0., 1.)), 1.);
 }`;

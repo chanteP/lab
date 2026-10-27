@@ -36,7 +36,7 @@ async function blobBase64(blob: Blob): Promise<string> {
 
 const adjustmentsSchema = {
     type: 'object', additionalProperties: true,
-    description: 'Camera Raw 参数，可只传需要修改的字段。支持 temperature、tint、exposure、contrast、highlights、shadows、whites、blacks、texture、clarity、dehaze、vibrance、saturation；curves.rgb/r/g/b 控制点；mixer 八色 hue/saturation/luminance；grading；calibration；optics。',
+    description: 'Camera Raw 参数，可只传需要修改的字段。支持基本参数、curves、effects（纹理/清晰度/去雾/晕影/颗粒）、mixer、grading、calibration 和 optics。',
 };
 
 const tools: ToolDefinition[] = [

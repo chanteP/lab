@@ -12,7 +12,7 @@ defineProps<{ modelValue: Adjustments; panel: string; camera?: string; lens?: st
 const emit = defineEmits<{ reset: []; 'update:modelValue': [value: Adjustments] }>();
 const mixerMode = ref<'hue' | 'saturation' | 'luminance'>('hue');
 const mixerModeLabel = computed(() => ({ hue: '色相', saturation: '饱和度', luminance: '明亮度' }[mixerMode.value]));
-const hueGradient = 'linear-gradient(90deg, #ed4040, #e2d741, #42b957, #38c6bd, #397bd8, #8951bf, #d548a5, #ed4040)';
+const calibrationHueGradient = (hue: number) => `linear-gradient(90deg, hsl(${hue - 20} 75% 50%) 0%, hsl(${hue} 75% 50%) 50%, hsl(${hue + 20} 75% 50%) 100%)`;
 const temperatureGradient = 'linear-gradient(90deg, #428bd1, #b9c8d0, #d8d4c5, #e2a84b)';
 const tintGradient = 'linear-gradient(90deg, #50a56c, #a7a7a7, #c64c9b)';
 const saturationGradient = 'linear-gradient(90deg, #777, #c64c81)';
@@ -33,7 +33,7 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
 
 <template>
     <section class="adjustment-panel">
-        <header><h2>{{ { basic: '基本', curve: '曲线', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学', presets: '预设' }[panel] }}</h2><button v-if="panel !== 'presets'" type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
+        <header><h2>{{ { basic: '基本', curve: '曲线', effects: '效果', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学', presets: '预设' }[panel] }}</h2><button v-if="panel !== 'presets'" type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
         <div v-if="panel === 'basic'" class="panel-body">
             <label class="select-row"><span>白平衡</span><select :value="whiteBalance" @change="setWhiteBalance(($event.target as HTMLSelectElement).value, modelValue)"><option value="asShot">原照设置</option><option value="daylight">日光</option><option value="cloudy">阴天</option><option value="shade">阴影</option><option value="tungsten">白炽灯</option><option value="fluorescent">荧光灯</option><option value="flash">闪光灯</option></select></label>
             <SliderField v-model="modelValue.temperature" label="色温" :gradient="temperatureGradient" /><SliderField v-model="modelValue.tint" label="色调" :gradient="tintGradient" />
@@ -43,12 +43,18 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
             <SliderField v-model="modelValue.shadows" label="阴影" /><SliderField v-model="modelValue.whites" label="白色" />
             <SliderField v-model="modelValue.blacks" label="黑色" />
             <div class="separator" />
-            <SliderField v-model="modelValue.texture" label="纹理" /><SliderField v-model="modelValue.clarity" label="清晰度" />
-            <SliderField v-model="modelValue.dehaze" label="去除薄雾" />
-            <div class="separator" />
             <SliderField v-model="modelValue.vibrance" label="自然饱和度" :gradient="saturationGradient" /><SliderField v-model="modelValue.saturation" label="饱和度" :gradient="saturationGradient" />
         </div>
         <div v-else-if="panel === 'curve'" class="panel-body"><CurveEditor v-model="modelValue.curves" /></div>
+        <div v-else-if="panel === 'effects'" class="panel-body">
+            <SliderField v-model="modelValue.effects.texture" label="纹理" /><SliderField v-model="modelValue.effects.clarity" label="清晰度" />
+            <SliderField v-model="modelValue.effects.dehaze" label="去除薄雾" />
+            <div class="separator" />
+            <SliderField v-model="modelValue.effects.vignette" label="晕影" /><SliderField v-model="modelValue.effects.vignetteMidpoint" label="晕影中点" :min="0" />
+            <div class="separator" />
+            <SliderField v-model="modelValue.effects.grain" label="颗粒" :min="0" /><SliderField v-model="modelValue.effects.grainSize" label="颗粒大小" :min="0" />
+            <SliderField v-model="modelValue.effects.grainRoughness" label="颗粒粗糙度" :min="0" />
+        </div>
         <div v-else-if="panel === 'mixer'" class="panel-body">
             <div class="mixer-modes" role="tablist" aria-label="混色调整方式"><button v-for="mode in ['hue', 'saturation', 'luminance'] as const" :key="mode" type="button" role="tab" :aria-selected="mixerMode === mode" :class="{ active: mixerMode === mode }" @click="mixerMode = mode">{{ { hue: '色相', saturation: '饱和度', luminance: '明亮度' }[mode] }}</button></div>
             <div class="mixer-sliders"><SliderField v-for="color in MIXER_COLORS" :key="color" v-model="modelValue.mixer[color][mixerMode]" :label="MIXER_LABELS[color]" :gradient="mixerGradient(color)" /></div>
@@ -61,14 +67,13 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
         </div>
         <div v-else-if="panel === 'calibration'" class="panel-body">
             <SliderField v-model="modelValue.calibration.shadowTint" label="阴影色调" :gradient="tintGradient" />
-            <h3>红原色</h3><SliderField v-model="modelValue.calibration.redHue" label="色相" :gradient="hueGradient" /><SliderField v-model="modelValue.calibration.redSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #ed4040)" />
-            <h3>绿原色</h3><SliderField v-model="modelValue.calibration.greenHue" label="色相" :gradient="hueGradient" /><SliderField v-model="modelValue.calibration.greenSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #42b957)" />
-            <h3>蓝原色</h3><SliderField v-model="modelValue.calibration.blueHue" label="色相" :gradient="hueGradient" /><SliderField v-model="modelValue.calibration.blueSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #397bd8)" />
+            <h3>红原色</h3><SliderField v-model="modelValue.calibration.redHue" label="色相" :gradient="calibrationHueGradient(0)" /><SliderField v-model="modelValue.calibration.redSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #ed4040)" />
+            <h3>绿原色</h3><SliderField v-model="modelValue.calibration.greenHue" label="色相" :gradient="calibrationHueGradient(120)" /><SliderField v-model="modelValue.calibration.greenSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #42b957)" />
+            <h3>蓝原色</h3><SliderField v-model="modelValue.calibration.blueHue" label="色相" :gradient="calibrationHueGradient(240)" /><SliderField v-model="modelValue.calibration.blueSaturation" label="饱和度" gradient="linear-gradient(90deg, #777, #397bd8)" />
         </div>
         <div v-else-if="panel === 'optics'" class="panel-body">
             <div class="profile-info"><span>相机</span><strong>{{ camera || '未识别' }}</strong><span>镜头</span><strong>{{ lens || '未识别；使用手动校正' }}</strong></div>
             <SliderField v-model="modelValue.optics.distortion" label="畸变" /><SliderField v-model="modelValue.optics.chromaticAberration" label="色差" />
-            <div class="separator" /><SliderField v-model="modelValue.optics.vignette" label="暗角" /><SliderField v-model="modelValue.optics.midpoint" label="中点" :min="0" />
             <p class="hint">手动光学调整。自动镜头配置文件仅在可靠识别镜头后启用。</p>
         </div>
         <PresetPanel v-show="panel === 'presets'" :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" />

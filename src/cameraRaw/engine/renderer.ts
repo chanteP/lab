@@ -74,9 +74,10 @@ export class RawRenderer {
         gl.uniform2f(this.u('uTexel'), 1 / this.source.width, 1 / this.source.height);
         gl.uniform4f(this.u('uBasic'), a.exposure, a.contrast, a.highlights, a.shadows);
         gl.uniform4f(this.u('uBasic2'), a.whites, a.blacks, 0, 0);
-        gl.uniform3f(this.u('uDetail'), a.texture, a.clarity, a.dehaze);
+        gl.uniform3f(this.u('uDetail'), a.effects.texture, a.effects.clarity, a.effects.dehaze);
         gl.uniform3f(this.u('uWhiteBalance'), a.temperature, a.tint, 0);
-        gl.uniform4f(this.u('uOptics'), a.optics.distortion, a.optics.chromaticAberration, a.optics.vignette, a.optics.midpoint);
+        gl.uniform4f(this.u('uOptics'), a.optics.distortion, a.optics.chromaticAberration, a.effects.vignette, a.effects.vignetteMidpoint);
+        gl.uniform3f(this.u('uGrain'), a.effects.grain, a.effects.grainSize, a.effects.grainRoughness);
         gl.uniform3fv(this.u('uMixer[0]'), MIXER_COLORS.flatMap((color: MixerColor) => [a.mixer[color].hue, a.mixer[color].saturation, a.mixer[color].luminance]));
         gl.uniform3fv(this.u('uGrade[0]'), [...gradeFor(a.grading.shadows), ...gradeFor(a.grading.midtones), ...gradeFor(a.grading.highlights)]);
         gl.uniform3f(this.u('uGradeLum'), a.grading.shadows.luminance, a.grading.midtones.luminance, a.grading.highlights.luminance);

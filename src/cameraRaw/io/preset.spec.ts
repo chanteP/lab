@@ -14,10 +14,10 @@ test('round trips all major adjustment groups', () => {
     const a = createDefaultAdjustments();
     a.exposure = -.75; a.temperature = 25; a.curves.g = [{ x: 0, y: 0 }, { x: .5, y: .7 }, { x: 1, y: 1 }];
     a.mixer.orange.luminance = 22; a.grading.shadows = { hue: 220, saturation: 30, luminance: -5 };
-    a.calibration.blueSaturation = 35; a.optics.vignette = -20;
+    a.calibration.blueSaturation = 35; a.effects.vignette = -20; a.effects.grain = 30;
     const b = parsePreset(serializePreset(a));
     assert.equal(b.exposure, a.exposure); assert.equal(b.temperature, a.temperature);
     assert.ok(Math.abs(b.curves.g[1].x - a.curves.g[1].x) <= 1 / 255);
     assert.ok(Math.abs(b.curves.g[1].y - a.curves.g[1].y) <= 1 / 255);
-    assert.deepEqual(b.grading, a.grading); assert.deepEqual(b.calibration, a.calibration); assert.deepEqual(b.optics, a.optics);
+    assert.deepEqual(b.grading, a.grading); assert.deepEqual(b.calibration, a.calibration); assert.deepEqual(b.optics, a.optics); assert.deepEqual(b.effects, a.effects);
 });

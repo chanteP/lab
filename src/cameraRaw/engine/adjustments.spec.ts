@@ -61,9 +61,9 @@ test('mixer hue uses the Camera Raw-like bounded sixty degree range', () => {
 test('calibration defaults to identity and primaries respond independently', () => {
     const a = createDefaultAdjustments().calibration;
     assert.deepEqual(calibrationMatrix(a), [1, 0, 0, 0, 1, 0, 0, 0, 1]);
-    a.redHue = 90;
+    a.redHue = 100;
     const changed = calibrationMatrix(a);
-    assert.notEqual(changed[0], 1); near(changed[4], 1); near(changed[8], 1);
+    near(changed[1], 1 / 3); near(changed[4], 1); near(changed[8], 1);
     a.redHue = 0; a.redSaturation = -100;
     assert.notDeepEqual(calibrationMatrix(a), [1, 0, 0, 0, 1, 0, 0, 0, 1]);
 });

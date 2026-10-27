@@ -1,6 +1,7 @@
 export type ViewPoint = { x: number; y: number };
 
 export const clampZoom = (value: number) => Math.max(.1, Math.min(8, value));
+export const clampSplit = (value: number) => Math.max(.05, Math.min(.95, value));
 
 export function zoomAtPoint(pointer: ViewPoint, pan: ViewPoint, previousZoom: number, nextZoom: number): ViewPoint {
     const ratio = nextZoom / previousZoom;

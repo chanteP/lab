@@ -14,9 +14,6 @@ export interface Adjustments {
     shadows: number;
     whites: number;
     blacks: number;
-    texture: number;
-    clarity: number;
-    dehaze: number;
     vibrance: number;
     saturation: number;
     curves: Curves;
@@ -31,7 +28,8 @@ export interface Adjustments {
         blueHue: number;
         blueSaturation: number;
     };
-    optics: { distortion: number; chromaticAberration: number; vignette: number; midpoint: number };
+    effects: { texture: number; clarity: number; dehaze: number; vignette: number; vignetteMidpoint: number; grain: number; grainSize: number; grainRoughness: number };
+    optics: { distortion: number; chromaticAberration: number };
 }
 
 export interface ImageAsset {

@@ -2,6 +2,7 @@ import type { Adjustments, Grade, MixerColor } from '../types';
 
 export const clamp = (v: number, min = 0, max = 1) => Math.max(min, Math.min(max, v));
 export const MIXER_HUE_SCALE = .6;
+export const CALIBRATION_HUE_SCALE = .2;
 export const luminance = (rgb: number[]) => rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
 
 export function hue2rgb(p: number, q: number, t: number): number {
@@ -38,7 +39,7 @@ export function calibrationMatrix(a: Adjustments['calibration']): number[] {
     ];
     const columns = primaries.map(({ hue, saturation, base }) => {
         const [h, s, l] = rgbToHsl(base);
-        const rotated = hslToRgb(h + hue, s, l), amount = 1 + saturation / 100;
+        const rotated = hslToRgb(h + hue * CALIBRATION_HUE_SCALE, s, l), amount = 1 + saturation / 100;
         return rotated.map((v) => l + (v - l) * amount);
     });
     // Column-major for GLSL mat3.
@@ -79,7 +80,7 @@ export function applyTone(rgb: number[], a: Adjustments): number[] {
     const shadowWeight = 1 - clamp(l * 2), highlightWeight = clamp((l - .5) * 2);
     out = out.map((v) => v + a.shadows / 100 * shadowWeight * .35 + a.highlights / 100 * highlightWeight * .3);
     out = out.map((v) => v + a.whites / 100 * .35 * clamp(l * 2) + a.blacks / 100 * .3 * (1 - clamp(l * 2)));
-    out = out.map((v) => (v - .18) * (1 + a.contrast / 100) + .18 + a.dehaze / 100 * (luminance(out) - .5) * .35);
+    out = out.map((v) => (v - .18) * (1 + a.contrast / 100) + .18 + a.effects.dehaze / 100 * (luminance(out) - .5) * .35);
     const avg = (out[0] + out[1] + out[2]) / 3, max = Math.max(...out), min = Math.min(...out), sat = max ? (max - min) / max : 0;
     const saturation = 1 + a.saturation / 100 + a.vibrance / 100 * (1 - sat);
     return out.map((v) => clamp(avg + (v - avg) * saturation));

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NIcon, useMessage } from 'naive-ui';
-import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SyncOutline, TrashOutline } from '@vicons/ionicons5';
+import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SparklesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
 import { activeAsset, assets, busy, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import { createDefaultAdjustments } from './engine/adjustments';
 import { parsePreset, serializePreset } from './io/preset';
@@ -19,7 +19,7 @@ import MetadataDialog from './components/MetadataDialog.vue';
 
 const panels = [
     { id: 'basic', label: '基本', icon: OptionsOutline }, { id: 'curve', label: '曲线', icon: PulseOutline },
-    { id: 'grading', label: '分级', icon: ContrastOutline }, { id: 'mixer', label: '混色', icon: ColorPaletteOutline },
+    { id: 'effects', label: '效果', icon: SparklesOutline }, { id: 'grading', label: '分级', icon: ContrastOutline }, { id: 'mixer', label: '混色', icon: ColorPaletteOutline },
     { id: 'calibration', label: '校准', icon: ApertureOutline }, { id: 'optics', label: '光学', icon: CameraOutline },
     { id: 'presets', label: '预设', icon: BookmarksOutline },
 ];
@@ -27,6 +27,7 @@ const panel = ref('basic'), compare = ref(0), split = ref(.5), zoom = ref(1), hi
 const mobilePanelOpen = ref(false);
 const histogram = ref<Uint8ClampedArray>(), metadataOpen = ref(false), exporting = ref(false), toast = ref('');
 const agentStatus = ref({ available: false, mode: 'local', count: 0 });
+const adjustmentVersion = ref(0);
 const message = useMessage();
 registerLoading((text) => message.loading(text, { duration: 0, closable: false }));
 const fileInput = ref<HTMLInputElement>(), folderInput = ref<HTMLInputElement>(), presetInput = ref<HTMLInputElement>();
@@ -35,15 +36,18 @@ const cameraModel = computed(() => String(activeAsset.value?.metadata.Model || a
 const lens = computed(() => String(activeAsset.value?.metadata.LensModel || activeAsset.value?.metadata.lens || ''));
 const dimensions = computed(() => activeAsset.value ? `${activeAsset.value.width} × ${activeAsset.value.height}` : '');
 const modifiedPanels = computed(() => {
+    adjustmentVersion.value;
     const a = activeAsset.value?.adjustments, modified = new Set<string>(); if (!a) return modified;
     const d = createDefaultAdjustments();
-    const basicKeys = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'texture', 'clarity', 'dehaze', 'vibrance', 'saturation'] as const;
+    const basicKeys = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'vibrance', 'saturation'] as const;
     if (basicKeys.some((key) => a[key] !== d[key])) modified.add('basic');
-    for (const key of ['curves', 'grading', 'mixer', 'calibration', 'optics'] as const) if (JSON.stringify(a[key]) !== JSON.stringify(d[key])) modified.add(key);
+    if (JSON.stringify(a.curves) !== JSON.stringify(d.curves)) modified.add('curve');
+    for (const key of ['effects', 'grading', 'mixer', 'calibration', 'optics'] as const) if (JSON.stringify(a[key]) !== JSON.stringify(d[key])) modified.add(key);
     return modified;
 });
 let toastTimer: ReturnType<typeof setTimeout>;
 
+watch(() => activeAsset.value?.adjustments, () => adjustmentVersion.value++, { deep: true, flush: 'sync' });
 watch(notice, (message) => { if (!message) return; toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; notice.value = ''; }, 3200); });
 function chooseFiles(event: Event) { const input = event.target as HTMLInputElement; void importFiles(Array.from(input.files ?? [])); input.value = ''; }
 async function choosePreset(event: Event) {
@@ -120,8 +124,6 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
 
         <section class="workspace">
             <nav class="left-tools" aria-label="视图工具">
-                <button type="button" title="导入图片" aria-label="导入图片" @click="fileInput?.click()"><NIcon><Add /></NIcon></button>
-                <span />
                 <button type="button" title="放大" aria-label="放大" :disabled="!activeAsset" @click="zoom = Math.min(4, zoom * 1.25)"><NIcon><Add /></NIcon></button>
                 <button type="button" title="缩小" aria-label="缩小" :disabled="!activeAsset" @click="zoom = Math.max(.25, zoom / 1.25)"><NIcon><Remove /></NIcon></button>
                 <button type="button" title="适合视图 (F)" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</button>
@@ -145,7 +147,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
 
         <footer class="bottom-bar">
             <div class="film-toolbar"><span>{{ assets.length ? `${selectedIds.size} / ${assets.length} 张已选` : '胶片栏' }}</span><button type="button" title="撤销 (Cmd/Ctrl+Z)" aria-label="撤销" :disabled="!canUndo" @click="undo"><NIcon><ArrowUndoOutline /></NIcon></button><button type="button" title="恢复 (Cmd/Ctrl+Shift+Z)" aria-label="恢复" :disabled="!canRedo" @click="redo"><NIcon><ArrowRedo /></NIcon></button><button type="button" title="将当前调整同步到所选图片" :disabled="selectedIds.size < 2" @click="syncToSelected"><NIcon><SyncOutline /></NIcon>同步</button><button type="button" title="复位当前图片" aria-label="复位当前图片" :disabled="!activeAsset" @click="reset"><NIcon><RefreshOutline /></NIcon></button><button type="button" title="移除所选图片" aria-label="移除所选图片" :disabled="!assets.length" @click="removeSelected"><NIcon><TrashOutline /></NIcon></button><i /><button type="button" :class="{ active: compare === 1 }" title="查看原图 (\)" aria-label="查看原图" :disabled="!activeAsset" @click="compare = compare === 1 ? 0 : 1"><NIcon><EyeOutline /></NIcon></button><button type="button" :class="{ active: compare === 2 }" title="分屏对比" aria-label="分屏对比" :disabled="!activeAsset" @click="compare = compare === 2 ? 0 : 2"><NIcon><GitCompareOutline /></NIcon></button></div>
-            <FilmStrip />
+            <FilmStrip @add="fileInput?.click()" @files="importFiles" />
         </footer>
 
         <input ref="fileInput" type="file" hidden multiple accept=".arw,.dng,.cr2,.cr3,.nef,.raf,.orf,.rw2,.jpg,.jpeg,.png,image/jpeg,image/png" @change="chooseFiles" />
@@ -179,7 +181,7 @@ button:disabled { opacity: .35; cursor: default !important; }
 .right-panel { display: grid; grid-template-rows: auto 54px minmax(0, 1fr) 39px; min-height: 0; border-left: 1px solid #111; background: #303030; }
 .histogram-head { padding: 0 12px 9px; border-bottom: 1px solid #444; }
 .histogram-tools { display: flex; align-items: center; justify-content: space-between; height: 34px; color: #999; font-size: 10px; button { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; color: #aaa; font-size: 9px; cursor: pointer; } }
-.panel-tabs { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid #444; button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } sup { position: absolute; top: 2px; right: 5px; color: #f0c64f; font-size: 15px; font-weight: 700; line-height: 1; } } }
+.panel-tabs { display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid #444; button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } sup { position: absolute; top: 2px; right: 4px; color: #f0c64f; font-size: 15px; font-weight: 700; line-height: 1; } } }
 .panel-scroll { min-height: 0; overflow-y: auto; scrollbar-color: #555 #303030; }
 .no-image { padding: 35px 0; color: #777; text-align: center; }
 .preset-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 6px 11px; border-top: 1px solid #444; button { border: 1px solid #555; border-radius: 3px; background: #373737; color: #bbb; font-size: 10px; cursor: pointer; &:hover { color: white; background: #444; } } }
