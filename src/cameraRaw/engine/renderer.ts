@@ -52,7 +52,7 @@ export class RawRenderer {
 
     setSource(source: ImageBitmap) {
         const gl = this.gl; this.source = source;
-        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     }
 
@@ -68,6 +68,8 @@ export class RawRenderer {
             const lut = createCurveLut(a.curves[channel]);
             for (let x = 0; x < 256; x++) curveData.fill(lut[x], (row * 256 + x) * 4, (row * 256 + x) * 4 + 3);
         });
+        // ImageBitmap needs Y flipping, but the curve LUT must retain RGB/R/G/B row order.
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, curveData);
         gl.uniform2f(this.u('uTexel'), 1 / this.source.width, 1 / this.source.height);
         gl.uniform4f(this.u('uBasic'), a.exposure, a.contrast, a.highlights, a.shadows);
@@ -89,7 +91,9 @@ export class RawRenderer {
     readPixels(): Uint8ClampedArray {
         const data = new Uint8Array(this.canvas.width * this.canvas.height * 4);
         this.gl.readPixels(0, 0, this.canvas.width, this.canvas.height, this.gl.RGBA, this.gl.UNSIGNED_BYTE, data);
-        return new Uint8ClampedArray(data);
+        const topDown = new Uint8ClampedArray(data.length), stride = this.canvas.width * 4;
+        for (let y = 0; y < this.canvas.height; y++) topDown.set(data.subarray((this.canvas.height - y - 1) * stride, (this.canvas.height - y) * stride), y * stride);
+        return topDown;
     }
 
     async blob(type = 'image/jpeg', quality = .94): Promise<Blob> {

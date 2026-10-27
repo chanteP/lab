@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDefaultAdjustments, mergeAdjustments } from './adjustments.ts';
-import { createCurveLut, evaluateCurve, normalizePoints } from './curve.ts';
+import { applyCurves, createCurveLut, evaluateCurve, normalizePoints } from './curve.ts';
 import { applyMixer, applyTone, calibrationMatrix, gradeFor, hslToRgb, opticsCoordinate, rgbToHsl, whiteBalance } from './color.ts';
 
 const near = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
@@ -18,6 +18,16 @@ test('curve normalizes endpoints and stays finite and monotonic', () => {
     const lut = createCurveLut([{ x: 0, y: 0 }, { x: .25, y: .4 }, { x: .75, y: .6 }, { x: 1, y: 1 }]);
     for (let i = 1; i < lut.length; i++) assert.ok(lut[i] >= lut[i - 1]);
     near(evaluateCurve([{ x: 0, y: 0 }, { x: 1, y: 1 }], .42), .42);
+});
+
+test('composite RGB curve affects every channel before independent channel curves', () => {
+    const curves = createDefaultAdjustments().curves;
+    curves.rgb = [{ x: 0, y: 0 }, { x: .5, y: .8 }, { x: 1, y: 1 }];
+    const composite = applyCurves([.5, .5, .5], curves);
+    composite.forEach((value) => near(value, .8));
+    curves.r = [{ x: 0, y: 0 }, { x: .8, y: .4 }, { x: 1, y: 1 }];
+    const independent = applyCurves([.5, .5, .5], curves);
+    near(independent[0], .4); near(independent[1], .8); near(independent[2], .8);
 });
 
 test('HSL and RGB conversion round trips representative colors', () => {

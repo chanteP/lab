@@ -1,7 +1,7 @@
 export const vertexShader = `#version 300 es
 in vec2 aPosition;
 out vec2 vUv;
-void main() { vUv = aPosition * .5 + .5; gl_Position = vec4(aPosition, 0., 1.); }`;
+void main() { vUv = vec2(aPosition.x * .5 + .5, .5 - aPosition.y * .5); gl_Position = vec4(aPosition, 0., 1.); }`;
 
 export const fragmentShader = `#version 300 es
 precision highp float;
@@ -98,7 +98,8 @@ void main() {
     float avg = (c.r + c.g + c.b) / 3., mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
     float sat = mx > 0. ? (mx - mn) / mx : 0.;
     c = avg + (c - avg) * (1. + uSaturation / 100. + uVibrance / 100. * (1. - sat));
-    c = curve(clamp(c, 0., 1.));
+    // Curves use display-referred values, matching Camera Raw's perceptual dragging behavior.
+    c = toLinear(curve(toSrgb(clamp(c, 0., 1.))));
     c = applyMixer(clamp(c, 0., 1.));
     l = lum(c);
     float balance = uGradeControl.y / 100., blend = mix(.05, .45, uGradeControl.x / 100.);

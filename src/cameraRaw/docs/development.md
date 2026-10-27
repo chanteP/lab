@@ -46,9 +46,12 @@
 - `io/dng.ts`：little-endian TIFF/DNG 容器，16-bit 三通道 LinearRaw、sRGB 对应的色彩矩阵、EXIF/GPS IFD 和 XMP。测试中使用真正的 LibRaw 再解码，而非只检查文件头。
 - `io/metadata.ts` / `export.ts`：JPEG APP1 原字节保留；RAW/PNG 来源导出 JPEG 时映射常用拍摄和 GPS 字段。
 - `store.ts`：当前图、选区、批量同步、按需解码与对象 URL 生命周期。Ctrl/Cmd 多选保留同步源。
+- `io/webmcp.ts`：注册 WebMCP 工具，并暴露相同的 `window.cameraRawMCP` 本地 agent 调用入口。详见 `docs/webmcp.md`。
 - 桌面为一屏工作台；窄屏右栏作为可开关抽屉，胶片栏保持横向滚动。
 
 ## Changelog
 
 - 2026-10-27：建立功能矩阵、渲染/文件格式方案和模块级测试约定。
 - 2026-10-27：完成 RAW Worker、WebGL2 调色、直方图/对比视图、XMP、DNG/JPEG 导出、多选胶片栏与响应式界面；加入 LibRaw 回读及批量同步测试。
+- 2026-10-27：修正普通图片纹理方向；预览区加入指针中心滚轮/触控板缩放、空格/触摸拖动，禁用浏览器缩放和右键；原图/对比移入胶片工具横条。
+- 2026-10-27：分离图片与曲线 LUT 的纹理翻转状态，修复曲线通道错位；加入逐图撤销/恢复、混色 HSL Tab、颜色渐变滑杆和 WebMCP/本地 Agent 工具。

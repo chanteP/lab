@@ -1,4 +1,4 @@
-import type { Point } from '../types';
+import type { Curves, Point } from '../types';
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0));
 
@@ -35,4 +35,9 @@ export function evaluateCurve(points: Point[], x: number): number {
 
 export function createCurveLut(points: Point[], size = 256): Uint8Array {
     return Uint8Array.from({ length: size }, (_, i) => Math.round(evaluateCurve(points, i / (size - 1)) * 255));
+}
+
+export function applyCurves(rgb: number[], curves: Curves): number[] {
+    const composite = rgb.map((value) => evaluateCurve(curves.rgb, value));
+    return composite.map((value, index) => evaluateCurve(curves[(['r', 'g', 'b'] as const)[index]], value));
 }
