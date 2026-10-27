@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
+import { profileClosed, profilePoints, profileShape } from './profiles';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from './types';
 
 function qualityValues(quality: GeometryQuality) {
@@ -74,14 +75,10 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     if (entity.kind === 'sphere') {
         return new THREE.SphereGeometry(entity.radius!, q.sphere, Math.max(16, q.sphere / 2));
     }
-    const shape = new THREE.Shape();
-    const points = entity.points || [];
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
-    if (points.length < 3) return new THREE.BufferGeometry();
-    // Plane sketches store local U/V coordinates. Legacy sketches retain their original X/Z mapping.
-    shape.moveTo(points[0][0], plane ? points[0][1] : -points[0][1]);
-    points.slice(1).forEach(([x, y]) => shape.lineTo(x, plane ? y : -y));
-    shape.closePath();
+    const points = entity.points || [];
+    if (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3)) return new THREE.BufferGeometry();
+    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128);
     const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: entity.depth! - size * 2,
@@ -93,10 +90,23 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         bevelSegments: edge?.type === 'fillet' ? q.edge : 1,
         curveSegments: 12,
     });
+    if (entity.draftAngle) {
+        const center = points.reduce((sum, point) => [sum[0] + point[0] / points.length, sum[1] + point[1] / points.length], [0, 0]);
+        const radius = Math.max(1, ...points.map((point) => Math.hypot(point[0] - center[0], point[1] - center[1])));
+        const positions = geometry.attributes.position;
+        for (let index = 0; index < positions.count; index++) {
+            const z = positions.getZ(index);
+            const factor = Math.max(0.05, 1 - z * Math.tan(THREE.MathUtils.degToRad(entity.draftAngle)) / radius);
+            positions.setX(index, center[0] + (positions.getX(index) - center[0]) * factor);
+            positions.setY(index, center[1] + (positions.getY(index) - center[1]) * factor);
+        }
+    }
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
     if (plane) {
-        geometry.translate(0, 0, -(box.min.z + box.max.z) / 2);
+        if (entity.sideMode === 'one') geometry.translate(0, 0, -box.min.z);
+        else geometry.translate(0, 0, -(box.min.z + box.max.z) / 2);
+        if (entity.direction === -1) geometry.scale(1, 1, -1);
         const u = new THREE.Vector3(...plane.u);
         const v = new THREE.Vector3(...plane.v);
         const normal = new THREE.Vector3(...plane.normal);
@@ -124,8 +134,22 @@ export function buildEntityMesh(
 ): THREE.Mesh {
     if (stack.includes(entity.id)) throw new Error('检测到循环布尔引用');
     let mesh: THREE.Mesh;
-    if (entity.kind !== 'boolean') {
-        mesh = new THREE.Mesh(baseGeometry(entity, quality, document), createMaterial(entity.color));
+    if (entity.kind === 'sketch') {
+        const type = entity.profileType || 'polygon';
+        const source = entity.points || [];
+        const closed = profileClosed(type);
+        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source).map((point) => new THREE.Vector3(point[0], point[1], 0)));
+        const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
+        if (plane) geometry.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)));
+        else geometry.rotateX(-Math.PI / 2);
+        const material = closed
+            ? new THREE.MeshBasicMaterial({ color: '#3185d8', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+            : new THREE.LineBasicMaterial({ color: '#3185d8' });
+        mesh = closed ? new THREE.Mesh(geometry, material) : new THREE.Line(geometry, material) as unknown as THREE.Mesh;
+    } else if (entity.kind !== 'boolean') {
+        const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : null;
+        const geometryEntity = profile ? { ...entity, points: profile.points, profileType: profile.profileType, planeId: profile.planeId } : entity;
+        mesh = new THREE.Mesh(baseGeometry(geometryEntity, quality, document), createMaterial(entity.color));
     } else {
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);
@@ -154,10 +178,10 @@ export function buildEntityMesh(
     return mesh;
 }
 
-export function buildScene(document: ModelDocument, quality: GeometryQuality = 'preview') {
+export function buildScene(document: ModelDocument, quality: GeometryQuality = 'preview', includeSketches = true) {
     const group = new THREE.Group();
     group.name = 'Model';
-    document.entities.filter((entity) => entity.visible).forEach((entity) => {
+    document.entities.filter((entity) => entity.visible && (includeSketches || entity.kind !== 'sketch')).forEach((entity) => {
         try {
             group.add(buildEntityMesh(entity, document, quality));
         } catch (error) {

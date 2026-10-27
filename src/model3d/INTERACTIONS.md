@@ -68,3 +68,49 @@
 
 - 地面阴影默认关闭，不随项目保存。
 - 右上角“投影”开关只控制阴影接收平面、方向光投影和 shadow map，不改变网格或相机投影方式。
+
+## 选择驱动的 UI 状态机
+
+实现：`App.vue` 的 `uiState`、`operation`、`startExtrude / applyBoolean / editHistory`。
+
+- `Default`：无选择，显示完整 Sketch、Construct、Transform、Tools 和布尔入口。
+- `Sketch`：平面草图上下文，显示 Line、Rectangle、Circle、Arc，另一侧保留视图和约束扩展位置。
+- `SelectionAdaptive`：Items 或画布选择变化后的推荐状态。
+- `ToolActive`：Extrude、Offset Face、Chamfer/Fillet 或 Boolean 正在预览；显示参数、Done、Cancel。
+- `HistoryEdit`：从 History 重新打开已有 Extrude/Boolean，引用和参数在提交后写回同一实体。
+
+Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实体面、实体边、Body 分别触发 Extrude、Offset Face、Chamfer/Fillet、Move/Rotate。双击画布中的面选择完整 Body。
+
+## Profile 与草图工具
+
+实现：`profiles.ts`。草图与 Body 是不同的 Items。
+
+- Line/Polygon：逐点放置，闭合后可用于 Extrude。
+- Rectangle：两个对角点生成四个源顶点。
+- Circle：源数据始终是圆心和圆周点，预览/导出时才细分。
+- Arc：源数据始终是起点、经过点和终点；开放圆弧只生成线，不形成可拉伸 Profile。
+- Exit Sketching 只退出草图并生成 Profile；它不是 Extrude 的 Done。
+- 选中已有 Profile 可重新进入草图或 History；修改 Profile 后，引用它的 Extrude 自动重建。
+- Normal to Sketch 使用当前平面法向恢复正视；进入 Extrude 后返回三维透视方向。
+
+## Extrude
+
+- 选择闭合 Profile 后出现方向 ArrowHelper、距离标签和实时实体预览。
+- 拖动 Profile/箭头方向或输入距离都会更新同一 `depth` 参数。
+- 支持正向/反向、One-Sided/Symmetric、Draft Angle。
+- Result 支持 New Body、Union、Subtract、Intersect；相交 Body 会作为自动布尔建议，用户可覆盖目标和结果。
+- 点击画布尺寸标签聚焦距离输入；空白提交和 Done 等价，Esc/Cancel 恢复执行前文档。
+- 导出只包含 Body，不把辅助 Profile 面写入 STL/GLB。
+
+## Offset Face 与 Chamfer/Fillet
+
+- Offset Face 修改既有实体的尺寸/位置，不从 Profile 创建实体。
+- Chamfer/Fillet 有明确类型入口和尺寸输入，拖动时持续重建预览；与 Extrude 的方向、距离和布尔参数不共享。
+
+## Boolean 执行态与 History
+
+- 两个 Body 进入 Union/Subtract/Intersect 后，首先生成可取消的预览结果。
+- 紫色表示 Target，蓝色表示 Tool；Subtract 默认第一个为 Target，Union 默认最后选择的 Body 为 Target。
+- “交换 Target / Tool”会真正交换 `operands`，不是只改变标签。
+- 保留 Target、保留 Tool 在 Done 时分别应用；Cancel 恢复执行前文档。
+- History 可重新打开 Boolean，切换类型、交换角色和修改保留策略。

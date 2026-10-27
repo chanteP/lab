@@ -1,6 +1,6 @@
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
-export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'extrude' | 'boolean';
+export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
 export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments: number };
 
@@ -36,7 +36,12 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
+    profileType?: 'polygon' | 'rectangle' | 'circle' | 'arc';
+    profileId?: string;
     planeId?: string;
+    sideMode?: 'one' | 'symmetric';
+    direction?: 1 | -1;
+    draftAngle?: number;
     operation?: BooleanOperation;
     operands?: [string, string];
     edge?: EdgeTreatment | null;
@@ -64,6 +69,7 @@ export const ENTITY_NAMES: Record<EntityKind, string> = {
     box: '立方体',
     cylinder: '圆柱体',
     sphere: '球体',
+    sketch: '草图轮廓',
     extrude: '草图拉伸',
     boolean: '布尔实体',
 };

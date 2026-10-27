@@ -18,13 +18,13 @@ function safeName(name: string) {
 }
 
 export function exportSTL(document: ModelDocument, name: string, quality: GeometryQuality) {
-    const scene = buildScene(document, quality);
+    const scene = buildScene(document, quality, false);
     const result = new STLExporter().parse(scene, { binary: true }) as DataView;
     download(result.buffer as ArrayBuffer, `${safeName(name)}-${quality}.stl`, 'model/stl');
 }
 
 export async function exportGLB(document: ModelDocument, name: string, quality: GeometryQuality) {
-    const scene = buildScene(document, quality);
+    const scene = buildScene(document, quality, false);
     const result = await new GLTFExporter().parseAsync(scene, { binary: true, onlyVisible: true });
     download(result as ArrayBuffer, `${safeName(name)}-${quality}.glb`, 'model/gltf-binary');
 }
