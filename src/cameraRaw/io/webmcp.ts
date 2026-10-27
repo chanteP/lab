@@ -5,6 +5,7 @@ import { ensureBitmap } from './raw';
 import { downloadBlob, renderExport } from './export';
 import { parsePreset, serializePreset } from './preset';
 import { putPreset } from './presetStore';
+import { withLoading } from './loading';
 
 type ToolResult = { content: { type: string; text: string }[]; structuredContent?: unknown; isError?: boolean };
 type ToolDefinition = { name: string; description: string; inputSchema: Record<string, unknown>; execute: (args: Record<string, any>) => Promise<unknown> | unknown };
@@ -117,7 +118,8 @@ const tools: ToolDefinition[] = [
                 const xmp = serializePreset(asset.adjustments); if (args.download) downloadBlob(new Blob([xmp], { type: 'application/rdf+xml' }), `${asset.name}.xmp`);
                 return result({ name: `${asset.name}.xmp`, mimeType: 'application/rdf+xml', data: xmp, encoding: 'utf8' });
             }
-            const blob = await renderExport(asset, format, args.quality ?? .94), name = `${asset.name.replace(/\.[^.]+$/, '')}-edited.${format === 'jpeg' ? 'jpg' : 'dng'}`;
+            const blob = await withLoading(format === 'dng' ? 'Agent 正在生成 DNG…' : 'Agent 正在导出 JPEG…', () => renderExport(asset, format, args.quality ?? .94));
+            const name = `${asset.name.replace(/\.[^.]+$/, '')}-edited.${format === 'jpeg' ? 'jpg' : 'dng'}`;
             if (args.download) downloadBlob(blob, name);
             return result({ name, mimeType: blob.type, encoding: 'base64', data: await blobBase64(blob), size: blob.size });
         },

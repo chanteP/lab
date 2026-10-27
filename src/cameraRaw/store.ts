@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue';
 import type { Adjustments, ImageAsset } from './types';
 import { cloneAdjustments } from './engine/adjustments';
 import { ensureBitmap, isImageFile, readImageAsset } from './io/raw';
+import { withLoading } from './io/loading';
 
 export const assets = ref<ImageAsset[]>([]);
 export const selectedIds = ref<Set<string>>(new Set());
@@ -69,23 +70,28 @@ export async function selectAsset(id: string, additive = false) {
     activeId.value = id;
     const asset = assets.value.find((item) => item.id === id);
     if (!asset || asset.bitmap) return;
-    asset.loading = true; asset.error = undefined;
-    try { await ensureBitmap(asset); }
-    catch (error) { asset.error = error instanceof Error ? error.message : String(error); notice.value = asset.error; }
-    finally { asset.loading = false; }
+    return withLoading(`正在解码 ${asset.name}…`, async () => {
+        asset.loading = true; asset.error = undefined;
+        try { await ensureBitmap(asset); }
+        catch (error) { asset.error = error instanceof Error ? error.message : String(error); notice.value = asset.error; }
+        finally { asset.loading = false; }
+    });
 }
 
 export async function importFiles(files: File[]) {
     const supported = files.filter(isImageFile);
     if (!supported.length) { notice.value = '请选择 RAW、JPEG 或 PNG 图片'; return; }
-    busy.value = true;
-    for (const file of supported) {
+    return withLoading(`正在导入 ${supported.length} 张图片…`, async () => {
+        busy.value = true;
         try {
-            const asset = await readImageAsset(file); assets.value.push(asset);
-            if (!activeId.value) await selectAsset(asset.id);
-        } catch (error) { notice.value = `${file.name}: ${error instanceof Error ? error.message : String(error)}`; }
-    }
-    busy.value = false;
+            for (const file of supported) {
+                try {
+                    const asset = await readImageAsset(file); assets.value.push(asset);
+                    if (!activeId.value) await selectAsset(asset.id);
+                } catch (error) { notice.value = `${file.name}: ${error instanceof Error ? error.message : String(error)}`; }
+            }
+        } finally { busy.value = false; }
+    });
 }
 
 export function toggleSelected(id: string) {

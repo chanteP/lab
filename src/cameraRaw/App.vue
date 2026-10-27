@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { NIcon } from 'naive-ui';
+import { NIcon, useMessage } from 'naive-ui';
 import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SyncOutline, TrashOutline } from '@vicons/ionicons5';
 import { activeAsset, assets, busy, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import { createDefaultAdjustments } from './engine/adjustments';
@@ -10,6 +10,7 @@ import { downloadBlob } from './io/export';
 import { disposeRaw } from './io/raw';
 import { initWebMCP } from './io/webmcp';
 import { putPreset } from './io/presetStore';
+import { disposeLoading, registerLoading, withLoading } from './io/loading';
 import ImageViewer from './components/ImageViewer.vue';
 import AdjustmentPanel from './components/AdjustmentPanel.vue';
 import FilmStrip from './components/FilmStrip.vue';
@@ -26,6 +27,8 @@ const panel = ref('basic'), compare = ref(0), split = ref(.5), zoom = ref(1), hi
 const mobilePanelOpen = ref(false);
 const histogram = ref<Uint8ClampedArray>(), metadataOpen = ref(false), exporting = ref(false), toast = ref('');
 const agentStatus = ref({ available: false, mode: 'local', count: 0 });
+const message = useMessage();
+registerLoading((text) => message.loading(text, { duration: 0, closable: false }));
 const fileInput = ref<HTMLInputElement>(), folderInput = ref<HTMLInputElement>(), presetInput = ref<HTMLInputElement>();
 const camera = computed(() => String(activeAsset.value?.metadata.Make || activeAsset.value?.metadata.make || ''));
 const cameraModel = computed(() => String(activeAsset.value?.metadata.Model || activeAsset.value?.metadata.model || ''));
@@ -46,10 +49,12 @@ function chooseFiles(event: Event) { const input = event.target as HTMLInputElem
 async function choosePreset(event: Event) {
     const input = event.target as HTMLInputElement, file = input.files?.[0]; if (!file || !activeAsset.value) return;
     try {
-        const parsed = parsePreset(await file.text()), name = file.name.replace(/\.(xmp|json)$/i, '');
-        activeAsset.value.adjustments = parsed;
-        await putPreset({ name, xmp: serializePreset(parsed, name), source: 'import' });
-        notice.value = `已应用并保存预设 ${file.name}`;
+        await withLoading('正在导入预设…', async () => {
+            const parsed = parsePreset(await file.text()), name = file.name.replace(/\.(xmp|json)$/i, '');
+            activeAsset.value!.adjustments = parsed;
+            await putPreset({ name, xmp: serializePreset(parsed, name), source: 'import' });
+            notice.value = `已应用并保存预设 ${file.name}`;
+        });
     }
     catch (error) { notice.value = `预设导入失败：${error instanceof Error ? error.message : String(error)}`; }
     input.value = '';
@@ -61,7 +66,10 @@ function exportPreset() {
 async function save(format: 'jpeg' | 'dng') {
     if (!activeAsset.value || exporting.value) return;
     exporting.value = true;
-    try { await saveAsset(activeAsset.value, format); notice.value = format === 'dng' ? '已生成调整后的 DNG' : '已导出全尺寸 JPEG'; }
+    try {
+        await withLoading(format === 'dng' ? '正在生成 DNG…' : '正在导出 JPEG…', () => saveAsset(activeAsset.value!, format));
+        notice.value = format === 'dng' ? '已生成调整后的 DNG' : '已导出全尺寸 JPEG';
+    }
     catch (error) { notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`; }
     finally { exporting.value = false; }
 }
@@ -91,7 +99,7 @@ async function entriesFromDrop(data: DataTransfer): Promise<File[]> {
 async function drop(event: DragEvent) { if (event.dataTransfer) void importFiles(await entriesFromDrop(event.dataTransfer)); }
 function preventGesture(event: Event) { event.preventDefault(); }
 onMounted(() => { window.addEventListener('keydown', keyboard); document.addEventListener('gesturestart', preventGesture, { passive: false }); agentStatus.value = initWebMCP(); });
-onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); document.removeEventListener('gesturestart', preventGesture); clearTimeout(toastTimer); disposeRaw(); });
+onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); document.removeEventListener('gesturestart', preventGesture); clearTimeout(toastTimer); disposeLoading(); disposeRaw(); });
 </script>
 
 <template>

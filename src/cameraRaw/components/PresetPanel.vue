@@ -7,6 +7,7 @@ import { blendAdjustments, cloneAdjustments } from '../engine/adjustments';
 import { parsePreset, serializePreset } from '../io/preset';
 import { deletePreset, listPresets, putPreset, type StoredPreset } from '../io/presetStore';
 import SliderField from './SliderField.vue';
+import { withLoading } from '../io/loading';
 
 const props = defineProps<{ modelValue: Adjustments }>();
 const emit = defineEmits<{ 'update:modelValue': [value: Adjustments] }>();
@@ -14,26 +15,30 @@ const presets = ref<StoredPreset[]>([]), amount = ref(100), selectedId = ref('')
 const fileInput = ref<HTMLInputElement>();
 let base: Adjustments | undefined;
 
-async function refresh() { presets.value = await listPresets(); }
+async function refresh() { return withLoading('正在读取预设…', async () => { presets.value = await listPresets(); }); }
 function report(error: unknown) { status.value = error instanceof Error ? error.message : String(error); }
 
 async function importPresets(event: Event) {
     const input = event.target as HTMLInputElement;
     try {
-        for (const file of Array.from(input.files ?? [])) {
-            const name = file.name.replace(/\.(xmp|json)$/i, ''), parsed = parsePreset(await file.text());
-            await putPreset({ name, xmp: serializePreset(parsed, name), source: 'import' });
-        }
-        status.value = '预设已导入'; await refresh();
+        await withLoading('正在导入预设…', async () => {
+            for (const file of Array.from(input.files ?? [])) {
+                const name = file.name.replace(/\.(xmp|json)$/i, ''), parsed = parsePreset(await file.text());
+                await putPreset({ name, xmp: serializePreset(parsed, name), source: 'import' });
+            }
+            status.value = '预设已导入'; await refresh();
+        });
     } catch (error) { report(error); }
     input.value = '';
 }
 
 async function saveCurrent() {
     try {
-        const name = presetName.value.trim() || `自定义预设 ${presets.value.length + 1}`;
-        await putPreset({ name, xmp: serializePreset(props.modelValue, name), source: 'saved' });
-        presetName.value = ''; status.value = '已保存当前参数'; await refresh();
+        await withLoading('正在保存预设…', async () => {
+            const name = presetName.value.trim() || `自定义预设 ${presets.value.length + 1}`;
+            await putPreset({ name, xmp: serializePreset(props.modelValue, name), source: 'saved' });
+            presetName.value = ''; status.value = '已保存当前参数'; await refresh();
+        });
     } catch (error) { report(error); }
 }
 
@@ -48,7 +53,7 @@ function apply(preset: StoredPreset) {
 }
 
 async function remove(preset: StoredPreset) {
-    try { await deletePreset(preset.id); if (selectedId.value === preset.id) { selectedId.value = ''; base = undefined; } await refresh(); }
+    try { await withLoading('正在删除预设…', async () => { await deletePreset(preset.id); if (selectedId.value === preset.id) { selectedId.value = ''; base = undefined; } await refresh(); }); }
     catch (error) { report(error); }
 }
 
