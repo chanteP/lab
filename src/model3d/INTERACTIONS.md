@@ -140,3 +140,13 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 
 - 所有 Items（实体、文件夹、平面）都有眼睛。文件夹显隐递归应用到整个子树。
 - 测量使用带刻度的 ruler 图形。测量和适配按钮不显示底板，激活状态仅通过图标颜色表达。
+
+## 实时记录、正交绘制与手势结束
+
+- 圆、矩形、椭圆、正多边形在定义点完成或拖拽 pointerup 时立即创建 Profile，并触发 IndexedDB 自动保存；无需 Close。
+- 成形后清空的是当前草稿，不是已保存图形，可连续创建多个 Profile。Line/Arc 的轮廓和贝塞尔编辑同样实时写入。
+- 草图相机使用独立 OrthographicCamera，退出后恢复 PerspectiveCamera。比例尺在草图中按 `(top - bottom) / zoom / canvasHeight` 计算，反映该平面的真实单位。
+- 草图模式隐藏有限平面边框，以平面底色铺满画布，网格旋转到当前平面。坐标球、测量和适配按钮隐藏，仅保留比例尺。
+- 草图右键拖拽只绕平面法向做二维 roll，不改变为正交三维轨道；三维 Orbit 在草图中禁用。
+- 所有绘制/控制点/视图拖拽使用 Pointer Capture。草图 pointerup 在通用“移动超过点击阈值”判断之前完成，因此画布外松开和 pointercancel 都不会留下粘连草稿。
+- 自定义 SVG 图标由 `SvgIcon.vue` 维护，当前铅笔和尺子使用 currentColor，可直接修改 SVG path 而无需图标字体。

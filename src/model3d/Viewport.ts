@@ -40,7 +40,10 @@ export class Viewport {
     private container: HTMLElement;
     private callbacks: ViewportCallbacks;
     private scene = new THREE.Scene();
-    private camera = new THREE.PerspectiveCamera(42, 1, 0.1, 5000);
+    private perspectiveCamera = new THREE.PerspectiveCamera(42, 1, 0.1, 5000);
+    private orthographicCamera = new THREE.OrthographicCamera(-100, 100, 100, -100, 0.05, 5000);
+    private camera: THREE.PerspectiveCamera | THREE.OrthographicCamera = this.perspectiveCamera;
+    private orthoHeight = 200;
     private renderer: THREE.WebGLRenderer;
     private labelRenderer: CSS2DRenderer;
     private controls: OrbitControls;
@@ -66,6 +69,7 @@ export class Viewport {
     private selectedSketchPoint = -1;
     private sketchDrag: { index: number; handle?: 1 | 2 } | null = null;
     private shapeDrag: { start: Point2; moved: boolean } | null = null;
+    private viewRotateDrag: { x: number } | null = null;
     private sketchSegmentHandled = false;
     private sketchProfileType: ProfileType = 'polygon';
     private directDrag: { id: string; normal: Vec3; y: number } | null = null;
@@ -103,7 +107,7 @@ export class Viewport {
         room.dispose();
         pmrem.dispose();
 
-        this.camera.position.set(115, 95, 135);
+        this.perspectiveCamera.position.set(115, 95, 135);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.08;
@@ -170,6 +174,7 @@ export class Viewport {
         canvas.addEventListener('pointerdown', this.onPointerDown, true);
         canvas.addEventListener('pointermove', this.onPointerMove, true);
         canvas.addEventListener('pointerup', this.onPointerUp, true);
+        canvas.addEventListener('pointercancel', this.onPointerUp, true);
         canvas.addEventListener('pointerleave', () => this.clearHoverFace());
         canvas.addEventListener('dblclick', this.onDoubleClick);
         window.addEventListener('keydown', this.onKeyDown);
@@ -179,6 +184,7 @@ export class Viewport {
             canvas.removeEventListener('pointerdown', this.onPointerDown, true);
             canvas.removeEventListener('pointermove', this.onPointerMove, true);
             canvas.removeEventListener('pointerup', this.onPointerUp, true);
+            canvas.removeEventListener('pointercancel', this.onPointerUp, true);
             canvas.removeEventListener('dblclick', this.onDoubleClick);
             window.removeEventListener('keydown', this.onKeyDown);
             window.removeEventListener('keyup', this.onKeyUp);
@@ -252,14 +258,29 @@ export class Viewport {
             .add(new THREE.Vector3(...this.activePlane.normal).multiplyScalar(offset));
     }
 
+    private capturePointer(event: PointerEvent) {
+        try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* Pointer may already be released. */ }
+    }
+    private releasePointer(event: PointerEvent) {
+        try { if (this.renderer.domElement.hasPointerCapture(event.pointerId)) this.renderer.domElement.releasePointerCapture(event.pointerId); } catch { /* No active capture. */ }
+    }
+
     private onPointerDown(event: PointerEvent) {
         this.fitAnimation = null;
         this.pointerStart.set(event.clientX, event.clientY);
         this.raycaster.params.Line.threshold = 1.5;
+        if (this.sketchMode && event.button === 2) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            this.viewRotateDrag = { x: event.clientX };
+            this.controls.enabled = false;
+            this.capturePointer(event);
+            return;
+        }
         if (event.button !== 0) return;
         if (this.isGizmoEvent(event)) {
             event.preventDefault(); event.stopImmediatePropagation();
             this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: false };
+            this.capturePointer(event);
             this.controls.enabled = false;
             return;
         }
@@ -280,6 +301,7 @@ export class Viewport {
                     this.callbacks.onSketchPointMove(index, this.sketchPoint(event)!, 'start');
                 } else this.callbacks.onSketchHandleMove(index, hit.object.userData.handleIndex, this.sketchPoint(event)!, 'start');
                 this.controls.enabled = false;
+                this.capturePointer(event);
                 this.updateMarkerColors();
                 return;
             }
@@ -291,7 +313,7 @@ export class Viewport {
                 return;
             }
             const start = this.sketchPoint(event);
-            if (start) this.shapeDrag = { start, moved: false };
+            if (start) { this.shapeDrag = { start, moved: false }; this.capturePointer(event); }
             return;
         }
         const hit = this.hitEntity(event);
@@ -299,6 +321,7 @@ export class Viewport {
             event.preventDefault(); event.stopImmediatePropagation();
             const normal = hit.face?.normal.clone() || new THREE.Vector3(0, 1, 0);
             this.directDrag = { id: hit.object.userData.entityId, normal: normal.toArray(), y: event.clientY };
+            this.capturePointer(event);
             this.controls.enabled = false;
             this.callbacks.onSelect(hit.object.userData.entityId, false);
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'start');
@@ -309,6 +332,17 @@ export class Viewport {
     }
 
     private onPointerMove(event: PointerEvent) {
+        if (this.viewRotateDrag && this.activePlane) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            const angle = (event.clientX - this.viewRotateDrag.x) * 0.006;
+            const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
+            const offset = this.camera.position.clone().sub(this.controls.target).applyAxisAngle(normal, angle);
+            this.camera.up.applyAxisAngle(normal, angle);
+            this.camera.position.copy(this.controls.target).add(offset);
+            this.camera.lookAt(this.controls.target);
+            this.viewRotateDrag.x = event.clientX;
+            return;
+        }
         if (this.gizmoDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const dx = event.clientX - this.gizmoDrag.x;
@@ -353,6 +387,13 @@ export class Viewport {
     }
 
     private onPointerUp(event: PointerEvent) {
+        this.releasePointer(event);
+        if (this.viewRotateDrag) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            this.viewRotateDrag = null;
+            this.controls.enabled = true;
+            return;
+        }
         if (this.gizmoDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             if (!this.gizmoDrag.moved) this.viewHelper.handleClick(event);
@@ -376,6 +417,13 @@ export class Viewport {
             return;
         }
         this.controls.enableRotate = !this.sketchMode && !this.measureMode;
+        if (this.sketchMode && this.shapeDrag) {
+            const point = this.sketchPoint(event);
+            if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
+            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            this.shapeDrag = null;
+            return;
+        }
         if (event.button !== 0 || this.transform.dragging) return;
         if (this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
         if (this.measureMode) {
@@ -392,9 +440,7 @@ export class Viewport {
         if (this.sketchMode) {
             if (this.sketchSegmentHandled) { this.sketchSegmentHandled = false; return; }
             const point = this.sketchPoint(event);
-            if (point && this.shapeDrag?.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
-            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
-            this.shapeDrag = null;
+            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
             return;
         }
         const hit = this.hitEntity(event);
@@ -433,7 +479,14 @@ export class Viewport {
     private resize() {
         const { width, height } = this.container.getBoundingClientRect();
         if (!width || !height) return;
-        this.camera.aspect = width / height;
+        if (this.camera instanceof THREE.PerspectiveCamera) this.camera.aspect = width / height;
+        else {
+            const aspect = width / height;
+            this.camera.left = -this.orthoHeight * aspect / 2;
+            this.camera.right = this.orthoHeight * aspect / 2;
+            this.camera.top = this.orthoHeight / 2;
+            this.camera.bottom = -this.orthoHeight / 2;
+        }
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(width, height);
         this.labelRenderer.setSize(width, height);
@@ -454,14 +507,16 @@ export class Viewport {
         this.viewHelper.center.copy(this.controls.target);
         this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
-        this.viewHelper.render(this.renderer);
+        if (!this.sketchMode) this.viewHelper.render(this.renderer);
         this.labelRenderer.render(this.scene, this.camera);
         this.updateScaleBar();
     }
     private updateScaleBar() {
         const height = Math.max(1, this.renderer.domElement.clientHeight);
         const distance = this.camera.position.distanceTo(this.controls.target);
-        const unitsPerPixel = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
+        const unitsPerPixel = this.camera instanceof THREE.OrthographicCamera
+            ? (this.camera.top - this.camera.bottom) / this.camera.zoom / height
+            : 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
         const raw = unitsPerPixel * 76;
         const power = Math.pow(10, Math.floor(Math.log10(raw)));
         const fraction = raw / power;
@@ -564,8 +619,32 @@ export class Viewport {
         this.sketchDrag = null;
         this.shapeDrag = null;
         this.transform.detach();
-        this.controls.enableRotate = !active;
+        this.controls.enableRotate = false;
         this.container.classList.toggle('is-sketching', active);
+        if (active) {
+            const distance = this.perspectiveCamera.position.distanceTo(this.controls.target);
+            this.orthoHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2));
+            this.orthographicCamera.position.copy(this.perspectiveCamera.position);
+            this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
+            this.camera = this.orthographicCamera;
+            this.scene.background = new THREE.Color('#dcebe6');
+            this.planes.visible = false;
+            if (this.activePlane) {
+                this.grid.position.copy(new THREE.Vector3(...this.activePlane.origin));
+                this.grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...this.activePlane.normal).normalize());
+            }
+        } else {
+            this.camera = this.perspectiveCamera;
+            this.scene.background = new THREE.Color('#e7ebe8');
+            this.planes.visible = true;
+            this.grid.position.set(0, -0.02, 0);
+            this.grid.quaternion.identity();
+        }
+        this.controls.object = this.camera;
+        this.transform.camera = this.camera;
+        this.resize();
+        this.controls.enableRotate = !active && !this.measureMode;
+        this.controls.update();
         this.updateSketch(points, selectedIndex);
     }
     setSketchSelection(index: number) { this.selectedSketchPoint = index; this.updateMarkerColors(); }
@@ -787,7 +866,12 @@ export class Viewport {
         const size = box.getSize(new THREE.Vector3());
         const radius = Math.max(size.length() / 2, 5);
         const direction = this.camera.position.clone().sub(this.controls.target).normalize();
-        const toPosition = center.clone().add(direction.multiplyScalar(radius / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 1.25));
+        if (this.camera instanceof THREE.OrthographicCamera) {
+            this.orthoHeight = Math.max(10, radius * 2.4);
+            this.resize();
+        }
+        const distance = this.camera instanceof THREE.PerspectiveCamera ? radius / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 1.25 : radius * 4;
+        const toPosition = center.clone().add(direction.multiplyScalar(distance));
         this.camera.near = Math.max(0.05, radius / 1000);
         this.camera.far = Math.max(5000, radius * 100);
         this.camera.updateProjectionMatrix();

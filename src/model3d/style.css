@@ -194,3 +194,7 @@ button { color: inherit; }
 .sketch-tool-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 30px; color: #4d675b; background: #fff; border: 1px solid #dfe6e1; border-radius: 50%; font-size: 16px; }
 .sketch-polygon-tool { border-radius: 6px; }
 .sketch-polygon-tool .n-select { width: calc(100% - 45px); margin: 0 5px 6px 45px; }
+.drawing-active .measure-actions, .drawing-active .gizmo-label { display: none; }
+.drawing-active .viewport-utilities { right: 18px; }
+.drawing-active .viewport-status { background: rgba(239,247,243,.9); }
+.svg-icon { width: 21px; height: 21px; display: block; flex: 0 0 auto; }

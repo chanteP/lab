@@ -11,6 +11,7 @@ import {
 } from '@vicons/ionicons5';
 import { Viewport, type EditPhase, type ViewTool } from './Viewport';
 import EntityTree, { type OutlinerNode } from './EntityTree.vue';
+import SvgIcon from './SvgIcon.vue';
 import { profileClosed, type ProfileType, type ProfileCurves } from './profiles';
 import { buildEntityMesh } from './geometry';
 import { exportGLB, exportProject, exportSTL } from './exporters';
@@ -547,13 +548,48 @@ function startSketch(editProfile = false) {
     sketchMode.value = true;
     viewport?.setSketchMode(true, sketchPoints.value);
     refreshSketch();
-    viewport?.setView('top');
+    viewport?.normalToSketch();
+}
+function persistSketchProgress(resetAfter: boolean) {
+    const ready = ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3;
+    if (!ready) return;
+    let id = editingSketchId.value;
+    if (!id) {
+        pushHistory();
+        const entity = createEntity('sketch', uid());
+        entity.name = uniqueName('sketch');
+        entity.planeId = activePlaneId.value!;
+        entity.position = [0, 0, 0];
+        delete entity.depth;
+        document.value.entities.push(entity);
+        id = entity.id;
+        editingSketchId.value = id;
+    }
+    const entity = document.value.entities.find((item) => item.id === id);
+    if (entity) {
+        entity.points = sketchPoints.value.map((point) => [...point]);
+        entity.profileType = sketchType.value;
+        entity.curves = JSON.parse(JSON.stringify(sketchCurves.value));
+        entity.sides = sketchSides.value;
+        entity.visible = true;
+    }
+    if (resetAfter) {
+        editingSketchId.value = null;
+        sketchPoints.value = [];
+        sketchCurves.value = {};
+        selectedSketchPoint.value = -1;
+        selectedSketchSegment.value = -1;
+        selectedIds.value = [activePlaneId.value!];
+        refreshSketch();
+    }
 }
 function refreshSketch() {
     viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value);
 }
 function setSketchType(type: ProfileType) {
     sketchType.value = type;
+    editingSketchId.value = null;
+    if (activePlaneId.value) selectedIds.value = [activePlaneId.value];
     sketchPoints.value = [];
     sketchCurves.value = {};
     selectedSketchPoint.value = -1;
@@ -574,6 +610,7 @@ function addSketchPoint(point: Point2) {
     } else sketchPoints.value.push(point);
     syncEditingSketch();
     refreshSketch();
+    if (sketchType.value !== 'polygon' && sketchType.value !== 'arc') persistSketchProgress(true);
 }
 function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (phase === 'start') {
@@ -590,6 +627,7 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         if (segment === index - 1) curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
     });
     syncEditingSketch();
+    if (sketchPoints.value.length >= 3) persistSketchProgress(false);
     refreshSketch();
 }
 function ensureSketchSegment(index: number) {
@@ -602,6 +640,7 @@ function ensureSketchSegment(index: number) {
 }
 function selectSketchSegment(index: number) {
     ensureSketchSegment(index);
+    persistSketchProgress(false);
     selectedSketchPoint.value = -1;
     syncEditingSketch();
     refreshSketch();
@@ -610,6 +649,7 @@ function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: 
     if (phase === 'start') return;
     ensureSketchSegment(segment);
     sketchCurves.value[segment][handle === 1 ? 'c1' : 'c2'] = point;
+    persistSketchProgress(false);
     syncEditingSketch();
     refreshSketch();
 }
@@ -627,6 +667,7 @@ function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
     else sketchPoints.value = [start, point];
     syncEditingSketch();
     refreshSketch();
+    if (phase === 'end' && sketchType.value !== 'polygon') persistSketchProgress(true);
 }
 function setSketchSides(sides: number) {
     sketchSides.value = sides;
@@ -1011,7 +1052,7 @@ onBeforeUnmount(() => {
                 <div class="storage-note"><NIcon><CloudDoneOutline /></NIcon><div><strong>自动保存</strong><span>项目仅存储在此浏览器的 IndexedDB 中</span></div></div>
             </aside>
 
-            <main class="viewport-area">
+            <main class="viewport-area" :class="{ 'drawing-active': sketchMode }">
                 <div ref="viewportElement" class="viewport"></div>
                 <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode }">
                     <div class="menu-state">建模工具</div>
@@ -1023,7 +1064,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div class="tool-group">
                         <NTooltip placement="right"><template #trigger><button @click="createPlane"><NIcon><LayersOutline /></NIcon></button></template>添加绘制平面</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!canDraw" @click="startSketch()"><NIcon><CreateOutline /></NIcon></button></template>绘制形状（先选平面）</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :disabled="!canDraw" @click="startSketch()"><SvgIcon name="pencil" /></button></template>绘制形状（先选平面）</NTooltip>
                     </div>
                     <div class="toolbar-spacer"></div>
                     <div class="tool-group">
@@ -1112,7 +1153,7 @@ onBeforeUnmount(() => {
 
                 <div class="viewport-utilities">
                     <div class="measure-actions">
-                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><svg class="ruler-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 8.5 8.5 3 21 15.5 15.5 21 3 8.5Z"/><path d="m7 9 2 2m1-5 2 2m-1 5 2 2m1-5 2 2"/></svg></button></template>测量两个面之间的距离</NTooltip>
+                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量两个面之间的距离</NTooltip>
                         <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图（保持方向）</NTooltip>
                     </div>
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
