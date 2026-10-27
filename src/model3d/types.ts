@@ -1,0 +1,78 @@
+export type Vec3 = [number, number, number];
+export type Point2 = [number, number];
+export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'extrude' | 'boolean';
+export type BooleanOperation = 'union' | 'subtract' | 'intersect';
+export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments: number };
+
+export interface ModelEntity {
+    id: string;
+    name: string;
+    kind: EntityKind;
+    color: string;
+    visible: boolean;
+    position: Vec3;
+    rotation: Vec3;
+    scale: Vec3;
+    width?: number;
+    height?: number;
+    depth?: number;
+    radius?: number;
+    points?: Point2[];
+    operation?: BooleanOperation;
+    operands?: [string, string];
+    edge?: EdgeTreatment | null;
+}
+
+export interface ModelDocument {
+    version: 1;
+    unit: 'mm';
+    entities: ModelEntity[];
+}
+
+export interface ProjectRecord {
+    id: string;
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    document: ModelDocument;
+}
+
+export type GeometryQuality = 'preview' | 'high' | 'ultra';
+
+export const ENTITY_NAMES: Record<EntityKind, string> = {
+    box: '立方体',
+    cylinder: '圆柱体',
+    sphere: '球体',
+    extrude: '草图拉伸',
+    boolean: '布尔实体',
+};
+
+export function createDocument(): ModelDocument {
+    return { version: 1, unit: 'mm', entities: [] };
+}
+
+export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): ModelEntity {
+    const base: ModelEntity = {
+        id,
+        kind,
+        name: ENTITY_NAMES[kind],
+        color: '#789e9b',
+        visible: true,
+        position: [0, 20, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        edge: null,
+    };
+    if (kind === 'box') return { ...base, width: 40, height: 40, depth: 40 };
+    if (kind === 'cylinder') return { ...base, radius: 20, height: 40, position: [0, 20, 0] };
+    if (kind === 'sphere') return { ...base, radius: 20 };
+    return { ...base, name: ENTITY_NAMES.extrude, points: [], depth: 10, position: [0, 5, 0] };
+}
+
+export function cloneDocument(document: ModelDocument): ModelDocument {
+    return JSON.parse(JSON.stringify(document));
+}
+
+export function isDocument(value: any): value is ModelDocument {
+    return value?.version === 1 && value?.unit === 'mm' && Array.isArray(value?.entities);
+}

@@ -1,0 +1,6 @@
+{
+    "title": "Form 3D - 浏览器参数化建模",
+    "description": "纯前端 3D 建模工具，支持草图拉伸、布尔运算、倒角与圆角，项目保存在浏览器本地，可导出高精度 STL 和 GLB 模型。",
+    "canonical": "https://lab.neetproject.com/model3d/index.html",
+    "keywords": "3D建模,参数化建模,STL导出,GLB导出,Three.js,草图拉伸"
+}
