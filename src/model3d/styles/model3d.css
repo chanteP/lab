@@ -340,3 +340,5 @@ button { color: inherit; }
 .sketch-close.is-exiting { padding: 8px 9px 10px; color: #fff; background: #c94f4f; border-bottom: 0; border-radius: 7px; }
 .sketch-close.is-exiting strong { font-size: 14px; font-weight: 700; }
 .sketch-close.is-exiting .sketch-tool-icon { color: #fff; background: #c94f4f; border-color: #ffffff70; }
+.sketch-close.is-exiting { color: #c94f4f; background: transparent; }
+.sketch-close.is-exiting .sketch-tool-icon { background: #c94f4f; }

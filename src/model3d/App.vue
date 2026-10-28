@@ -10,14 +10,23 @@ import {
     ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline,
     SearchOutline, BuildOutline, ListOutline, TimeOutline, LockClosedOutline, LockOpenOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './Viewport';
-import EntityTree, { type OutlinerNode } from './EntityTree.vue';
-import SvgIcon from './SvgIcon.vue';
-import { entityProfileClosed, profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './profiles';
-import { borderSegments, sliceBorder, splitCubic } from './sketchBorders';
-import { buildEntityMesh } from './geometry';
-import { exportGLB, exportProject, exportSTL } from './exporters';
-import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './store';
+import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './engine/Viewport';
+import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
+import SvgIcon from './components/ui/SvgIcon.vue';
+import { entityProfileClosed, profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './engine/profiles';
+import { borderSegments, sliceBorder, splitCubic } from './engine/sketchBorders';
+import { buildEntityMesh } from './engine/geometry';
+import { exportGLB, exportProject, exportSTL } from './engine/exporters';
+import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './stores/store';
+import { useUndoHistory } from './composables/useUndoHistory';
+import { useUnits } from './composables/useUnits';
+import { uid } from './utils/id';
+import AppTopBar from './components/layout/AppTopBar.vue';
+import EntitySidebar from './components/layout/EntitySidebar.vue';
+import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
+import SketchToolbar from './components/sketch/SketchToolbar.vue';
+import SketchConstraints from './components/sketch/SketchConstraints.vue';
+import MenuCommand from './components/ui/MenuCommand.vue';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
     type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
@@ -34,9 +43,6 @@ let directBase: ModelEntity | null = null;
 let directHistoryPushed = false;
 let extrudeGestureMoved = false;
 let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves } | null = null;
-const undoStack: ModelDocument[] = [];
-const redoStack: ModelDocument[] = [];
-const historyVersion = ref(0);
 
 const projects = ref<ProjectRecord[]>([]);
 const document = ref<ModelDocument>(createDocument(storedLengthUnit()));
@@ -71,7 +77,6 @@ const operation = ref<OperationState | null>(null);
 const historyEditId = ref<string | null>(null);
 const stats = ref({ vertices: 0, triangles: 0, objects: 0 });
 const measureMode = ref(false);
-const scaleBar = ref({ width: 76, value: 50 });
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
 const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
@@ -98,15 +103,13 @@ const sketchOpen = ref(false);
 const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
 const sketchSelectionTool = ref(false);
-const lengthUnit = ref<LengthUnit>(storedLengthUnit());
-const scaleBarLabel = computed(() => formatLength(scaleBar.value.value));
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
 const selectedSketches = computed(() => selectedEntities.value.filter((item) => item.kind === 'sketch'));
 const selected = computed(() => selectedEntities.value.length === 1 ? selectedEntities.value[0] : null);
-const canUndo = computed(() => (historyVersion.value, undoStack.length > 0));
-const canRedo = computed(() => (historyVersion.value, redoStack.length > 0));
+const { canUndo, canRedo, pushHistory, popHistory, undo, redo, clearHistory } = useUndoHistory(document, selectedIds);
+const { lengthUnit, scaleBar, scaleBarLabel, storedLengthUnit, setLengthUnit, displayLength, inputLength, formatLength } = useUnits(document, () => { viewport?.setLengthUnit(lengthUnit.value); refreshSketch(); });
 const canBoolean = computed(() => selectedEntities.value.length === 2);
 const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
@@ -184,34 +187,10 @@ const treeNodes = computed(() => {
     return [...planeNodes, ...build(null)];
 });
 
-function uid() {
-    const cryptoApi = globalThis.crypto;
-    if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
-    if (cryptoApi?.getRandomValues) {
-        const values = new Uint32Array(4);
-        cryptoApi.getRandomValues(values);
-        return Array.from(values, (value) => value.toString(36)).join('-');
-    }
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-}
 function createProject(name: string): ProjectRecord {
     const now = Date.now();
     return { id: uid(), name, createdAt: now, updatedAt: now, document: createDocument(storedLengthUnit()) };
 }
-function storedLengthUnit(): LengthUnit {
-    const value = localStorage.getItem('lab:model3d:sketch:lengthUnit');
-    return value === 'cm' || value === 'm' ? value : 'mm';
-}
-function setLengthUnit(unit: LengthUnit) {
-    lengthUnit.value = unit;
-    document.value.lengthUnit = unit;
-    localStorage.setItem('lab:model3d:sketch:lengthUnit', unit);
-    viewport?.setLengthUnit(unit);
-    refreshSketch();
-}
-function displayLength(value: number) { return value / (lengthUnit.value === 'm' ? 1000 : lengthUnit.value === 'cm' ? 10 : 1); }
-function inputLength(value: number | null) { return value === null ? null : value * (lengthUnit.value === 'm' ? 1000 : lengthUnit.value === 'cm' ? 10 : 1); }
-function formatLength(value: number) { return `${Number(displayLength(value).toFixed(2))} ${lengthUnit.value}`; }
 function cloneEntity(entity: ModelEntity) { return JSON.parse(JSON.stringify(entity)) as ModelEntity; }
 function uniqueName(kind: ModelEntity['kind']) {
     const base = ENTITY_NAMES[kind];
@@ -220,29 +199,6 @@ function uniqueName(kind: ModelEntity['kind']) {
     while (document.value.entities.some((item) => item.name === name)) name = `${base} ${++index}`;
     return name;
 }
-function pushHistory() {
-    historyVersion.value++;
-    undoStack.push(cloneDocument(document.value));
-    if (undoStack.length > 60) undoStack.shift();
-    redoStack.length = 0;
-}
-function undo() {
-    historyVersion.value++;
-    const previous = undoStack.pop();
-    if (!previous) return;
-    redoStack.push(cloneDocument(document.value));
-    document.value = previous;
-    selectedIds.value = selectedIds.value.filter((id) => previous.entities.some((item) => item.id === id));
-}
-function redo() {
-    historyVersion.value++;
-    const next = redoStack.pop();
-    if (!next) return;
-    undoStack.push(cloneDocument(document.value));
-    document.value = next;
-    selectedIds.value = selectedIds.value.filter((id) => next.entities.some((item) => item.id === id));
-}
-
 function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
     activePanel.value = activePanel.value === panel ? null : panel;
@@ -386,9 +342,7 @@ async function openProject(id: string, saveCurrent = true) {
     sectionActive.value = false;
     viewport?.setIsolate(null);
     viewport?.setSection(false);
-    undoStack.length = 0;
-    redoStack.length = 0;
-    historyVersion.value++;
+    clearHistory();
     setActiveProjectId(id);
     setTool('select');
     await nextTick();
@@ -609,6 +563,11 @@ function doneOperation() {
     if (!current) return;
     if (current.type === 'extrude') {
         const body = document.value.entities.find((item) => item.id === current.bodyId);
+        current.profileIds.forEach((profileId) => {
+            const profile = document.value.entities.find((item) => item.id === profileId);
+            const plane = document.value.planes.find((item) => item.id === profile?.planeId);
+            if (plane) plane.visible = false;
+        });
         let selectedId = current.bodyId;
         if (current.result !== 'new') {
             if (!current.targetId) return message.warning('请选择自动布尔的目标 Body');
@@ -642,8 +601,7 @@ function cancelOperation() {
     if (!current) return;
     const selectedId = current.type === 'extrude' ? current.profileId : current.resultId;
     document.value = current.before;
-    undoStack.pop();
-    historyVersion.value++;
+    popHistory();
     operation.value = null;
     historyEditId.value = null;
     viewport?.setBooleanRoles(null);
@@ -1505,6 +1463,7 @@ function createPlane(kind: SketchPlane['kind'] = 'XZ', referenceSelectedPlane = 
     activePanel.value = null;
 }
 function constructPlane() { createPlane('XZ', true); }
+function createPlaneAndSketch(kind: SketchPlane['kind']) { createPlane(kind); beginSketch(activePlaneId.value!); }
 function selectPlane(id: string) {
     activePlaneId.value = id;
     selectedIds.value = [id];
@@ -1570,6 +1529,10 @@ async function runExport(type: 'stl' | 'glb') {
     } catch (error) {
         message.error(`导出失败：${(error as Error).message}`);
     } finally { exporting.value = false; }
+}
+function onExportAction(type: 'stl' | 'glb' | 'project') {
+    if (type === 'project') exportProject(document.value, project.value.name);
+    else runExport(type);
 }
 function importProject() { importInput.value?.click(); }
 async function onImportFile(event: Event) {
@@ -1738,75 +1701,20 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
-        <header class="topbar">
-            <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>FORM</strong><span>3D STUDIO</span></div></div>
-            <div class="topbar-project"><span class="local-badge"><i></i> 本地</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /><span v-if="saveState === 'saving'" class="project-saving" title="保存中"><i></i></span></div>
-            <div class="topbar-actions">
-                <NTooltip><template #trigger><button class="icon-button" :disabled="!canUndo" @click="undo"><NIcon><ArrowUndoOutline /></NIcon></button></template>撤销 ⌘Z</NTooltip>
-                <NTooltip><template #trigger><button class="icon-button" :disabled="!canRedo" @click="redo"><NIcon><ArrowRedoOutline /></NIcon></button></template>重做 ⇧⌘Z</NTooltip>
-                <button class="icon-button" @click="showHelp = true"><NIcon><HelpCircleOutline /></NIcon></button>
-                <NPopover trigger="click" placement="bottom-end" :show-arrow="false" content-class="export-popover">
-                    <template #trigger><NButton type="primary" :loading="exporting"><template #icon><NIcon><DownloadOutline /></NIcon></template>导出<NIcon class="chevron"><ChevronDownOutline /></NIcon></NButton></template>
-                    <div class="export-panel">
-                        <div class="popover-title">导出</div><label>精度</label>
-                        <NSelect v-model:value="exportQuality" size="small" :options="[{ label: '高 · 128', value: 'high' }, { label: '超高 · 256', value: 'ultra' }]" />
-                        <p>由参数重新生成。</p>
-                        <NButton block secondary @click="runExport('stl')">STL <span>用于 3D 打印</span></NButton>
-                        <NButton block secondary @click="runExport('glb')">GLB <span>包含材质</span></NButton>
-                        <div class="popover-divider"></div><button class="text-action" @click="exportProject(document, project.name)"><NIcon><DocumentOutline /></NIcon>项目 JSON</button>
-                    </div>
-                </NPopover>
-            </div>
-        </header>
+        <AppTopBar :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
+            @name="project.name = $event" @undo="undo" @redo="redo" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
         <div class="workspace">
-            <aside v-show="itemsVisible" class="left-panel panel">
-                <section class="objects-section">
-                    <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ visibleEntityCount }}</i></span></div>
-                    <div class="object-list">
-                        <div v-if="!treeNodes.length" class="empty-objects">从左侧开始建模</div>
-                        <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes"
-                            @toggle="toggleNodeVisibility" />
-                    </div>
-                </section>
-                <section class="project-section">
-                    <div class="section-label">项目</div>
-                    <NSelect :value="project.id" :options="projectOptions" size="small" @update:value="openProject" />
-                    <div class="project-actions">
-                        <button @click="showNewProject = true"><NIcon><AddOutline /></NIcon><span>新建</span></button>
-                        <button @click="duplicateProject"><NIcon><CopyOutline /></NIcon><span>复制</span></button>
-                        <button @click="importProject"><NIcon><FolderOpenOutline /></NIcon><span>导入</span></button>
-                        <NPopconfirm @positive-click="removeProject"><template #trigger><button class="danger-hover"><NIcon><TrashOutline /></NIcon><span>删除</span></button></template>删除当前项目？此操作不可撤销。</NPopconfirm>
-                    </div>
-                </section>
-            </aside>
+            <EntitySidebar :visible="itemsVisible" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
+                @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
+                @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode }">
                 <div ref="viewportElement" class="viewport"></div>
-                <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }">
-                    <div class="menu-state">建模</div>
-                    <div class="tool-group primary-tools">
-                        <button data-label="搜索" :class="{ active: activePanel === 'search' }" @click="togglePanel('search')"><NIcon><SearchOutline /></NIcon></button>
-                        <button data-label="草图" :class="{ active: activePanel === 'sketch' || sketchMode }" @click="beginSketch()"><SvgIcon name="pencil" /></button>
-                        <button data-label="插入" :class="{ active: activePanel === 'insert' }" @click="togglePanel('insert')"><NIcon><AddOutline /></NIcon></button>
-                        <button data-label="构造平面" @click="constructPlane"><NIcon><LayersOutline /></NIcon></button>
-                        <button data-label="工具" :class="{ active: activePanel === 'tools' }" @click="togglePanel('tools')"><NIcon><BuildOutline /></NIcon></button>
-                    </div>
-                    <div class="tool-group transform-tools">
-                        <button data-label="移动" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon></button>
-                        <button data-label="旋转" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon></button>
-                        <button data-label="缩放" :disabled="selectionKind === 'plane'" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon></button>
-                    </div>
-                    <div class="toolbar-spacer"></div>
-                    <div class="tool-group primary-tools">
-                        <button data-label="剖视图" :class="{ active: sectionActive }" @click="toggleSection"><NIcon><CutOutline /></NIcon></button>
-                        <button data-label="隔离" :class="{ active: isolateActive }" :disabled="!isolateActive && !selectedIds.length" @click="toggleIsolate"><NIcon><EyeOutline /></NIcon></button>
-                        <button data-label="测量" :class="{ active: measureMode }" @click="toggleMeasure"><SvgIcon name="ruler" /></button>
-                        <button data-label="显示" :class="{ active: activePanel === 'display' }" @click="togglePanel('display')"><NIcon><CameraOutline /></NIcon></button>
-                        <button data-label="实体树" :class="{ active: itemsVisible }" @click="itemsVisible = !itemsVisible"><NIcon><ListOutline /></NIcon></button>
-                        <NPopover trigger="click" placement="right-start"><template #trigger><button data-label="历史"><NIcon><TimeOutline /></NIcon></button></template><div class="history-panel"><strong>历史</strong><button v-for="step in historySteps" :key="step.id" @click="editHistory(step.id)"><span>{{ ({ sketch: '草图', extrude: '拉伸', boolean: '布尔', fillet: '圆角', chamfer: '倒角' } as Record<string, string>)[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button><div v-if="!historySteps.length" class="history-empty">暂无步骤</div></div></NPopover>
-                    </div>
-                </nav>
+                <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
+                    :measure-mode="measureMode" :items-visible="itemsVisible" :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
+                    @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
+                    @measure="toggleMeasure" @items="itemsVisible = !itemsVisible" @history="editHistory" />
 
                 <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel">
                     <div class="tool-panel-title"><strong>{{ ({ search: '搜索', insert: '插入', construct: '构造', tools: '工具', display: '显示' } as Record<string, string>)[activePanel] }}</strong><button @click="activePanel = null"><NIcon><CloseOutline /></NIcon></button></div>
@@ -1816,11 +1724,11 @@ onBeforeUnmount(() => {
                     </template>
                     <template v-else-if="activePanel === 'insert'">
                         <div class="panel-section-label">基础实体</div>
-                        <button class="menu-command" @click="createPrimitive('box')"><NIcon><CubeOutline /></NIcon><span><strong>立方体</strong><small>插入参数化立方体</small></span></button>
-                        <button class="menu-command" @click="createPrimitive('cylinder')"><NIcon><ShapesOutline /></NIcon><span><strong>圆柱体</strong><small>插入参数化圆柱体</small></span></button>
-                        <button class="menu-command" @click="createPrimitive('sphere')"><NIcon><EllipseOutline /></NIcon><span><strong>球体</strong><small>插入参数化球体</small></span></button>
+                        <MenuCommand title="立方体" subtitle="插入参数化立方体" @click="createPrimitive('box')"><NIcon><CubeOutline /></NIcon></MenuCommand>
+                        <MenuCommand title="圆柱体" subtitle="插入参数化圆柱体" @click="createPrimitive('cylinder')"><NIcon><ShapesOutline /></NIcon></MenuCommand>
+                        <MenuCommand title="球体" subtitle="插入参数化球体" @click="createPrimitive('sphere')"><NIcon><EllipseOutline /></NIcon></MenuCommand>
                         <div class="panel-section-label">项目</div>
-                        <button class="menu-command" @click="importProject"><NIcon><FolderOpenOutline /></NIcon><span><strong>文件</strong><small>导入可编辑项目 JSON</small></span></button>
+                        <MenuCommand title="文件" subtitle="导入项目 JSON" @click="importProject"><NIcon><FolderOpenOutline /></NIcon></MenuCommand>
                     </template>
                     <template v-else-if="activePanel === 'construct'">
                         <p class="panel-note">选择实体平面后可创建贴合该面的构造平面；也可以直接添加基准面。</p>
@@ -1855,19 +1763,11 @@ onBeforeUnmount(() => {
                     <button class="more-tools" @click="togglePanel('tools')">更多工具 <span>›</span></button>
                 </aside>
 
-                <nav class="sketch-toolbar" :class="{ 'toolbar-enter': sketchMode || activePanel === 'sketch' }">
-                    <button class="sketch-close" :class="{ 'is-exiting': sketchMode }" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
-                    <div v-if="!sketchMode" class="sketch-plane-picker"><p>选择一个绘制平面。视角将转为垂直于该平面的正交视图。</p><div class="inline-command-row"><button @click="createPlane('XZ'); beginSketch(activePlaneId!)">XZ</button><button @click="createPlane('XY'); beginSketch(activePlaneId!)">XY</button><button @click="createPlane('YZ'); beginSketch(activePlaneId!)">YZ</button></div><button v-for="plane in document.planes" :key="plane.id" class="menu-command" @click="beginSketch(plane.id)"><NIcon><GridOutline /></NIcon><span><strong>{{ plane.name }}</strong></span></button><button v-if="selectionKind === 'face'" class="menu-command" @click="beginSketch()"><NIcon><CubeOutline /></NIcon><span><strong>所选实体平面</strong></span></button></div>
-                    <div v-else class="sketch-tool-list">
-                        <button :class="{ active: sketchSelectionTool }" @click="activateSketchSelectionTool"><span class="sketch-tool-icon"><NIcon><NavigateOutline /></NIcon></span><span>选择</span></button>
-                        <button :class="{ active: !sketchSelectionTool && sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 曲线</span></button>
-                        <button :class="{ active: !sketchSelectionTool && sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
-                        <button :class="{ active: !sketchSelectionTool && sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
-                        <button :class="{ active: !sketchSelectionTool && sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><SvgIcon name="ellipse" /></span><span>椭圆</span></button>
-                        <div class="sketch-polygon-tool" :class="{ active: !sketchSelectionTool && sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
-                    </div>
-                </nav>
-                <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggleSketchPointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
+                <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides"
+                    :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
+                    @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
+                <SketchConstraints v-if="sketchMode" :segment-count="selectedSketchSegments.length" :selected-point="selectedSketchPoint" :point-locked="selectedPointLocked"
+                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 

@@ -1,4 +1,4 @@
-import type { ProjectRecord } from './types';
+import type { ProjectRecord } from '../types';
 
 const DB_NAME = 'lab-model3d';
 const STORE_NAME = 'projects';

@@ -9,9 +9,10 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { OrientationGizmo } from './OrientationGizmo';
 import { buildScene } from './geometry';
 import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipsePoint, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
-import { SKETCH_COLORS } from './colors';
+import { SKETCH_COLORS } from '../config/colors';
+import { INTERACTION, SKETCH_STYLE } from '../config/const';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
-import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from './types';
+import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
@@ -457,7 +458,7 @@ export class Viewport {
                 const index = handle ? hit.object.userData.handleSegment : sector || center ? -1 : hit.object.userData.pointIndex;
                 if (event.altKey && this.sketchProfileType === 'polygon' && !handle && !sector && !center && index >= 0) {
                     this.sketchSelectionGuardPointerUp = true;
-                    this.sketchSelectionGuardUntil = performance.now() + 300;
+                    this.sketchSelectionGuardUntil = performance.now() + INTERACTION.sketchSelectionGuardMs;
                     this.callbacks.onSketchPointDelete(index);
                     this.altDeletePoint = -1;
                     this.container.classList.remove('is-delete-point');
@@ -483,7 +484,7 @@ export class Viewport {
                     event.preventDefault(); event.stopImmediatePropagation();
                     const target = this.altBorderDelete;
                     this.sketchSelectionGuardPointerUp = true;
-                    this.sketchSelectionGuardUntil = performance.now() + 300;
+                    this.sketchSelectionGuardUntil = performance.now() + INTERACTION.sketchSelectionGuardMs;
                     this.callbacks.onSketchBorderDelete(target.entityId, target.index, target.start, target.end);
                     this.clearAltBorder();
                     this.container.classList.remove('is-delete-point');
@@ -500,7 +501,7 @@ export class Viewport {
             const sketchEntity = this.sketchSelectionTool ? this.hitSketchEntity(event) : null;
             if (sketchEntity) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                this.sketchSelectionGuardUntil = performance.now() + 300;
+                this.sketchSelectionGuardUntil = performance.now() + INTERACTION.sketchSelectionGuardMs;
                 this.sketchSelectionGuardPointerUp = true;
                 this.shapeDrag = null;
                 this.sketchDrag = null;
@@ -992,7 +993,7 @@ export class Viewport {
         const delta = this.clock.getDelta();
         if (this.cameraTransition) {
             const transition = this.cameraTransition;
-            const t = Math.min(1, (performance.now() - transition.started) / 600);
+            const t = Math.min(1, (performance.now() - transition.started) / INTERACTION.cameraTransitionMs);
             const eased = t * t * (3 - 2 * t);
             this.camera.position.lerpVectors(transition.fromPosition, transition.toPosition, eased);
             this.controls.target.lerpVectors(transition.fromTarget, transition.toTarget, eased);
@@ -1381,7 +1382,7 @@ export class Viewport {
         return new THREE.ShaderMaterial({
             uniforms: { uColor: { value: new THREE.Color('#147d70') } },
             vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-            fragmentShader: 'uniform vec3 uColor; void main() { float stripe = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0); if (stripe > 1.0) discard; gl_FragColor = vec4(uColor, 0.72); }',
+            fragmentShader: `uniform vec3 uColor; void main() { float stripe = mod(gl_FragCoord.x + gl_FragCoord.y, ${SKETCH_STYLE.hatchSpacingPx}.0); if (stripe > ${SKETCH_STYLE.hatchLineWidthPx}.0) discard; gl_FragColor = vec4(uColor, 0.72); }`,
             transparent: true,
             depthWrite: false,
             side: THREE.DoubleSide,

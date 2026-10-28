@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { ModelEntity, Point2 } from './types';
+import type { ModelEntity, Point2 } from '../types';
 
 export type ProfileType = 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
 export type ProfileCurves = Record<number, { c1: Point2; c2: Point2 }>;

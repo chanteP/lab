@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { entityProfileClosed, profilePoints } from './profiles';
-import type { ModelEntity, Point2 } from './types';
+import type { ModelEntity, Point2 } from '../types';
 
 export interface BorderSegment {
     entityId: string;

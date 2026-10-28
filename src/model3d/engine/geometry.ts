@@ -4,8 +4,8 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { profileClosed, profilePoints, profileShape } from './profiles';
-import { SKETCH_COLORS } from './colors';
-import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from './types';
+import { SKETCH_COLORS } from '../config/colors';
+import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
 function qualityValues(quality: GeometryQuality) {
     if (quality === 'preview') return { radial: 48, sphere: 48, edge: 4 };

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { buildScene } from './geometry';
-import type { GeometryQuality, ModelDocument } from './types';
+import type { GeometryQuality, ModelDocument } from '../types';
 
 function download(data: BlobPart, filename: string, type: string) {
     const url = URL.createObjectURL(new Blob([data], { type }));

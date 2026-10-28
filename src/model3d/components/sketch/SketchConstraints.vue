@@ -1,0 +1,37 @@
+<script setup lang="ts">
+import { NIcon } from 'naive-ui';
+import { LockClosedOutline, LockOpenOutline } from '@vicons/ionicons5';
+
+defineProps<{ segmentCount: number; selectedPoint: number; pointLocked: boolean }>();
+const emit = defineEmits<{ constraint: [type: 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal']; lock: [] }>();
+</script>
+
+<template>
+    <aside class="constraints-panel" aria-label="草图约束">
+        <div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div>
+        <p>先选线段或点，Shift 可多选。</p>
+        <button :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
+        <div class="constraint-pair"><button :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
+        <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>
+        <button :disabled="segmentCount < 2" @click="emit('constraint', 'perpendicular')">正交</button>
+        <button :disabled="segmentCount < 2" @click="emit('constraint', 'equal')">等长</button>
+        <button :disabled="selectedPoint < 0" @click="emit('lock')"><NIcon><component :is="pointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ pointLocked ? '解锁' : '锁定' }}</button>
+        <div class="constraint-state"><i :class="{ locked: pointLocked }"></i>{{ pointLocked ? '所选点已固定' : '选择几何以应用约束' }}</div>
+    </aside>
+</template>
+
+<style lang="scss" scoped>
+.constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 174px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; }
+.tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid #e3e9e5; }
+.tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
+.tool-panel-title small { color: #87938c; font-size: 8px; }
+.tool-panel-title strong { font-size: 12px; }
+p { color: #7e8b83; font-size: 10px; line-height: 1.6; }
+button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 0; background: transparent; color: #56675d; font-size: 10px; cursor: pointer; }
+button:hover { color: #147d70; }
+button:disabled { opacity: .3; cursor: default; }
+.constraint-pair { display: flex; gap: 5px; }
+.constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e4eae6; color: #8a968f; font-size: 9px; }
+.constraint-state i { width: 6px; height: 6px; border-radius: 50%; background: #599fd0; }
+.constraint-state i.locked { background: #54a184; }
+</style>
