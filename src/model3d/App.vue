@@ -1410,6 +1410,10 @@ function closeSketch() {
 }
 function cancelSketch() {
     finishSketchHandleDrag();
+    selectedIds.value = [];
+    selectionKind.value = null;
+    lastFace.value = null;
+    viewport?.clearGeometrySelection();
     sketchMode.value = false;
     sketchContextMenu.value = null;
     viewport?.setSketchEditing(null);

@@ -448,7 +448,7 @@ export class Viewport {
                 })() },
             ],
             edgeStart: options.edgeStart,
-            excludeEntityId: options.excludeEntityId,
+            excludeEntityId: options.excludeEntityId || this.editingSketchId || undefined,
             excludePoint: options.excludePointIndex !== undefined && this.editingSketchId ? { entityId: this.editingSketchId, index: options.excludePointIndex } : undefined,
             threshold: this.sketchUnitsPerPixel() * INTERACTION.sketchGuideSnapPx,
         });
@@ -1318,6 +1318,13 @@ export class Viewport {
         this.updatePlaneAppearance();
     }
     setSelected(ids: string[]) { this.selected = ids; this.applySelection(); if (this.document) this.updateExtrudeGuide(this.document); }
+    clearGeometrySelection() {
+        this.geometryAnchor = null;
+        this.hoverFaceAnchor = null;
+        this.transform.detach();
+        this.clearHoverFace();
+        this.refreshFaceFeedback();
+    }
     private applySelection() {
         this.transform.detach();
         this.model.children.forEach((object) => {
@@ -1555,6 +1562,11 @@ export class Viewport {
             commit();
         }, { passive: false });
         input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                commit();
+                return;
+            }
             if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
             event.preventDefault();
             input.value = String(integerStep(Number(input.value), event.key === 'ArrowUp' ? 1 : -1));
@@ -1675,6 +1687,10 @@ export class Viewport {
                 this.addSketchGuide(center, points[0]);
                 this.addSketchDimension(midpoint(center, points[0]), { kind: 'arcRadius' }, Math.hypot(points[0][0] - center[0], points[0][1] - center[1]), unit);
             }
+        }
+        if (profileType === 'regular' && points.length >= 2 && this.editingSketchId) {
+            const color = selectedIndex === 1 ? SKETCH_COLORS.pointActive : lockedPoints.includes(1) ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point;
+            profilePoints('regular', points, 64, undefined, sides).slice(1).forEach((point) => this.addSketchMarker(point, 1, color, false, lockedPoints.includes(1)));
         }
         if (selectedSegment >= 0 && curves[selectedSegment]) {
             const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
