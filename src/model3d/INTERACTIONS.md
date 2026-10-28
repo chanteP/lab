@@ -40,12 +40,13 @@
 
 - 左键单击选择 face / edge，双击选择完整 Body，Shift + 单击累加选择。变换工具激活时，单击实体仍可重新选择几何；只有 gizmo、直接编辑手柄和显式工具消费拖动。
 - 实体 face hover 与选中使用透明橙色高亮；选中 edge 使用独立的橙色粗线高亮，不再用整个 Body 的材质变化代替。
-- 左键空白拖动进入框选：从左往右只选完全包含的 Body，从右往左选择接触框线的 Body。
+- 非工具状态下左键空白或模型拖动均为 Orbit；Command/Ctrl + 左键拖动才进入框选：从左往右只选完全包含的 Body，从右往左选择接触框线的 Body。
+- 空格 + 左键拖动使用 OrbitControls PAN 平移视图；未拖动时松开空格仍可对悬停实体平面建立草图。
 - 右键拖动 Orbit，中键拖动 Pan，Shift + 右键拖动也可 Pan；右键单击打开上下文菜单，普通滚轮缩放。
 - 悬停实体平面时按空格，在该面建立草图并切换到正交正视图。
 - 坐标球点击轴端点切换对应方向视图，拖动坐标球旋转相机。
 - 拖动坐标球接近主轴时，以点积阈值 `0.975` 磁吸到该轴，保持当前轨道半径。
-- 坐标球渲染 viewport 比画布底部抬高 42px，与比例尺共享基线。
+- 坐标球与比例尺距离画布底部 12px，共享基线。
 
 ## 测量
 
@@ -124,7 +125,7 @@
 
 ## 一级工具、Adaptive menu 与绘制工具栏
 
-- 一级入口包含 Search、Sketch、Insert、Construct、Transform、Tools、Section View、Isolate、Measure、Display Modes、Items 和 History。
+- 一级入口包含 Search、Sketch、Insert、Construct、Tools、Section View、Isolate、Measure、Display Modes、Items 和 History；Move/Rotate/Scale 直接放在独立圆形按钮分组。
 - 选中几何后显示 Adaptive menu：face 推荐 Offset Face / Sketch，edge 推荐 Chamfer/Fillet，Body 推荐 Move/Rotate/Scale，多 Body 推荐 Boolean。
 - 再次点击当前工具只展开或收起 Parameter Card，不退出工具；单击不修改几何，拖动或数值输入才产生编辑。
 - 添加平面不显示确认弹窗：无面选择时直接创建 XZ 平面；选中模型面后创建同法向平面，示意中心对齐该面的中心。

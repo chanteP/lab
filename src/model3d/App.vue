@@ -77,7 +77,7 @@ const sketchContextMenu = ref<{ x: number; y: number; id: string | null } | null
 const showRename = ref(false);
 const renameValue = ref('');
 const renameTarget = ref<OutlinerNode | null>(null);
-type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'transform' | 'tools' | 'display';
+type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'tools' | 'display';
 type SelectionKind = 'face' | 'edge' | 'body' | 'plane' | 'sketch' | 'mixed' | null;
 const activePanel = ref<PrimaryPanel | null>(null);
 const selectionKind = ref<SelectionKind>(null);
@@ -119,18 +119,18 @@ const visibleEntityCount = computed(() => document.value.entities.filter((item) 
 const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
 const commandResults = computed(() => {
     const commands = [
-        { id: 'sketch', label: 'Sketch', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
-        { id: 'extrude', label: 'Extrude', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
-        { id: 'offsetFace', label: 'Offset Face', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
-        { id: 'fillet', label: 'Fillet', hint: '为所选实体边创建圆角', keys: '圆角 fillet' },
-        { id: 'chamfer', label: 'Chamfer', hint: '为所选实体边创建倒角', keys: '倒角 chamfer' },
-        { id: 'translate', label: 'Move / Rotate', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
-        { id: 'scale', label: 'Scale', hint: '缩放所选实体', keys: '缩放 scale' },
-        { id: 'plane', label: 'Construction Plane', hint: '添加构造平面', keys: '平面 构造 plane' },
-        { id: 'box', label: 'Box', hint: '插入立方体', keys: '立方体 box' },
-        { id: 'cylinder', label: 'Cylinder', hint: '插入圆柱体', keys: '圆柱 cylinder' },
-        { id: 'sphere', label: 'Sphere', hint: '插入球体', keys: '球体 sphere' },
-        { id: 'measure', label: 'Measure', hint: '测量两个点之间的距离与 XYZ 分量', keys: '测量 measure' },
+        { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
+        { id: 'extrude', label: '拉伸', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
+        { id: 'offsetFace', label: '偏移面', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
+        { id: 'fillet', label: '圆角', hint: '为所选实体边创建圆角', keys: '圆角 fillet' },
+        { id: 'chamfer', label: '倒角', hint: '为所选实体边创建倒角', keys: '倒角 chamfer' },
+        { id: 'translate', label: '移动 / 旋转', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
+        { id: 'scale', label: '缩放', hint: '缩放所选实体', keys: '缩放 scale' },
+        { id: 'plane', label: '构造平面', hint: '添加构造平面', keys: '平面 构造 plane' },
+        { id: 'box', label: '立方体', hint: '插入立方体', keys: '立方体 box' },
+        { id: 'cylinder', label: '圆柱体', hint: '插入圆柱体', keys: '圆柱 cylinder' },
+        { id: 'sphere', label: '球体', hint: '插入球体', keys: '球体 sphere' },
+        { id: 'measure', label: '测量', hint: '测量两个点之间的距离与 XYZ 分量', keys: '测量 measure' },
     ];
     const query = commandSearch.value.trim().toLowerCase();
     return query ? commands.filter((item) => `${item.label} ${item.keys}`.toLowerCase().includes(query)) : commands;
@@ -1228,15 +1228,17 @@ function reparentNodes(ids: string[], targetId: string | null) {
     pushHistory();
     valid.forEach((id) => nodes.get(id)!.parentId = targetId);
 }
-function createPlane(kind: SketchPlane['kind'] = 'XZ') {
+function createPlane(kind: SketchPlane['kind'] = 'XZ', referenceSelectedPlane = false) {
+    const referencePlane = referenceSelectedPlane && selectionKind.value === 'plane' ? activePlane.value : null;
     const useFace = selectionKind.value === 'face' && !!selected.value && lastFace.value?.bodyId === selected.value.id;
-    const normal = useFace ? new THREE.Vector3(...lastFace.value!.normal).normalize() : new THREE.Vector3(kind === 'YZ' ? 1 : 0, kind === 'XZ' ? 1 : 0, kind === 'XY' ? 1 : 0);
+    const normal = referencePlane ? new THREE.Vector3(...referencePlane.normal) : useFace ? new THREE.Vector3(...lastFace.value!.normal).normalize() : new THREE.Vector3(kind === 'YZ' ? 1 : 0, kind === 'XZ' ? 1 : 0, kind === 'XY' ? 1 : 0);
     const reference = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    const u = useFace ? reference.clone().cross(normal).normalize() : kind === 'YZ' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    const v = useFace ? normal.clone().cross(u).normalize() : kind === 'XZ' ? new THREE.Vector3(0, 0, -1) : kind === 'YZ' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+    const u = referencePlane ? new THREE.Vector3(...referencePlane.u) : useFace ? reference.clone().cross(normal).normalize() : kind === 'YZ' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const v = referencePlane ? new THREE.Vector3(...referencePlane.v) : useFace ? normal.clone().cross(u).normalize() : kind === 'XZ' ? new THREE.Vector3(0, 0, -1) : kind === 'YZ' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+    const origin = referencePlane ? [...referencePlane.origin] as Vec3 : useFace ? lastFace.value!.point : [0, 0, 0] as Vec3;
     const plane: SketchPlane = {
-        id: uid(), name: useFace ? `实体面平面 ${document.value.planes.length + 1}` : `${kind} 平面 ${document.value.planes.length + 1}`,
-        kind: useFace ? 'XY' : kind, origin: useFace ? lastFace.value!.point : [0, 0, 0], normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: true,
+        id: uid(), name: useFace ? `面平面 ${document.value.planes.length + 1}` : `${referencePlane?.kind || kind} 平面 ${document.value.planes.length + 1}`,
+        kind: referencePlane?.kind || (useFace ? 'XY' : kind), origin, normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: true,
     };
     pushHistory();
     document.value.planes.push(plane);
@@ -1247,6 +1249,7 @@ function createPlane(kind: SketchPlane['kind'] = 'XZ') {
     setTool('select');
     activePanel.value = null;
 }
+function constructPlane() { createPlane('XZ', true); }
 function selectPlane(id: string) {
     activePlaneId.value = id;
     selectedIds.value = [id];
@@ -1465,20 +1468,20 @@ onBeforeUnmount(() => {
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
         <header class="topbar">
             <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>FORM</strong><span>3D STUDIO</span></div></div>
-            <div class="topbar-project"><span class="local-badge"><i></i> 本地项目</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /><span v-if="saveState === 'saving'" class="project-saving" title="保存中"><i></i></span></div>
+            <div class="topbar-project"><span class="local-badge"><i></i> 本地</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /><span v-if="saveState === 'saving'" class="project-saving" title="保存中"><i></i></span></div>
             <div class="topbar-actions">
                 <NTooltip><template #trigger><button class="icon-button" :disabled="!canUndo" @click="undo"><NIcon><ArrowUndoOutline /></NIcon></button></template>撤销 ⌘Z</NTooltip>
                 <NTooltip><template #trigger><button class="icon-button" :disabled="!canRedo" @click="redo"><NIcon><ArrowRedoOutline /></NIcon></button></template>重做 ⇧⌘Z</NTooltip>
                 <button class="icon-button" @click="showHelp = true"><NIcon><HelpCircleOutline /></NIcon></button>
                 <NPopover trigger="click" placement="bottom-end" :show-arrow="false" content-class="export-popover">
-                    <template #trigger><NButton type="primary" :loading="exporting"><template #icon><NIcon><DownloadOutline /></NIcon></template>导出模型<NIcon class="chevron"><ChevronDownOutline /></NIcon></NButton></template>
+                    <template #trigger><NButton type="primary" :loading="exporting"><template #icon><NIcon><DownloadOutline /></NIcon></template>导出<NIcon class="chevron"><ChevronDownOutline /></NIcon></NButton></template>
                     <div class="export-panel">
-                        <div class="popover-title">导出模型</div><label>网格精度</label>
-                        <NSelect v-model:value="exportQuality" size="small" :options="[{ label: '高精度 · 128 细分', value: 'high' }, { label: '超高精度 · 256 细分', value: 'ultra' }]" />
-                        <p>由参数化源数据重新生成，不使用预览网格。</p>
+                        <div class="popover-title">导出</div><label>精度</label>
+                        <NSelect v-model:value="exportQuality" size="small" :options="[{ label: '高 · 128', value: 'high' }, { label: '超高 · 256', value: 'ultra' }]" />
+                        <p>由参数重新生成。</p>
                         <NButton block secondary @click="runExport('stl')">STL <span>用于 3D 打印</span></NButton>
                         <NButton block secondary @click="runExport('glb')">GLB <span>包含材质</span></NButton>
-                        <div class="popover-divider"></div><button class="text-action" @click="exportProject(document, project.name)"><NIcon><DocumentOutline /></NIcon>导出可编辑项目 JSON</button>
+                        <div class="popover-divider"></div><button class="text-action" @click="exportProject(document, project.name)"><NIcon><DocumentOutline /></NIcon>项目 JSON</button>
                     </div>
                 </NPopover>
             </div>
@@ -1489,13 +1492,13 @@ onBeforeUnmount(() => {
                 <section class="objects-section">
                     <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ visibleEntityCount }}</i></span></div>
                     <div class="object-list">
-                        <div v-if="!treeNodes.length" class="empty-objects">使用画布左侧工具开始建模</div>
+                        <div v-if="!treeNodes.length" class="empty-objects">从左侧开始建模</div>
                         <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @context="openNodeContext" @drop="reparentNodes"
                             @toggle="toggleNodeVisibility" />
                     </div>
                 </section>
                 <section class="project-section">
-                    <div class="section-label">项目操作</div>
+                    <div class="section-label">项目</div>
                     <NSelect :value="project.id" :options="projectOptions" size="small" @update:value="openProject" />
                     <div class="project-actions">
                         <button @click="showNewProject = true"><NIcon><AddOutline /></NIcon><span>新建</span></button>
@@ -1511,28 +1514,32 @@ onBeforeUnmount(() => {
                 <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }">
                     <div class="menu-state">建模</div>
                     <div class="tool-group primary-tools">
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'search' }" @click="togglePanel('search')"><NIcon><SearchOutline /></NIcon></button></template>搜索 / 命令搜索</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'sketch' || sketchMode }" @click="beginSketch()"><SvgIcon name="pencil" /></button></template>草图</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'insert' }" @click="togglePanel('insert')"><NIcon><AddOutline /></NIcon></button></template>插入</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'construct' }" @click="togglePanel('construct')"><NIcon><LayersOutline /></NIcon></button></template>构造</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'transform' }" @click="togglePanel('transform')"><NIcon><MoveOutline /></NIcon></button></template>变换</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'tools' }" @click="togglePanel('tools')"><NIcon><BuildOutline /></NIcon></button></template>工具</NTooltip>
+                        <button data-label="搜索" :class="{ active: activePanel === 'search' }" @click="togglePanel('search')"><NIcon><SearchOutline /></NIcon></button>
+                        <button data-label="草图" :class="{ active: activePanel === 'sketch' || sketchMode }" @click="beginSketch()"><SvgIcon name="pencil" /></button>
+                        <button data-label="插入" :class="{ active: activePanel === 'insert' }" @click="togglePanel('insert')"><NIcon><AddOutline /></NIcon></button>
+                        <button data-label="构造平面" @click="constructPlane"><NIcon><LayersOutline /></NIcon></button>
+                        <button data-label="工具" :class="{ active: activePanel === 'tools' }" @click="togglePanel('tools')"><NIcon><BuildOutline /></NIcon></button>
+                    </div>
+                    <div class="tool-group transform-tools">
+                        <button data-label="移动" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon></button>
+                        <button data-label="旋转" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon></button>
+                        <button data-label="缩放" :disabled="selectionKind === 'plane'" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon></button>
                     </div>
                     <div class="toolbar-spacer"></div>
                     <div class="tool-group primary-tools">
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: sectionActive }" @click="toggleSection"><NIcon><CutOutline /></NIcon></button></template>剖视图</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: isolateActive }" :disabled="!isolateActive && !selectedIds.length" @click="toggleIsolate"><NIcon><EyeOutline /></NIcon></button></template>隔离</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: measureMode }" @click="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'display' }" @click="togglePanel('display')"><NIcon><CameraOutline /></NIcon></button></template>显示模式</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: itemsVisible }" @click="itemsVisible = !itemsVisible"><NIcon><ListOutline /></NIcon></button></template>实体树</NTooltip>
-                        <NPopover trigger="click" placement="right-start"><template #trigger><button title="历史记录"><NIcon><TimeOutline /></NIcon></button></template><div class="history-panel"><strong>历史记录</strong><button v-for="step in historySteps" :key="step.id" @click="editHistory(step.id)"><span>{{ ({ sketch: '草图', extrude: '拉伸', boolean: '布尔运算', fillet: '圆角', chamfer: '倒角' } as Record<string, string>)[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button><div v-if="!historySteps.length" class="history-empty">暂无建模步骤</div></div></NPopover>
+                        <button data-label="剖视图" :class="{ active: sectionActive }" @click="toggleSection"><NIcon><CutOutline /></NIcon></button>
+                        <button data-label="隔离" :class="{ active: isolateActive }" :disabled="!isolateActive && !selectedIds.length" @click="toggleIsolate"><NIcon><EyeOutline /></NIcon></button>
+                        <button data-label="测量" :class="{ active: measureMode }" @click="toggleMeasure"><SvgIcon name="ruler" /></button>
+                        <button data-label="显示" :class="{ active: activePanel === 'display' }" @click="togglePanel('display')"><NIcon><CameraOutline /></NIcon></button>
+                        <button data-label="实体树" :class="{ active: itemsVisible }" @click="itemsVisible = !itemsVisible"><NIcon><ListOutline /></NIcon></button>
+                        <NPopover trigger="click" placement="right-start"><template #trigger><button data-label="历史"><NIcon><TimeOutline /></NIcon></button></template><div class="history-panel"><strong>历史</strong><button v-for="step in historySteps" :key="step.id" @click="editHistory(step.id)"><span>{{ ({ sketch: '草图', extrude: '拉伸', boolean: '布尔', fillet: '圆角', chamfer: '倒角' } as Record<string, string>)[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button><div v-if="!historySteps.length" class="history-empty">暂无步骤</div></div></NPopover>
                     </div>
                 </nav>
 
                 <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel">
-                    <div class="tool-panel-title"><strong>{{ ({ search: '命令搜索', insert: '插入', construct: '构造', transform: '变换', tools: '工具', display: '显示模式' } as Record<string, string>)[activePanel] }}</strong><button @click="activePanel = null"><NIcon><CloseOutline /></NIcon></button></div>
+                    <div class="tool-panel-title"><strong>{{ ({ search: '搜索', insert: '插入', construct: '构造', tools: '工具', display: '显示' } as Record<string, string>)[activePanel] }}</strong><button @click="activePanel = null"><NIcon><CloseOutline /></NIcon></button></div>
                     <template v-if="activePanel === 'search'">
-                        <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索工具或命令" />
+                        <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索命令" />
                         <div class="command-results"><button v-for="command in commandResults" :key="command.id" @click="runCommand(command.id)"><strong>{{ command.label }}</strong><span>{{ command.hint }}</span></button><div v-if="!commandResults.length" class="history-empty">没有匹配的命令</div></div>
                     </template>
                     <template v-else-if="activePanel === 'insert'">
@@ -1548,12 +1555,6 @@ onBeforeUnmount(() => {
                         <button class="menu-command" @click="createPlane('XZ')"><NIcon><GridOutline /></NIcon><span><strong>XZ 平面</strong><small>水平基准面</small></span></button>
                         <button class="menu-command" @click="createPlane('XY')"><NIcon><GridOutline /></NIcon><span><strong>XY 平面</strong><small>正视基准面</small></span></button>
                         <button class="menu-command" @click="createPlane('YZ')"><NIcon><GridOutline /></NIcon><span><strong>YZ 平面</strong><small>侧视基准面</small></span></button>
-                    </template>
-                    <template v-else-if="activePanel === 'transform'">
-                        <button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>平移所选对象 · G</small></span></button>
-                        <button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong><small>旋转所选对象 · R</small></span></button>
-                        <button class="menu-command" :disabled="selectionKind === 'plane'" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong><small>缩放实体，不改变相机 · S</small></span></button>
-                        <button class="menu-command" @click="duplicateSelected" :disabled="!selected || selected.kind === 'boolean'"><NIcon><CopyOutline /></NIcon><span><strong>复制</strong><small>创建所选实体的独立副本</small></span></button>
                     </template>
                     <template v-else-if="activePanel === 'tools'">
                         <button class="menu-command" :disabled="!selectedSketches.length" @click="message.info('请拖动视图中的上下粗箭头进行拉伸')"><NIcon><ArrowUpOutline /></NIcon><span><strong>拉伸</strong><small>选择封闭轮廓后拖动双向粗箭头</small></span></button>
@@ -1595,8 +1596,7 @@ onBeforeUnmount(() => {
                 </nav>
                 <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggle草图PointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
 
-                <div class="view-options"><span v-if="sectionActive" class="mode-badge">剖视图</span><span v-if="isolateActive" class="mode-badge">隔离</span></div>
-                <div class="viewport-caption"><span class="axis-dot"></span>毫米 (mm)</div>
+                <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>mm</div>
 
                 <section v-if="contextVisible" class="context-panel">
                     <button class="parameter-close" title="收起参数卡，不退出工具" @click="parameterCardOpen = false"><NIcon><ChevronDownOutline /></NIcon></button>
@@ -1641,7 +1641,7 @@ onBeforeUnmount(() => {
                         <div class="context-fields"><NButton size="small" secondary @click="applyBoolean('union')">并集</NButton><NButton size="small" secondary @click="applyBoolean('subtract')">差集</NButton><NButton size="small" secondary @click="applyBoolean('intersect')">交集</NButton></div>
                     </template>
                     <template v-else-if="selected">
-                        <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动模型面，向上增大尺寸</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
+                        <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
                         <div v-if="activeVector" class="context-fields vector-fields">
                             <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
@@ -1666,13 +1666,12 @@ onBeforeUnmount(() => {
 
                 <div class="viewport-utilities">
                     <div class="measure-actions">
-                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量两个面之间的距离</NTooltip>
-                        <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图（保持方向）</NTooltip>
+                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
+                        <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图</NTooltip>
                     </div>
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
                 </div>
-                <div class="gizmo-label">拖动旋转 · 点击切换视图</div>
-                <div class="viewport-status"><span>左键选择 / 框选</span><i></i><span>右键旋转</span><i></i><span>中键平移</span><i></i><span>Shift 多选</span><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
+                <div class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
         </div>
 
@@ -1702,10 +1701,10 @@ onBeforeUnmount(() => {
 
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">
-                <section><strong>选择与画布导航</strong><p>左键单击选择面或边，双击选择整个实体；Shift 累加选择。左键空白拖动框选，右键拖动旋转，中键拖动平移，滚轮缩放。悬停实体平面按空格可直接建立草图。</p></section>
-                <section><strong>草图与 约束</strong><p>草图 中选择基准面、构造平面或实体平面。完成图形后仍可连续绘制，退出草图 才退出草图。右侧约束区支持线段方向、平行、垂直、等长和点锁定。</p></section>
+                <section><strong>选择与画布导航</strong><p>左键单击选择，拖拽环绕；Command/Ctrl＋拖拽框选，空格＋拖拽平移。右键环绕，中键平移，滚轮缩放。</p></section>
+                <section><strong>草图与约束</strong><p>草图中选择基准面、构造平面或实体平面。完成图形后仍可连续绘制，退出草图才离开编辑。右侧约束区支持线段方向、平行、垂直、等长和点锁定。</p></section>
                 <section><strong>自适应建模</strong><p>选择面时推荐偏移面，选择边时推荐倒角或圆角，选择实体时推荐移动/旋转。再次点击当前工具只收起参数卡，不会退出工具；拖动手柄或输入尺寸才修改几何。</p></section>
-                <section><strong>检查与历史</strong><p>隔离、剖视图 和 显示模式 用于检查模型；测量 只读数。历史记录 可回改 草图、拉伸、布尔运算 和已有边处理参数。</p></section>
+                <section><strong>检查与历史</strong><p>隔离、剖视图和显示模式 用于检查模型；测量只读数。历史记录可回改草图、拉伸、布尔运算 和已有边处理参数。</p></section>
             </div>
         </NModal>
         <input ref="importInput" type="file" accept=".json,.model.json" hidden @change="onImportFile" />

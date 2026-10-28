@@ -107,6 +107,8 @@ export class Viewport {
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
     private lastScale = '';
     private spacePressed = false;
+    private spaceDragMoved = false;
+    private spaceHover: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private frame = 0;
     private resizeObserver: ResizeObserver;
     private disposers: (() => void)[] = [];
@@ -143,7 +145,7 @@ export class Viewport {
         this.controls.minDistance = 5;
         this.controls.maxDistance = 1400;
         this.controls.zoomToCursor = true;
-        this.controls.mouseButtons.LEFT = -1 as THREE.MOUSE;
+        this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
         this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
         this.controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
         this.controls.update();
@@ -171,7 +173,7 @@ export class Viewport {
             this.callbacks.onTransform(id, object.position.toArray(),
                 [object.rotation.x, object.rotation.y, object.rotation.z].map(THREE.MathUtils.radToDeg) as Vec3, object.scale.toArray());
         });
-        this.viewHelper = new OrientationGizmo(this.camera, this.renderer.domElement, 42);
+        this.viewHelper = new OrientationGizmo(this.camera, this.renderer.domElement, 12);
         this.viewHelper.setLabels('X', 'Y', 'Z');
         this.viewHelper.setLabelStyle('bold 22px Arial', '#ffffff', 15);
 
@@ -241,14 +243,27 @@ export class Viewport {
     private onKeyDown(event: KeyboardEvent) {
         if (event.code !== 'Space' || this.isTypingTarget(event.target)) return;
         event.preventDefault();
-        if (this.hoverGeometry && !this.sketchMode && !this.measureMode) this.callbacks.onHoverSketch(this.hoverGeometry.id, this.hoverGeometry.normal, this.hoverGeometry.point);
+        if (!this.spacePressed) {
+            this.spacePressed = true;
+            this.spaceDragMoved = false;
+            this.spaceHover = this.hoverGeometry;
+            this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+            this.container.classList.add('is-panning');
+            this.callbacks.onSpaceChange(true);
+        }
     }
     private onKeyUp(event?: KeyboardEvent) {
         if (event && event.code && event.code !== 'Space') return;
+        if (event?.type === 'keyup' && !this.spaceDragMoved && this.spaceHover && !this.sketchMode && !this.measureMode) this.callbacks.onHoverSketch(this.spaceHover.id, this.spaceHover.normal, this.spaceHover.point);
         this.spacePressed = false;
-        this.controls.mouseButtons.LEFT = -1 as THREE.MOUSE;
+        this.spaceDragMoved = false;
+        this.spaceHover = null;
+        this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
         this.container.classList.remove('is-panning');
         this.callbacks.onSpaceChange(false);
+    }
+    private updateOrbitRotation() {
+        this.controls.enableRotate = this.tool === 'select' && !this.sketchMode && !this.measureMode;
     }
     private onContextMenu(event: MouseEvent) {
         event.preventDefault();
@@ -302,7 +317,7 @@ export class Viewport {
     }
     private isGizmoEvent(event: PointerEvent) {
         const rect = this.renderer.domElement.getBoundingClientRect();
-        return event.clientX >= rect.right - 128 && event.clientY >= rect.bottom - 170 && event.clientY <= rect.bottom - 42;
+        return event.clientX >= rect.right - 128 && event.clientY >= rect.bottom - 170 && event.clientY <= rect.bottom - 12;
     }
 
     // Sketch coordinates are local to the chosen plane; world hit points never become sketch source data.
@@ -415,18 +430,18 @@ export class Viewport {
             }
         }
         const hit = this.hitEntity(event);
-        if (!hit && this.tool === 'select' && !this.measureMode) {
+        if ((event.metaKey || event.ctrlKey) && !this.spacePressed && this.tool === 'select' && !this.measureMode) {
             event.preventDefault(); event.stopImmediatePropagation();
             this.marquee = { startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, additive: event.shiftKey || event.metaKey || event.ctrlKey, moved: false };
             this.controls.enabled = false;
             this.capturePointer(event);
             return;
         }
-        // Select mode deliberately keeps rotation enabled on entities, matching direct-modeling navigation.
         if (hit && this.tool !== 'select') this.controls.enableRotate = false;
     }
 
     private onPointerMove(event: PointerEvent) {
+        if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
         if (this.marquee) {
             event.preventDefault(); event.stopImmediatePropagation();
             this.marquee.x = event.clientX;
@@ -592,7 +607,7 @@ export class Viewport {
             this.controls.enabled = true;
             return;
         }
-        this.controls.enableRotate = !this.sketchMode && !this.measureMode;
+        this.updateOrbitRotation();
         if (this.sketchMode && this.shapeDrag) {
             const point = this.sketchPoint(event);
             if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
@@ -933,6 +948,7 @@ export class Viewport {
         this.tool = tool;
         if (['translate', 'rotate', 'scale'].includes(tool)) this.transform.setMode(tool as 'translate' | 'rotate' | 'scale');
         this.container.dataset.tool = tool;
+        this.updateOrbitRotation();
         this.applySelection();
         if (this.document) this.updateExtrudeGuide(this.document);
     }
@@ -966,7 +982,7 @@ export class Viewport {
         this.controls.object = this.camera;
         this.transform.camera = this.camera;
         this.resize();
-        this.controls.enableRotate = !active && !this.measureMode;
+        this.updateOrbitRotation();
         this.controls.update();
         this.updateSketch(points, selectedIndex);
     }
@@ -1226,7 +1242,7 @@ export class Viewport {
         this.measureMode = active;
         this.container.classList.toggle('is-measuring', active);
         this.clearMeasurement();
-        this.controls.enableRotate = !active && !this.sketchMode;
+        this.updateOrbitRotation();
     }
     private clearHoverFace() {
         if (!this.hoverFace) return;

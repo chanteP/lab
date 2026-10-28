@@ -297,3 +297,16 @@ button { color: inherit; }
 .viewport-status, .drawing-active .viewport-status { position: fixed; z-index: 30; left: 50%; right: auto; bottom: 12px; width: auto; height: auto; min-height: 28px; padding: 6px 12px; transform: translateX(-50%); color: #f4f7f5cc; background: #18201dcc; border: 0; border-radius: 15px; box-shadow: 0 3px 12px #00000018; backdrop-filter: blur(8px); white-space: nowrap; }
 .viewport-status > i { background: #ffffff38; }
 .viewport-status > div { color: #ffffffa8; }
+/* Compact 50px project bar. */
+.topbar { height: 50px; flex-basis: 50px; }
+.brand-mark { width: 32px; height: 32px; border-radius: 9px; }
+/* Circular rail buttons with animated labels instead of tooltip wrappers. */
+.vertical-toolbar { z-index: 8; overflow: visible; }
+.vertical-toolbar .tool-group button { position: relative; width: 32px; height: 32px; margin: 1px 0; color: #63716a; background: #fff; border: 1px solid #d4dfd8; border-radius: 50%; }
+.vertical-toolbar .tool-group button:hover, .vertical-toolbar .tool-group button.active { color: #147d70; background: #fff; border-color: #7eb8aa; }
+.vertical-toolbar .tool-group button::after { content: attr(data-label); position: absolute; left: calc(100% + 8px); top: 50%; padding: 5px 8px; color: #314139; background: #fff; border: 1px solid #d4dfd8; border-radius: 5px; box-shadow: 0 3px 10px #263b3014; font-size: 10px; white-space: nowrap; opacity: 0; pointer-events: none; transform: translate(-5px, -50%); transition: transform .16s ease, opacity .16s ease; }
+.vertical-toolbar .tool-group button:hover::after { opacity: 1; transform: translate(0, -50%); }
+.vertical-toolbar .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid #e3e8e5; border-bottom: 1px solid #e3e8e5; }
+.viewport-caption { top: 14px; right: 14px; left: auto; display: flex; align-items: center; gap: 6px; }
+.viewport-utilities { bottom: 12px; }
+.viewport-status, .drawing-active .viewport-status { position: absolute; left: 12px; right: auto; bottom: 12px; transform: none; }
