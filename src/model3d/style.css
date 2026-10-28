@@ -310,3 +310,7 @@ button { color: inherit; }
 .viewport-caption { top: 14px; right: 14px; left: auto; display: flex; align-items: center; gap: 6px; }
 .viewport-utilities { bottom: 12px; }
 .viewport-status, .drawing-active .viewport-status { position: absolute; left: 12px; right: auto; bottom: 12px; transform: none; }
+.viewport.is-handle-hover { cursor: grab; }
+.viewport.is-handle-dragging { cursor: grabbing; }
+.viewport.is-border-hover { cursor: pointer; }
+.viewport.is-delete-point, .viewport.is-delete-point.is-handle-hover { cursor: not-allowed; }

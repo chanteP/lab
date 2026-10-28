@@ -24,6 +24,7 @@ export class OrientationGizmo extends Object3D {
 		super();
 
 		this.isViewHelper = true;
+		this.camera = camera;
 
 		this.animating = false;
 		this.center = new Vector3();
@@ -106,11 +107,11 @@ export class OrientationGizmo extends Object3D {
 
 		this.render = function ( renderer ) {
 
-			this.quaternion.copy( camera.quaternion ).invert();
+			this.quaternion.copy( this.camera.quaternion ).invert();
 			this.updateMatrixWorld();
 
 			point.set( 0, 0, 1 );
-			point.applyQuaternion( camera.quaternion );
+			point.applyQuaternion( this.camera.quaternion );
 
 			//
 
@@ -195,11 +196,11 @@ export class OrientationGizmo extends Object3D {
 			// animate position by doing a slerp and then scaling the position on the unit sphere
 
 			q1.rotateTowards( q2, step );
-			camera.position.set( 0, 0, 1 ).applyQuaternion( q1 ).multiplyScalar( radius ).add( this.center );
+			this.camera.position.set( 0, 0, 1 ).applyQuaternion( q1 ).multiplyScalar( radius ).add( this.center );
 
 			// animate orientation
 
-			camera.quaternion.rotateTowards( targetQuaternion, step );
+			this.camera.quaternion.rotateTowards( targetQuaternion, step );
 
 			if ( q1.angleTo( q2 ) === 0 ) {
 
@@ -274,12 +275,12 @@ export class OrientationGizmo extends Object3D {
 
 			//
 
-			radius = camera.position.distanceTo( focusPoint );
+			radius = this.camera.position.distanceTo( focusPoint );
 			targetPosition.multiplyScalar( radius ).add( focusPoint );
 
 			dummy.position.copy( focusPoint );
 
-			dummy.lookAt( camera.position );
+			dummy.lookAt( this.camera.position );
 			q1.copy( dummy.quaternion );
 
 			dummy.lookAt( targetPosition );
@@ -343,7 +344,7 @@ export class OrientationGizmo extends Object3D {
 	// Snap a dragged camera to a nearby principal axis without changing its orbit radius.
 	this.snap = function ( threshold = 0.975 ) {
 
-		const offset = camera.position.clone().sub( this.center );
+		const offset = this.camera.position.clone().sub( this.center );
 		const radius = offset.length();
 		if ( radius === 0 ) return false;
 		const direction = offset.normalize();
@@ -359,8 +360,8 @@ export class OrientationGizmo extends Object3D {
 			if ( value > dot ) { dot = value; best = axis; }
 		} );
 		if ( dot < threshold ) return false;
-		camera.position.copy( best ).multiplyScalar( radius ).add( this.center );
-		camera.lookAt( this.center );
+		this.camera.position.copy( best ).multiplyScalar( radius ).add( this.center );
+		this.camera.lookAt( this.center );
 		return true;
 
 	};

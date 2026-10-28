@@ -33,6 +33,9 @@ interface ViewportCallbacks {
     onSketchComplete: () => void;
     onSketchEntitySelect: (id: string) => void;
     onSketchContext: (id: string | null, x: number, y: number) => void;
+    onSketchCancelSelection: () => void;
+    onSketchCenterMove: (point: Point2, phase: EditPhase) => void;
+    onSketchPointDelete: (index: number) => void;
     onSketchSectorMove: (point: Point2, phase: EditPhase) => void;
     onSketchSectorReset: () => void;
     onSketchDimension: (target: SketchDimension, value: number) => void;
@@ -81,11 +84,17 @@ export class Viewport {
     private sketchMode = false;
     private activePlane: SketchPlane | null = null;
     private selectedSketchPoint = -1;
-    private sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean } | null = null;
+    private activeSketchSegment = -1;
+    private sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean } | null = null;
     private shapeDrag: { start: Point2; moved: boolean } | null = null;
     private viewRotateDrag: { x: number; startX: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
     private sketchProfileType: ProfileType = 'polygon';
+    private sketchSelectionGuardUntil = 0;
+    private sketchHoverSegment = -1;
+    private altDeletePoint = -1;
+    private projectionMode: 'perspective' | 'orthographic' = 'perspective';
+    private projectionBeforeSketch: 'perspective' | 'orthographic' = 'perspective';
     private directDrag: { id: string; normal: Vec3; y: number } | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; y: number } | null = null;
     private editingSketchId: string | null = null;
@@ -379,17 +388,27 @@ export class Viewport {
         }
         if (this.measureMode) { this.controls.enableRotate = false; return; }
         if (this.sketchMode) {
+            if (performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
             this.sketchSegmentHandled = false;
             this.setPointer(event);
-            const markers = this.sketch.children.filter((item) => item.userData.pointIndex !== undefined || item.userData.handleSegment !== undefined || item.userData.sectorHandle);
+            const markers = this.sketchMarkers();
             const hit = this.raycaster.intersectObjects(markers, false)[0];
             if (hit) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const handle = hit.object.userData.handleSegment !== undefined;
                 const sector = !!hit.object.userData.sectorHandle;
-                const index = handle ? hit.object.userData.handleSegment : sector ? -1 : hit.object.userData.pointIndex;
-                this.sketchDrag = sector ? { index, sector: true } : handle ? { index, handle: hit.object.userData.handleIndex } : { index };
-                if (sector) this.callbacks.onSketchSectorMove(this.sketchPoint(event)!, 'start');
+                const center = !!hit.object.userData.centerHandle;
+                const index = handle ? hit.object.userData.handleSegment : sector || center ? -1 : hit.object.userData.pointIndex;
+                if (event.altKey && this.sketchProfileType === 'polygon' && !handle && !sector && !center && index >= 0) {
+                    this.callbacks.onSketchPointDelete(index);
+                    this.altDeletePoint = -1;
+                    this.container.classList.remove('is-delete-point');
+                    return;
+                }
+                this.sketchDrag = center ? { index, center: true } : sector ? { index, sector: true } : handle ? { index, handle: hit.object.userData.handleIndex } : { index };
+                this.container.classList.add('is-handle-dragging');
+                if (center) this.callbacks.onSketchCenterMove(this.sketchPoint(event)!, 'start');
+                else if (sector) this.callbacks.onSketchSectorMove(this.sketchPoint(event)!, 'start');
                 else if (!handle) {
                     this.selectedSketchPoint = index;
                     this.callbacks.onSketchSelect(index);
@@ -410,6 +429,9 @@ export class Viewport {
             const sketchEntity = this.hitSketchEntity(event);
             if (sketchEntity) {
                 event.preventDefault(); event.stopImmediatePropagation();
+                this.sketchSelectionGuardUntil = performance.now() + 300;
+                this.shapeDrag = null;
+                this.sketchDrag = null;
                 this.callbacks.onSketchEntitySelect(sketchEntity);
                 return;
             }
@@ -442,6 +464,7 @@ export class Viewport {
 
     private onPointerMove(event: PointerEvent) {
         if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
+        if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         if (this.marquee) {
             event.preventDefault(); event.stopImmediatePropagation();
             this.marquee.x = event.clientX;
@@ -478,10 +501,11 @@ export class Viewport {
             this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: true };
             return;
         }
+        if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const point = this.sketchPoint(event);
-            if (point) this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'move') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'move') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
+            if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'move') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'move') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'move') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
             return;
         }
         if (this.extrudeArrowDrag) {
@@ -511,7 +535,7 @@ export class Viewport {
             else this.clearHoverFace();
             return;
         }
-        if (this.sketchMode && !event.buttons) this.setSketchHover(this.hitSketchEntity(event));
+        if (this.sketchMode && !event.buttons) { this.setSketchHover(this.hitSketchEntity(event)); this.updateSketchCursor(event); }
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
             const sketchId = hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch' ? hit.object.userData.entityId : null;
@@ -573,7 +597,7 @@ export class Viewport {
         }
         if (this.viewRotateDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
-            if (!this.viewRotateDrag.moved) this.callbacks.onSketchContext(this.hitSketchEntity(event) || this.editingSketchId, event.clientX, event.clientY);
+            if (!this.viewRotateDrag.moved) this.callbacks.onSketchCancelSelection();
             this.viewRotateDrag = null;
             this.controls.enabled = true;
             return;
@@ -588,8 +612,9 @@ export class Viewport {
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const point = this.sketchPoint(event);
-            if (point) this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'end') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'end') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
+            if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'end') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'end') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'end') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
             this.sketchDrag = null;
+            this.container.classList.remove('is-handle-dragging');
             this.controls.enabled = true;
             return;
         }
@@ -783,7 +808,9 @@ export class Viewport {
     }
     private clearGroup(group: THREE.Group) {
         group.traverse((object) => {
-            if (object instanceof CSS2DObject) object.element.remove();
+            if (object instanceof CSS2DObject) {
+                try { if (object.element.parentNode) object.element.parentNode.removeChild(object.element); } catch { /* The label may already be detached during a blur callback. */ }
+            }
             if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) {
                 object.geometry?.dispose();
                 const materials = Array.isArray(object.material) ? object.material : [object.material];
@@ -952,7 +979,32 @@ export class Viewport {
         this.applySelection();
         if (this.document) this.updateExtrudeGuide(this.document);
     }
+    private setProjection(mode: 'perspective' | 'orthographic') {
+        const previous = this.camera;
+        if (mode === 'orthographic') {
+            const distance = previous.position.distanceTo(this.controls.target);
+            if (previous instanceof THREE.PerspectiveCamera) this.orthoHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(previous.fov / 2));
+            this.orthographicCamera.position.copy(previous.position);
+            this.orthographicCamera.quaternion.copy(previous.quaternion);
+            this.camera = this.orthographicCamera;
+        } else {
+            this.perspectiveCamera.position.copy(previous.position);
+            this.perspectiveCamera.quaternion.copy(previous.quaternion);
+            this.camera = this.perspectiveCamera;
+        }
+        this.projectionMode = mode;
+        this.controls.object = this.camera;
+        this.transform.camera = this.camera;
+        this.viewHelper.camera = this.camera;
+        this.resize();
+        this.controls.update();
+    }
+    toggleProjection() {
+        if (!this.sketchMode) this.setProjection(this.projectionMode === 'perspective' ? 'orthographic' : 'perspective');
+        return this.projectionMode;
+    }
     setSketchMode(active: boolean, points: Point2[] = [], selectedIndex = -1) {
+        if (active) this.projectionBeforeSketch = this.projectionMode;
         this.sketchMode = active;
         this.selectedSketchPoint = selectedIndex;
         this.sketchDrag = null;
@@ -960,12 +1012,8 @@ export class Viewport {
         this.transform.detach();
         this.controls.enableRotate = false;
         this.container.classList.toggle('is-sketching', active);
+        this.setProjection(active ? 'orthographic' : this.projectionBeforeSketch);
         if (active) {
-            const distance = this.perspectiveCamera.position.distanceTo(this.controls.target);
-            this.orthoHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2));
-            this.orthographicCamera.position.copy(this.perspectiveCamera.position);
-            this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
-            this.camera = this.orthographicCamera;
             this.scene.background = new THREE.Color('#dcebe6');
             this.planes.visible = false;
             if (this.activePlane) {
@@ -973,25 +1021,63 @@ export class Viewport {
                 this.grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...this.activePlane.normal).normalize());
             }
         } else {
-            this.camera = this.perspectiveCamera;
             this.scene.background = new THREE.Color('#e7ebe8');
             this.planes.visible = true;
             this.grid.position.set(0, -0.02, 0);
             this.grid.quaternion.identity();
         }
-        this.controls.object = this.camera;
-        this.transform.camera = this.camera;
-        this.resize();
         this.updateOrbitRotation();
         this.controls.update();
         this.updateSketch(points, selectedIndex);
     }
     setSketchSelection(index: number) { this.selectedSketchPoint = index; this.updateMarkerColors(); }
+    private sketchMarkers() {
+        return this.sketch.children.filter((item) => item.userData.pointIndex !== undefined || item.userData.handleSegment !== undefined || item.userData.sectorHandle || item.userData.centerHandle);
+    }
+    private updateSketchSegmentColors() {
+        this.sketch.children.forEach((object) => {
+            if (object.userData.segmentIndex === undefined) return;
+            const active = object.userData.segmentIndex === this.activeSketchSegment || object.userData.segmentIndex === this.sketchHoverSegment;
+            ((object as THREE.Line).material as THREE.LineBasicMaterial).color.set(active ? SKETCH_COLORS.activeDark : this.editingSketchId ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.line);
+        });
+    }
+    private updateSketchCursor(event: PointerEvent) {
+        this.setPointer(event);
+        const marker = this.raycaster.intersectObjects(this.sketchMarkers(), false)[0];
+        const pointIndex = marker?.object.userData.pointIndex;
+        this.altDeletePoint = event.altKey && this.sketchProfileType === 'polygon' && pointIndex >= 0 && !marker?.object.userData.centerHandle ? pointIndex : -1;
+        this.container.classList.toggle('is-delete-point', this.altDeletePoint >= 0);
+        this.container.classList.toggle('is-handle-hover', !!marker && this.altDeletePoint < 0);
+        const segment = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
+        this.sketchHoverSegment = segment ? segment.object.userData.segmentIndex : -1;
+        this.container.classList.toggle('is-border-hover', !!segment && !marker);
+        this.updateMarkerColors();
+        this.updateSketchSegmentColors();
+    }
     private updateMarkerColors() {
         this.sketch.children.forEach((object) => {
             if (object.userData.pointIndex === undefined) return;
-            ((object as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(object.userData.pointIndex === this.selectedSketchPoint ? SKETCH_COLORS.pointActive : object.userData.locked ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point);
+            const index = object.userData.pointIndex;
+            const material = (object as THREE.Mesh).material as THREE.MeshBasicMaterial;
+            if (object.userData.pointBorder) material.color.set(index === this.altDeletePoint ? SKETCH_COLORS.deletePoint : SKETCH_COLORS.border);
+            else {
+                material.color.set(index === this.altDeletePoint ? SKETCH_COLORS.deletePoint : index === this.selectedSketchPoint ? SKETCH_COLORS.pointActive : object.userData.locked ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point);
+                material.transparent = index === this.altDeletePoint;
+                material.opacity = index === this.altDeletePoint ? 0.58 : 1;
+            }
         });
+    }
+    private addSketchMarker(point: Point2, index: number, color: string, center = false, locked = false) {
+        const selected = index >= 0 && index === this.selectedSketchPoint;
+        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.75 : 1.4, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false }));
+        outer.position.copy(this.sketchWorld(point));
+        outer.userData = { pointIndex: index, pointBorder: true, centerHandle: center, locked };
+        outer.renderOrder = 6;
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.3 : 1, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        inner.position.copy(this.sketchWorld(point, 0.14));
+        inner.userData = { pointIndex: index, centerHandle: center, locked };
+        inner.renderOrder = 7;
+        this.sketch.add(outer, inner);
     }
     private addSketchDimension(position: Point2, target: SketchDimension, value: number, unit: LengthUnit) {
         const element = window.document.createElement('div');
@@ -1004,7 +1090,7 @@ export class Viewport {
         input.addEventListener('pointerdown', (event) => event.stopPropagation());
         input.addEventListener('blur', () => {
             const next = Number(input.value);
-            if (Number.isFinite(next) && next > 0) this.callbacks.onSketchDimension(target, target.kind === 'angle' ? next : next * factor);
+            if (Number.isFinite(next) && next > 0) window.setTimeout(() => this.callbacks.onSketchDimension(target, target.kind === 'angle' ? next : next * factor), 0);
             else input.value = (value / factor).toFixed(2);
         });
         element.appendChild(input);
@@ -1022,7 +1108,7 @@ export class Viewport {
                 select.appendChild(option);
             });
             select.addEventListener('pointerdown', (event) => event.stopPropagation());
-            select.addEventListener('change', () => this.callbacks.onLengthUnitChange(select.value as LengthUnit));
+            select.addEventListener('change', () => window.setTimeout(() => this.callbacks.onLengthUnitChange(select.value as LengthUnit), 0));
             element.appendChild(select);
         }
         const label = new CSS2DObject(element);
@@ -1039,8 +1125,10 @@ export class Viewport {
     updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm') {
         this.clearGroup(this.sketch);
         this.selectedSketchPoint = selectedIndex;
+        this.activeSketchSegment = selectedSegment;
         this.sketchProfileType = profileType;
         if (!this.sketchMode || !points.length) return;
+        const activeColor = this.editingSketchId ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.line;
         const displayPoints = profilePoints(profileType, points, 64, curves, sides, sectorAngle);
         const vertices = displayPoints.map((point) => this.sketchWorld(point));
         if (profileClosed(profileType) && displayPoints.length >= 3) {
@@ -1048,7 +1136,7 @@ export class Viewport {
             shape.moveTo(...displayPoints[0]);
             displayPoints.slice(1).forEach((point) => shape.lineTo(...point));
             shape.closePath();
-            const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }));
+            const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: this.editingSketchId ? SKETCH_COLORS.hoverFill : SKETCH_COLORS.fill, transparent: true, opacity: this.editingSketchId ? 0.28 : 0.15, side: THREE.DoubleSide, depthWrite: false }));
             fill.applyMatrix4(this.activePlane ? this.planeMatrix(this.activePlane) : new THREE.Matrix4());
             fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.06) : new THREE.Vector3(0, 0.06, 0));
             this.sketch.add(fill);
@@ -1059,7 +1147,7 @@ export class Viewport {
                 const a = points[index], b = points[(index + 1) % points.length];
                 const curve = curves[index];
                 const segmentPoints = curve ? new THREE.CubicBezierCurve(new THREE.Vector2(...a), new THREE.Vector2(...curve.c1), new THREE.Vector2(...curve.c2), new THREE.Vector2(...b)).getPoints(24) : [new THREE.Vector2(...a), new THREE.Vector2(...b)];
-                const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(segmentPoints.map((point) => this.sketchWorld([point.x, point.y]))), new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line, depthTest: false }));
+                const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(segmentPoints.map((point) => this.sketchWorld([point.x, point.y]))), new THREE.LineBasicMaterial({ color: activeColor, depthTest: false }));
                 line.userData.segmentIndex = index;
                 line.renderOrder = 5;
                 this.sketch.add(line);
@@ -1069,13 +1157,14 @@ export class Viewport {
         } else {
             const closed = profileClosed(profileType);
             const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
-            const line = closed ? new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line, depthTest: false })) : new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line, depthTest: false }));
+            const line = closed ? new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: activeColor, depthTest: false })) : new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: activeColor, depthTest: false }));
             line.renderOrder = 5;
             this.sketch.add(line);
         }
         if (profileType === 'rectangle' && points.length === 4 && this.editingSketchId) {
             this.addSketchDimension(midpoint(points[0], points[1]), { kind: 'width' }, Math.abs(points[1][0] - points[0][0]), unit);
             this.addSketchDimension(midpoint(points[1], points[2]), { kind: 'height' }, Math.abs(points[2][1] - points[1][1]), unit);
+            this.addSketchMarker(midpoint(points[0], points[2]), -1, SKETCH_COLORS.pointActive, true);
         }
         if (['circle', 'ellipse', 'regular'].includes(profileType) && points.length >= 2) {
             const [center, edge] = points;
@@ -1110,6 +1199,7 @@ export class Viewport {
         if (profileType === 'arc' && points.length >= 3 && this.editingSketchId) {
             const center = profileArcCenter(points);
             if (center) {
+                this.addSketchMarker(center, -1, SKETCH_COLORS.pointActive, true);
                 this.addSketchGuide(center, points[0]);
                 this.addSketchDimension(midpoint(center, points[0]), { kind: 'arcRadius' }, Math.hypot(points[0][0] - center[0], points[0][1] - center[1]), unit);
             }
@@ -1129,15 +1219,13 @@ export class Viewport {
                 this.sketch.add(handle);
             });
         }
-        points.map((point) => this.sketchWorld(point)).forEach((point, index) => {
+        points.forEach((point, index) => {
             const color = index === selectedIndex ? SKETCH_COLORS.pointActive : lockedPoints.includes(index) ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point;
-            const marker = new THREE.Mesh(new THREE.SphereGeometry(index === selectedIndex ? 1.35 : 1.05, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false }));
-            marker.position.copy(point);
-            marker.userData.pointIndex = index;
-            marker.userData.locked = lockedPoints.includes(index);
-            marker.renderOrder = 6;
-            this.sketch.add(marker);
+            const center = index === 0 && ['circle', 'ellipse', 'regular'].includes(profileType);
+            this.addSketchMarker(point, index, color, center, lockedPoints.includes(index));
         });
+        this.updateMarkerColors();
+        this.updateSketchSegmentColors();
     }
 
     private createThickArrow(origin: THREE.Vector3, normal: THREE.Vector3, length: number, data: Record<string, any>) {

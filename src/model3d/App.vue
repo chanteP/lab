@@ -32,6 +32,7 @@ let transforming = false;
 let directBase: ModelEntity | null = null;
 let directHistoryPushed = false;
 let extrudeGestureMoved = false;
+let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves } | null = null;
 const undoStack: ModelDocument[] = [];
 const redoStack: ModelDocument[] = [];
 const historyVersion = ref(0);
@@ -46,6 +47,7 @@ const exportQuality = ref<GeometryQuality>('high');
 const exporting = ref(false);
 const gridVisible = ref(true);
 const shadowVisible = ref(false);
+const projectionMode = ref<'perspective' | 'orthographic'>('perspective');
 const spaceActive = ref(false);
 const showNewProject = ref(false);
 const showHelp = ref(false);
@@ -970,6 +972,46 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (sketchPoints.value.length >= 3) persistSketchProgress(false);
     refreshSketch();
 }
+function moveSketchCenter(point: Point2, phase: EditPhase) {
+    if (phase === 'start') {
+        if (editingSketchId.value) pushHistory();
+        sketchCenterDrag = { start: [...point], points: sketchPoints.value.map((source) => [...source]), curves: JSON.parse(JSON.stringify(sketchCurves.value)) };
+        return;
+    }
+    if (!sketchCenterDrag) return;
+    const delta: Point2 = [point[0] - sketchCenterDrag.start[0], point[1] - sketchCenterDrag.start[1]];
+    sketchPoints.value = sketchCenterDrag.points.map((source) => [source[0] + delta[0], source[1] + delta[1]]);
+    const curves = JSON.parse(JSON.stringify(sketchCenterDrag.curves)) as ProfileCurves;
+    Object.values(curves).forEach((curve) => {
+        curve.c1 = [curve.c1[0] + delta[0], curve.c1[1] + delta[1]];
+        curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
+    });
+    sketchCurves.value = curves;
+    syncEditingSketch();
+    if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    refreshSketch();
+    if (phase === 'end') sketchCenterDrag = null;
+}
+function deleteSketchPoint(index: number) {
+    if (sketchType.value !== 'polygon' || !sketchPoints.value[index]) return;
+    if (sketchPoints.value.length <= 2) return message.warning('线条至少保留两个点');
+    if (editingSketchId.value) pushHistory();
+    sketchPoints.value.splice(index, 1);
+    const curves: ProfileCurves = {};
+    Object.entries(sketchCurves.value).forEach(([key, curve]) => {
+        const segment = Number(key);
+        if (segment === index || segment === index - 1) return;
+        curves[segment > index ? segment - 1 : segment] = curve;
+    });
+    sketchCurves.value = curves;
+    sketchLockedPoints.value = sketchLockedPoints.value.filter((point) => point !== index).map((point) => point > index ? point - 1 : point);
+    selectedSketchPoint.value = -1;
+    selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
+    syncEditingSketch();
+    if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    refreshSketch();
+}
 function ensureSketchSegment(index: number) {
     if (index < 0 || index >= sketchPoints.value.length) return;
     selectedSketchSegment.value = index;
@@ -1338,6 +1380,7 @@ function entityIcon(kind: ModelEntity['kind']) {
     return CubeOutline;
 }
 function fitView() { viewport?.fit(true); }
+function toggleProjection() { projectionMode.value = viewport?.toggleProjection() || 'perspective'; }
 function onKeyDown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
@@ -1412,6 +1455,9 @@ onMounted(async () => {
         onSketchComplete: finishSketch,
         onSketchEntitySelect: selectSketchEntity,
         onSketchContext: openSketchContext,
+        onSketchCancelSelection: clearSketchSelection,
+        onSketchCenterMove: moveSketchCenter,
+        onSketchPointDelete: deleteSketchPoint,
         onSketchSectorMove,
         onSketchSectorReset: resetSketchSector,
         onSketchDimension,
@@ -1667,6 +1713,7 @@ onBeforeUnmount(() => {
                 <div class="viewport-utilities">
                     <div class="measure-actions">
                         <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
+                        <NTooltip><template #trigger><button @click.stop="toggleProjection"><NIcon><component :is="projectionMode === 'perspective' ? CameraOutline : GridOutline" /></NIcon></button></template>{{ projectionMode === 'perspective' ? '切换正交相机' : '切换透视相机' }}</NTooltip>
                         <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图</NTooltip>
                     </div>
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
