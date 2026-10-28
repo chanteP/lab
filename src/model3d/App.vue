@@ -116,7 +116,7 @@ const historySteps = computed(() => document.value.entities.flatMap((item) => {
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
+const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
 const commandResults = computed(() => {
@@ -718,8 +718,17 @@ function updateFaceOffsetInput(value: number | null) {
     else {
         const rotation = new THREE.Euler(...item.rotation.map(THREE.MathUtils.degToRad) as Vec3);
         const normal = new THREE.Vector3(...lastFace.value.normal).applyQuaternion(new THREE.Quaternion().setFromEuler(rotation).invert()).normalize().toArray() as Vec3;
-        item.faceOffset = { normal, distance: value };
+        item.faceOffset = { normal, distance: Math.max(faceOffsetMinimum(item, normal), value) };
     }
+}
+function faceOffsetMinimum(item: ModelEntity, normal: Vec3) {
+    if (item.kind === 'box') {
+        const axis = Math.abs(normal[0]) > 0.5 ? 0 : Math.abs(normal[1]) > 0.5 ? 1 : 2;
+        return -[item.width!, item.height!, item.depth!][axis] + 0.1;
+    }
+    if (item.kind === 'cylinder') return -item.height! + 0.1;
+    if (item.kind === 'extrude') return -item.depth! + 0.1;
+    return 0;
 }
 
 function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase) {
@@ -762,7 +771,8 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
         item.edge = { ...directBase.edge!, size };
         return;
     }
-    item.faceOffset = { normal: [...normal], distance: Math.round(Math.max(0.1, (directBase.faceOffset?.distance || 0) + delta) * 100) / 100 };
+    const next = (directBase.faceOffset?.distance || 0) + delta;
+    item.faceOffset = { normal: [...normal], distance: Math.round(Math.max(faceOffsetMinimum(directBase, normal), next) * 100) / 100 };
 }
 
 function startSketch(editProfile = false) {
@@ -1294,6 +1304,9 @@ function selectPlane(id: string) {
     viewport?.setActivePlane(activePlane.value);
     setTool('select');
 }
+function activateTreeNode(id: string) {
+    if (document.value.planes.some((plane) => plane.id === id)) beginSketch(id);
+}
 function toggleNodeVisibility(id: string) {
     pushHistory();
     const setEntity = (entity: ModelEntity, visible: boolean) => entity.visible = visible;
@@ -1533,7 +1546,7 @@ onBeforeUnmount(() => {
                     <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ visibleEntityCount }}</i></span></div>
                     <div class="object-list">
                         <div v-if="!treeNodes.length" class="empty-objects">从左侧开始建模</div>
-                        <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @context="openNodeContext" @drop="reparentNodes"
+                        <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes"
                             @toggle="toggleNodeVisibility" />
                     </div>
                 </section>
@@ -1631,7 +1644,7 @@ onBeforeUnmount(() => {
                         <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
                         <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
                         <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
-                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong><small>中心＋外顶点</small></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
+                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
                     </div>
                 </nav>
                 <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggleSketchPointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
@@ -1686,7 +1699,7 @@ onBeforeUnmount(() => {
                             <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
                         <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
-                            <label>新增厚度<NInputNumber class="direct-distance-input" :precision="2" :value="selected.faceOffset?.distance || 0" :min="0" size="small" @update:value="updateFaceOffsetInput" /></label>
+                            <label>面偏移<NInputNumber class="direct-distance-input" :precision="2" :value="selected.faceOffset?.distance || 0" size="small" @update:value="updateFaceOffsetInput" /></label>
                             <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
                         </div>
                         <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">

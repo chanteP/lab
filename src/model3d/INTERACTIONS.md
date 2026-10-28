@@ -114,6 +114,7 @@
 ## Offset Face 与 Chamfer/Fillet
 
 - Offset Face 选中面后显示法向粗箭头，只有拖箭头或修改新增厚度才写入 `faceOffset`。基础 Body 的尺寸、位置和旋转保持不变，几何以所选面为底面向外拼接新增部分。
+- 负 `faceOffset` 使用局部布尔切削实现面收缩；箭头跟随当前面位置，拖动距离按箭头屏幕方向投影，hover/拖动显示橙色且不被模型或网格遮挡。
 - Chamfer/Fillet 选中边后显示粗箭头，拖动时持续重建预览；圆角/倒角被约束在原实体边界内。Extrude 的 bevel 使用负 offset，避免轮廓向外扩张。
 
 ## Boolean 执行态与 History

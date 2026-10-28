@@ -321,3 +321,9 @@ button { color: inherit; }
 .sketch-polygon-tool .n-select { width: 72px; height: 24px; min-height: 24px; margin: 4px 0 6px 45px; font-size: 10px; }
 .sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 22px; min-height: 22px; font-size: 10px; }
 .sketch-polygon-tool .n-select .n-base-selection-input { padding-top: 0; padding-bottom: 0; line-height: 22px; }
+.sketch-polygon-tool .n-select { transform: scale(.55); transform-origin: left top; margin: 0 0 -10px 45px; padding: 1px; }
+.sketch-polygon-tool .n-select .n-base-selection-input { padding-right: 0; font-size: 8px; }
+.sketch-polygon-tool .n-select .n-base-selection-arrow, .sketch-polygon-tool .n-select .n-base-suffix { width: 10px; font-size: 8px; }
+.viewport.is-panning, .viewport.is-sketching.is-panning { cursor: grab; }
+.viewport.is-panning:active, .viewport.is-sketching.is-panning:active { cursor: grabbing; }
+.viewport.is-arrow-hover { cursor: grab; }

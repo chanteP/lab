@@ -101,8 +101,10 @@ export class Viewport {
     private altDeletePoint = -1;
     private projectionMode: 'perspective' | 'orthographic' = 'perspective';
     private projectionBeforeSketch: 'perspective' | 'orthographic' = 'perspective';
-    private directDrag: { id: string; normal: Vec3; y: number } | null = null;
+    private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number } | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; y: number } | null = null;
+    private activeArrowKey: string | null = null;
+    private hoverArrowKey: string | null = null;
     private editingSketchId: string | null = null;
     private sketchHoverId: string | null = null;
     private gizmoDrag: { x: number; y: number; moved: boolean } | null = null;
@@ -322,12 +324,33 @@ export class Viewport {
     private hitExtrudeArrow(event: PointerEvent) {
         this.setPointer(event);
         const hit = this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.extrudeArrow);
+        this.activeArrowKey = hit?.object.userData.arrowKey || null;
+        this.updateArrowColors();
         return hit?.object.userData.extrudeArrow as { profileId: string; direction: 1 | -1 } | undefined;
     }
     private hitDirectArrow(event: PointerEvent) {
         this.setPointer(event);
         const hit = this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.directArrow);
+        this.activeArrowKey = hit?.object.userData.arrowKey || null;
+        this.updateArrowColors();
         return hit?.object.userData.directArrow as { id: string; normal?: Vec3 } | undefined;
+    }
+    private updateArrowHover(event: PointerEvent) {
+        this.setPointer(event);
+        const hit = this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.directArrow || item.object.userData.extrudeArrow);
+        this.hoverArrowKey = hit?.object.userData.arrowKey || null;
+        this.container.classList.toggle('is-arrow-hover', !!hit);
+        this.updateArrowColors();
+    }
+    private updateArrowColors() {
+        this.guides.children.forEach((group) => {
+            const active = group.userData.arrowKey && (group.userData.arrowKey === this.activeArrowKey || group.userData.arrowKey === this.hoverArrowKey);
+            group.traverse((object) => {
+                if (!(object instanceof THREE.Mesh)) return;
+                const material = object.material as THREE.MeshBasicMaterial;
+                if (material.color) material.color.set(active ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.arrow);
+            });
+        });
     }
     private isVisible(object: THREE.Object3D) {
         let current: THREE.Object3D | null = object;
@@ -395,6 +418,7 @@ export class Viewport {
                 this.extrudeArrowDrag = { profileId: arrow.profileId, direction: arrow.direction, y: event.clientY };
                 this.capturePointer(event);
                 this.controls.enabled = false;
+                this.container.classList.add('is-handle-dragging');
                 this.callbacks.onExtrudeGesture(arrow.profileId, arrow.direction, 0, 'start');
                 return;
             }
@@ -414,6 +438,8 @@ export class Viewport {
                 const center = !!hit.object.userData.centerHandle;
                 const index = handle ? hit.object.userData.handleSegment : sector || center ? -1 : hit.object.userData.pointIndex;
                 if (event.altKey && this.sketchProfileType === 'polygon' && !handle && !sector && !center && index >= 0) {
+                    this.sketchSelectionGuardPointerUp = true;
+                    this.sketchSelectionGuardUntil = performance.now() + 300;
                     this.callbacks.onSketchPointDelete(index);
                     this.altDeletePoint = -1;
                     this.container.classList.remove('is-delete-point');
@@ -459,9 +485,10 @@ export class Viewport {
             const normal = arrow?.normal || this.geometryAnchor?.localNormal;
             if (arrow && normal) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                this.directDrag = { id: arrow.id, normal, y: event.clientY };
+                this.directDrag = { id: arrow.id, normal, worldNormal: this.geometryAnchor?.normal || normal, x: event.clientX, y: event.clientY };
                 this.capturePointer(event);
                 this.controls.enabled = false;
+                this.container.classList.add('is-handle-dragging');
                 this.callbacks.onDirectEdit(arrow.id, this.directDrag.normal, 0, 'start');
                 return;
             }
@@ -583,7 +610,14 @@ export class Viewport {
         if (this.directDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const scale = Math.max(0.025, this.camera.position.distanceTo(this.controls.target) * 0.002);
-            this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, (this.directDrag.y - event.clientY) * scale, 'move');
+            const origin = this.geometryAnchor ? new THREE.Vector3(...this.geometryAnchor.point) : this.controls.target.clone();
+            const from = origin.clone().project(this.camera);
+            const to = origin.clone().add(new THREE.Vector3(...this.directDrag.worldNormal)).project(this.camera);
+            const direction = new THREE.Vector2(to.x - from.x, -(to.y - from.y));
+            if (direction.lengthSq() < 0.000001) direction.set(0, -1);
+            direction.normalize();
+            const delta = ((event.clientX - this.directDrag.x) * direction.x + (event.clientY - this.directDrag.y) * direction.y) * scale;
+            this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
             return;
         }
         if (this.measureMode && this.measurePoints.length < 2) {
@@ -593,6 +627,7 @@ export class Viewport {
             return;
         }
         if (this.sketchMode && !event.buttons) { this.setSketchHover(this.hitSketchEntity(event)); this.updateSketchCursor(event); }
+        if (!event.buttons && !this.sketchMode) this.updateArrowHover(event);
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
             const sketchId = hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch' ? hit.object.userData.entityId : null;
@@ -692,6 +727,9 @@ export class Viewport {
             event.preventDefault(); event.stopImmediatePropagation();
             this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, 0, 'end');
             this.extrudeArrowDrag = null;
+            this.activeArrowKey = null;
+            this.container.classList.remove('is-handle-dragging');
+            this.updateArrowColors();
             this.controls.enabled = true;
             return;
         }
@@ -699,6 +737,9 @@ export class Viewport {
             event.preventDefault(); event.stopImmediatePropagation();
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
             this.directDrag = null;
+            this.activeArrowKey = null;
+            this.container.classList.remove('is-handle-dragging');
+            this.updateArrowColors();
             this.controls.enabled = true;
             return;
         }
@@ -968,7 +1009,7 @@ export class Viewport {
                 const edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({ color: '#334d46', transparent: true, opacity: 0.48 }));
                 edges.userData.displayEdge = true;
                 child.add(edges);
-            } else if (entity?.kind === 'sketch') {
+            } else if (entity?.kind === 'sketch' && this.sketchMode) {
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
                 const points = profilePoints(entity.profileType || 'polygon', entity.points || [], 64, entity.curves, entity.sides, entity.sectorAngle)
@@ -1175,6 +1216,7 @@ export class Viewport {
         }
         this.updateOrbitRotation();
         this.controls.update();
+        if (this.document) this.sync(this.document);
         this.updateSketch(points, selectedIndex);
         if (this.document) this.updateExtrudeGuide(this.document);
     }
@@ -1383,9 +1425,11 @@ export class Viewport {
 
     private createThickArrow(origin: THREE.Vector3, normal: THREE.Vector3, length: number, data: Record<string, any>) {
         const group = new THREE.Group();
-        const material = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.arrow, depthTest: false });
+        group.userData.arrowKey = JSON.stringify(data);
+        const highlighted = group.userData.arrowKey === this.activeArrowKey || group.userData.arrowKey === this.hoverArrowKey;
+        const material = new THREE.MeshBasicMaterial({ color: highlighted ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.arrow, depthTest: false, depthWrite: false, toneMapped: false });
         const arrowLength = length / 3;
-        const headHeight = Math.min(2, arrowLength * 0.35);
+        const headHeight = Math.min(4, arrowLength * 0.7);
         const shaftLength = Math.max(0.5, arrowLength - headHeight);
         const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, shaftLength, 16), material);
         shaft.position.y = shaftLength / 2;
@@ -1395,7 +1439,7 @@ export class Viewport {
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
         group.scale.setScalar(2.5);
-        group.traverse((child) => { Object.assign(child.userData, data); child.renderOrder = 12; });
+        group.traverse((child) => { Object.assign(child.userData, data); child.userData.arrowKey = group.userData.arrowKey; child.renderOrder = 100; });
         return group;
     }
     private updateExtrudeGuide(document: ModelDocument) {
@@ -1426,6 +1470,7 @@ export class Viewport {
             const normal = new THREE.Vector3(...this.geometryAnchor.normal).normalize();
             const origin = new THREE.Vector3(...this.geometryAnchor.point);
             const value = this.tool === 'offsetFace' ? entity.faceOffset?.distance || 0 : entity.edge?.size || 3;
+            origin.add(normal.clone().multiplyScalar(value));
             const length = 18;
             const arrow = this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } });
             this.guides.add(arrow);
@@ -1449,14 +1494,15 @@ export class Viewport {
         const normal = plane ? new THREE.Vector3(...plane.normal) : new THREE.Vector3(0, 1, 0);
         const direction = body.direction === -1 ? -1 : 1;
         const length = Math.max(3, body.depth || 3);
-        const arrow = this.createThickArrow(center, normal.clone().multiplyScalar(direction), Math.max(18, length), { directArrow: { id: body.id, normal: [0, 1, 0] as Vec3 } });
+        const arrowOrigin = center.clone().add(normal.clone().multiplyScalar(direction * length));
+        const arrow = this.createThickArrow(arrowOrigin, normal.clone().multiplyScalar(direction), 18, { directArrow: { id: body.id, normal: [0, 1, 0] as Vec3 } });
         this.guides.add(arrow);
         const element = window.document.createElement('div');
         element.className = 'measure-value extrude-dimension';
         element.textContent = `${length.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')} mm`;
         element.addEventListener('click', () => this.callbacks.onExtrudeDimension());
         const label = new CSS2DObject(element);
-        label.position.copy(center).add(normal.multiplyScalar(direction * length));
+        label.position.copy(arrowOrigin).add(normal.multiplyScalar(direction * 18));
         this.guides.add(label);
     }
     setBooleanRoles(roles: { target: string; tool: string } | null) {

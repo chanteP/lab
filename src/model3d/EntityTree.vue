@@ -14,6 +14,7 @@ export interface OutlinerNode {
 const props = defineProps<{ nodes: OutlinerNode[]; selectedIds: string[] }>();
 const emit = defineEmits<{
     select: [id: string, additive: boolean];
+    activate: [id: string];
     toggle: [id: string];
     context: [node: OutlinerNode, event: MouseEvent];
     drop: [ids: string[], targetId: string | null];
@@ -49,7 +50,7 @@ function drop(event: DragEvent, targetId: string | null) {
         <div v-for="node in nodes" :key="node.id" class="tree-node">
             <div class="object-row" :class="{ selected: selectedIds.includes(node.id), muted: node.visible === false, 'drop-target': dropTarget === node.id }"
                 draggable="true" @click="emit('select', node.id, $event.metaKey || $event.ctrlKey || $event.shiftKey)"
-                @contextmenu.prevent.stop="emit('context', node, $event)" @dragstart="dragStart(node, $event)"
+                @contextmenu.prevent.stop="emit('context', node, $event)" @dblclick.stop="emit('activate', node.id)" @dragstart="dragStart(node, $event)"
                 @dragover.prevent.stop="dropTarget = node.id" @dragleave="dropTarget = null" @drop.stop="drop($event, node.id)">
                 <button v-if="node.children.length" class="tree-disclosure" @click.stop="toggleExpanded(node.id)"><NIcon><component :is="expanded.has(node.id) ? ChevronDownOutline : ChevronForwardOutline" /></NIcon></button>
                 <span v-else class="tree-disclosure-spacer"></span>
@@ -59,6 +60,7 @@ function drop(event: DragEvent, targetId: string | null) {
             </div>
             <EntityTree v-if="node.children.length && expanded.has(node.id)" class="tree-children" :nodes="node.children" :selected-ids="selectedIds"
                 @select="(id, additive) => emit('select', id, additive)" @toggle="(id) => emit('toggle', id)"
+                @activate="(id) => emit('activate', id)"
                 @context="(child, event) => emit('context', child, event)" @drop="(ids, targetId) => emit('drop', ids, targetId)" />
         </div>
     </div>
