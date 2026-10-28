@@ -13,7 +13,7 @@ export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
 export type EditPhase = 'start' | 'move' | 'end';
 export type SketchDimension = { kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
-type GeometryAnchor = { id: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[] };
+type GeometryAnchor = { id: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
 
 interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
@@ -113,6 +113,7 @@ export class Viewport {
     private document: ModelDocument | null = null;
     private geometryAnchor: GeometryAnchor | null = null;
     private hoverFaceAnchor: GeometryAnchor | null = null;
+    private surfaceCache = new Map<string, { vertices: Vec3[]; indices: number[]; point: Vec3 }>();
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
     private lastScale = '';
     private spacePressed = false;
@@ -272,7 +273,7 @@ export class Viewport {
         this.callbacks.onSpaceChange(false);
     }
     private updateOrbitRotation() {
-        this.controls.enableRotate = this.tool === 'select' && !this.sketchMode && !this.measureMode;
+        this.controls.enableRotate = ['select', 'offsetFace', 'fillet', 'chamfer', 'extrude'].includes(this.tool) && !this.sketchMode && !this.measureMode;
     }
     private onContextMenu(event: MouseEvent) {
         event.preventDefault();
@@ -459,7 +460,7 @@ export class Viewport {
             this.capturePointer(event);
             return;
         }
-        if (hit && this.tool !== 'select') this.controls.enableRotate = false;
+        if (hit && ['translate', 'rotate', 'scale'].includes(this.tool)) this.controls.enableRotate = false;
     }
 
     private onPointerMove(event: PointerEvent) {
@@ -682,12 +683,67 @@ export class Viewport {
         const distance = (a: THREE.Vector2, b: THREE.Vector2) => new THREE.Line3(new THREE.Vector3(a.x, a.y, 0), new THREE.Vector3(b.x, b.y, 0)).closestPointToPoint(new THREE.Vector3(pointer.x, pointer.y, 0), true, new THREE.Vector3()).distanceTo(new THREE.Vector3(pointer.x, pointer.y, 0));
         return Math.min(distance(screen[0], screen[1]), distance(screen[1], screen[2]), distance(screen[2], screen[0])) < 8;
     }
+    private collectSurface(mesh: THREE.Mesh, hit: THREE.Intersection) {
+        const start = hit.faceIndex ?? Math.floor((hit.face?.a || 0) / 3);
+        const key = `${mesh.uuid}:${start}`;
+        const cached = this.surfaceCache.get(key);
+        if (cached) return cached;
+        const geometry = mesh.geometry;
+        const positions = geometry.attributes.position;
+        const index = geometry.index;
+        const triangles: { vertices: number[]; normal: THREE.Vector3 }[] = [];
+        const vertexToTriangles = new Map<string, number[]>();
+        const triangleCount = (index?.count || positions.count) / 3;
+        for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+            const vertices = [0, 1, 2].map((offset) => index ? index.getX(triangleIndex * 3 + offset) : triangleIndex * 3 + offset);
+            const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(positions, vertex));
+            const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+            triangles.push({ vertices, normal });
+            vertices.forEach((vertex, offset) => {
+                const point = points[offset];
+                const key = `${point.x.toFixed(4)},${point.y.toFixed(4)},${point.z.toFixed(4)}`;
+                const list = vertexToTriangles.get(key) || [];
+                list.push(triangleIndex);
+                vertexToTriangles.set(key, list);
+            });
+        }
+        const visited = new Set<number>();
+        const queue = [start];
+        const threshold = Math.cos(THREE.MathUtils.degToRad(15));
+        for (let cursor = 0; cursor < queue.length; cursor++) {
+            const current = queue[cursor];
+            if (visited.has(current) || !triangles[current]) continue;
+            visited.add(current);
+            triangles[current].vertices.forEach((vertex) => {
+                const point = new THREE.Vector3().fromBufferAttribute(positions, vertex);
+                const key = `${point.x.toFixed(4)},${point.y.toFixed(4)},${point.z.toFixed(4)}`;
+                (vertexToTriangles.get(key) || []).forEach((neighbor) => {
+                    if (!visited.has(neighbor) && triangles[current].normal.dot(triangles[neighbor].normal) >= threshold) queue.push(neighbor);
+                });
+            });
+        }
+        const vertices: Vec3[] = [];
+        const indices: number[] = [];
+        const center = new THREE.Vector3();
+        [...visited].sort((a, b) => a - b).forEach((triangleIndex) => {
+            triangles[triangleIndex].vertices.forEach((vertex) => {
+                const point = new THREE.Vector3().fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld);
+                center.add(point);
+                vertices.push(point.toArray());
+                indices.push(indices.length);
+            });
+        });
+        const result = { vertices, indices, point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 };
+        this.surfaceCache.set(key, result);
+        return result;
+    }
     private createGeometryAnchor(hit: THREE.Intersection, event: PointerEvent, type: 'face' | 'edge'): GeometryAnchor {
         const mesh = hit.object as THREE.Mesh;
         const localNormal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone();
         const normal = localNormal.clone().transformDirection(hit.object.matrixWorld);
         const triangle = hit.face ? [hit.face.a, hit.face.b, hit.face.c].map((index) => new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld)) : [hit.point.clone()];
         let vertices = triangle;
+        let indices = [0, 1, 2];
         let point = hit.point.clone();
         if (type === 'face') {
             const bodyCenter = new THREE.Box3().setFromObject(hit.object).getCenter(new THREE.Vector3());
@@ -706,6 +762,12 @@ export class Viewport {
                     return new THREE.Vector3(...local as Vec3).applyMatrix4(mesh.matrixWorld);
                 });
                 point = vertices.reduce((center, vertex) => center.add(vertex), new THREE.Vector3()).multiplyScalar(0.25);
+                indices = [0, 1, 2, 0, 2, 3];
+            } else {
+                const surface = this.collectSurface(mesh, hit);
+                vertices = surface.vertices.map((point) => new THREE.Vector3(...point));
+                indices = surface.indices;
+                point = hit.point.clone();
             }
         } else if (triangle.length === 3) {
             const rect = this.renderer.domElement.getBoundingClientRect();
@@ -720,7 +782,7 @@ export class Viewport {
             vertices = [triangle[nearest[0]], triangle[nearest[1]]];
             point = vertices[0].clone().lerp(vertices[1], 0.5);
         }
-        return { id: hit.object.userData.entityId, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type, vertices: vertices.map((vertex) => vertex.toArray()) };
+        return { id: hit.object.userData.entityId, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type, vertices: vertices.map((vertex) => vertex.toArray()), indices };
     }
     private refreshFaceFeedback() {
         this.clearGroup(this.faceFeedback);
@@ -736,7 +798,7 @@ export class Viewport {
             this.faceFeedback.add(edge);
         } else {
             const geometry = new THREE.BufferGeometry().setFromPoints(anchor.vertices.map((point) => new THREE.Vector3(...point)));
-            geometry.setIndex(anchor.vertices.length >= 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2]);
+            geometry.setIndex(anchor.indices);
             const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.hoverFill, transparent: true, opacity: 0.52, side: THREE.DoubleSide, depthTest: false }));
             face.renderOrder = 13;
             this.faceFeedback.add(face);
@@ -822,6 +884,7 @@ export class Viewport {
 
     sync(document: ModelDocument) {
         this.document = document;
+        this.surfaceCache.clear();
         this.transform.detach();
         this.clearGroup(this.model);
         const next = buildScene(document);
@@ -929,10 +992,10 @@ export class Viewport {
     private addPlaneHelper(plane: SketchPlane) {
         const group = new THREE.Group();
         group.userData.planeId = plane.id;
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshBasicMaterial({ color: '#4a9c8e', transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }));
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.planeBlue, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
         const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(-40, -40, 0), new THREE.Vector3(40, -40, 0), new THREE.Vector3(40, 40, 0), new THREE.Vector3(-40, 40, 0),
-        ]), new THREE.LineBasicMaterial({ color: '#4a9c8e', transparent: true, opacity: 0.5 }));
+        ]), new THREE.LineBasicMaterial({ color: SKETCH_COLORS.planeBlue, transparent: true, opacity: 0.5 }));
         group.add(mesh, border);
         group.applyMatrix4(this.planeMatrix(plane));
         this.planes.add(group);
@@ -942,7 +1005,7 @@ export class Viewport {
             const active = group.userData.planeId === this.activePlane?.id;
             group.children.forEach((child) => {
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity: number };
-                material.opacity = active ? (child instanceof THREE.Line ? 0.9 : 0.16) : (child instanceof THREE.Line ? 0.35 : 0.05);
+                material.opacity = active ? (child instanceof THREE.Line ? 0.8 : 0.055) : (child instanceof THREE.Line ? 0.35 : 0.1);
             });
         });
     }
@@ -1029,6 +1092,7 @@ export class Viewport {
         this.updateOrbitRotation();
         this.controls.update();
         this.updateSketch(points, selectedIndex);
+        if (this.document) this.updateExtrudeGuide(this.document);
     }
     setSketchSelection(index: number) { this.selectedSketchPoint = index; this.updateMarkerColors(); }
     private sketchMarkers() {
@@ -1230,21 +1294,25 @@ export class Viewport {
 
     private createThickArrow(origin: THREE.Vector3, normal: THREE.Vector3, length: number, data: Record<string, any>) {
         const group = new THREE.Group();
-        const material = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.hoverLine, depthTest: false });
-        const shaftLength = Math.max(1, length - 5);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, shaftLength, 16), material);
+        const material = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.arrow, depthTest: false });
+        const arrowLength = length / 3;
+        const headHeight = Math.min(2, arrowLength * 0.35);
+        const shaftLength = Math.max(0.5, arrowLength - headHeight);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, shaftLength, 16), material);
         shaft.position.y = shaftLength / 2;
-        const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, 5, 20), material);
-        head.position.y = length - 2.5;
+        const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, headHeight, 20), material);
+        head.position.y = shaftLength + headHeight / 2;
         group.add(shaft, head);
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
+        group.scale.setScalar(2.5);
         group.traverse((child) => { Object.assign(child.userData, data); child.renderOrder = 12; });
         return group;
     }
     private updateExtrudeGuide(document: ModelDocument) {
         this.clearGroup(this.guides);
         this.refreshFaceFeedback();
+        if (this.sketchMode) return;
         if (this.tool === 'select') {
             const profiles = this.selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch' && profileClosed(item.profileType || 'polygon'))).filter(Boolean) as ModelDocument['entities'];
             if (!profiles.length) return;
@@ -1258,16 +1326,7 @@ export class Viewport {
             const plane = document.planes.find((item) => item.id === profiles[0].planeId);
             const normal = plane ? new THREE.Vector3(...plane.normal).normalize() : new THREE.Vector3(0, 1, 0);
             for (const direction of [1, -1] as const) {
-                const group = new THREE.Group();
-                const material = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.hoverLine, depthTest: false });
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 12, 16), material);
-                shaft.position.y = 7;
-                const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, 5, 20), material);
-                head.position.y = 15.5;
-                group.add(shaft, head);
-                group.position.copy(center);
-                group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().multiplyScalar(direction));
-                group.traverse((child) => { child.userData.extrudeArrow = { profileId: profiles[profiles.length - 1].id, direction }; child.renderOrder = 12; });
+                const group = this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId: profiles[profiles.length - 1].id, direction } });
                 this.guides.add(group);
             }
             return;

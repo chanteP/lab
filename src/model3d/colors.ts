@@ -6,6 +6,8 @@ export const SKETCH_COLORS = {
     activeDark: '#a95616',
     border: '#8a6b3a',
     deletePoint: '#e05252',
+    arrow: '#6f91ad',
+    planeBlue: '#5b8fc9',
     point: '#ffffff',
     pointActive: '#ffb65c',
     pointLocked: '#54a184',

@@ -314,3 +314,10 @@ button { color: inherit; }
 .viewport.is-handle-dragging { cursor: grabbing; }
 .viewport.is-border-hover { cursor: pointer; }
 .viewport.is-delete-point, .viewport.is-delete-point.is-handle-hover { cursor: not-allowed; }
+/* Compact polygon tool and selector, aligned to the icon's title/subtitle block. */
+.sketch-tool-list > button > span:last-child, .sketch-polygon-tool > button > span:last-child { display: flex; flex-direction: column; justify-content: center; gap: 2px; line-height: 1.2; }
+.sketch-tool-list > button strong, .sketch-polygon-tool > button strong { font-size: 11px; font-weight: 550; }
+.sketch-tool-list > button small, .sketch-polygon-tool > button small { color: #89958e; font-size: 9px; }
+.sketch-polygon-tool .n-select { width: 72px; height: 24px; min-height: 24px; margin: 4px 0 6px 45px; font-size: 10px; }
+.sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 22px; min-height: 22px; font-size: 10px; }
+.sketch-polygon-tool .n-select .n-base-selection-input { padding-top: 0; padding-bottom: 0; line-height: 22px; }

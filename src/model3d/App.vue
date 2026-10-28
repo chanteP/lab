@@ -116,7 +116,7 @@ const historySteps = computed(() => document.value.entities.flatMap((item) => {
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => parameterCardOpen.value && (sketchMode.value || (!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
+const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
 const commandResults = computed(() => {
@@ -588,12 +588,6 @@ function doneOperation() {
     if (!current) return;
     if (current.type === 'extrude') {
         const body = document.value.entities.find((item) => item.id === current.bodyId);
-        current.profileIds.forEach((profileId) => {
-            const profile = document.value.entities.find((item) => item.id === profileId);
-            if (profile) profile.visible = false;
-            const plane = document.value.planes.find((item) => item.id === profile?.planeId);
-            if (plane) plane.visible = false;
-        });
         let selectedId = current.bodyId;
         if (current.result !== 'new') {
             if (!current.targetId) return message.warning('请选择自动布尔的目标 Body');
@@ -1637,10 +1631,10 @@ onBeforeUnmount(() => {
                         <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
                         <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
                         <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
-                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span>正多边形</span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
+                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong><small>中心＋外顶点</small></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
                     </div>
                 </nav>
-                <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggle草图PointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
+                <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggleSketchPointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>mm</div>
 
