@@ -3,7 +3,8 @@ import type { ModelEntity, Point2 } from '../types';
 
 export type SketchGuideReference =
     | { kind: 'point'; entityId: string; index: number; point: Point2 }
-    | { kind: 'line'; entityId: string; index: number; a: Point2; b: Point2 };
+    | { kind: 'line'; entityId: string; index: number; a: Point2; b: Point2 }
+    | { kind: 'origin'; id: 'world' | 'plane'; point: Point2 };
 
 export interface SketchGuideMatch {
     point: Point2;
@@ -19,6 +20,7 @@ export interface SketchGuideRequest {
     edgeStart?: Point2;
     excludeEntityId?: string | null;
     excludePoint?: { entityId: string; index: number };
+    origins?: { id: 'world' | 'plane'; point: Point2 }[];
     threshold: number;
 }
 
@@ -75,7 +77,11 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideMatch 
     const { point, edgeStart, threshold, excludeEntityId, excludePoint } = request;
     const refs = references(request.entities, excludeEntityId, excludePoint);
     const candidates: Candidate[] = [];
-    refs.points.forEach((reference) => {
+    const pointReferences: Extract<SketchGuideReference, { kind: 'point' | 'origin' }>[] = [
+        ...refs.points,
+        ...(request.origins || []).map((origin) => ({ kind: 'origin' as const, id: origin.id, point: origin.point })),
+    ];
+    pointReferences.forEach((reference) => {
         const vertical: Point2 = [reference.point[0], point[1]];
         candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]) });
         const horizontal: Point2 = [point[0], reference.point[1]];

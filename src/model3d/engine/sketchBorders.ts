@@ -5,6 +5,7 @@ import type { ModelEntity, Point2 } from '../types';
 export interface BorderSegment {
     entityId: string;
     index: number;
+    sourceCount: number;
     points: Point2[];
     closed: boolean;
 }
@@ -17,16 +18,52 @@ export function borderSegments(entity: ModelEntity): BorderSegment[] {
         const points = type === 'regular' ? profilePoints(type, source, 64, undefined, entity.sides) : source;
         if (points.length < 2) return [];
         const count = closed ? points.length : points.length - 1;
-        return Array.from({ length: count }, (_, index) => {
+        const segments: BorderSegment[] = Array.from({ length: count }, (_, index) => {
             const a = points[index], b = points[(index + 1) % points.length];
             const curve = entity.curves?.[index];
             const samples = curve ? new THREE.CubicBezierCurve(new THREE.Vector2(...a), new THREE.Vector2(...curve.c1), new THREE.Vector2(...curve.c2), new THREE.Vector2(...b)).getPoints(24).map((point) => [point.x, point.y] as Point2) : [a, b];
-            return { entityId: entity.id, index, points: samples, closed: false };
+            return { entityId: entity.id, index, sourceCount: 1, points: samples, closed: false };
         });
+        const groups = segments.reduce<BorderSegment[]>((groups, segment) => {
+            const previous = groups[groups.length - 1];
+            if (previous) {
+                const a = previous.points[previous.points.length - 2], b = previous.points[previous.points.length - 1];
+                const c = segment.points[0], d = segment.points[1];
+                const incoming = new THREE.Vector2(b[0] - a[0], b[1] - a[1]).normalize();
+                const outgoing = new THREE.Vector2(d[0] - c[0], d[1] - c[1]).normalize();
+                if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(7))) {
+                    previous.points.push(...segment.points.slice(1));
+                    previous.sourceCount += 1;
+                    return groups;
+                }
+            }
+            groups.push({ ...segment, points: segment.points.map((point) => [...point]) });
+            return groups;
+        }, []);
+        if (closed && groups.length > 1) {
+            const first = groups[0], last = groups[groups.length - 1];
+            const a = last.points[last.points.length - 2], b = last.points[last.points.length - 1];
+            const c = first.points[0], d = first.points[1];
+            const incoming = new THREE.Vector2(b[0] - a[0], b[1] - a[1]).normalize();
+            const outgoing = new THREE.Vector2(d[0] - c[0], d[1] - c[1]).normalize();
+            if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(7))) {
+                const merged: BorderSegment = {
+                    ...last,
+                    points: [...last.points, ...first.points.slice(1)],
+                    sourceCount: last.sourceCount + first.sourceCount,
+                };
+                groups.splice(0, 1);
+                groups[groups.length - 1] = merged;
+            }
+        }
+        if (closed && groups.length === 1) {
+            groups[0].closed = true;
+        }
+        return groups;
     }
     const points = profilePoints(type, source, 64, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle);
     if (points.length < 2) return [];
-    return [{ entityId: entity.id, index: 0, points: closed ? [...points, points[0]] : points, closed }];
+    return [{ entityId: entity.id, index: 0, sourceCount: 1, points: closed ? [...points, points[0]] : points, closed }];
 }
 
 function cross(a: Point2, b: Point2) { return a[0] * b[1] - a[1] * b[0]; }
@@ -88,8 +125,12 @@ export function sliceBorder(segment: BorderSegment, start: number, end: number):
     const points: Point2[] = [pointAt(segment, start)];
     const first = Math.ceil(start * (segment.points.length - 1));
     const last = Math.floor(end * (segment.points.length - 1));
-    for (let index = first; index <= last; index++) points.push(segment.points[index]);
-    points.push(pointAt(segment, end));
+    const append = (point: Point2) => {
+        const previous = points[points.length - 1];
+        if (Math.hypot(point[0] - previous[0], point[1] - previous[1]) > 1e-8) points.push([...point]);
+    };
+    for (let index = first; index <= last; index++) append(segment.points[index]);
+    append(pointAt(segment, end));
     return points;
 }
 

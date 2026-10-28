@@ -13,6 +13,7 @@ import { GIZMO_COLORS, SKETCH_COLORS, VIEWPORT_COLORS } from '../config/colors';
 import { INTERACTION, SKETCH_STYLE } from '../config/const';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import { matchSketchGuide, type SketchGuideMatch } from './sketchGuides';
+import { integerStep } from '../utils/number';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
@@ -135,7 +136,7 @@ export class Viewport {
     private hoverFaceAnchor: GeometryAnchor | null = null;
     private surfaceCache = new Map<string, { vertices: Vec3[]; indices: number[]; point: Vec3 }>();
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
-    private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromQuaternion: THREE.Quaternion; toQuaternion: THREE.Quaternion; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
+    private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromQuaternion: THREE.Quaternion; toQuaternion: THREE.Quaternion; fromUp: THREE.Vector3; toUp: THREE.Vector3; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
     private beforeSketchView: { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; projection: 'perspective' | 'orthographic'; orthoHeight: number; color: THREE.Color; alpha: number } | null = null;
     private clearColor = new THREE.Color(VIEWPORT_COLORS.background);
     private clearAlpha = 1;
@@ -409,9 +410,10 @@ export class Viewport {
         const direction = new THREE.Vector2(match.b[0] - match.a[0], match.b[1] - match.a[1]).normalize();
         const a = this.sketchWorld([match.a[0] - direction.x * span, match.a[1] - direction.y * span], 0.2);
         const b = this.sketchWorld([match.a[0] + direction.x * span, match.a[1] + direction.y * span], 0.2);
+        const color = match.reference.kind === 'origin' ? SKETCH_COLORS.guide : SKETCH_COLORS.reference;
         const guide = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([a, b]),
-            new THREE.LineDashedMaterial({ color: SKETCH_COLORS.reference, dashSize: this.sketchUnitsPerPixel() * 7, gapSize: this.sketchUnitsPerPixel() * 4, depthTest: false, depthWrite: false }),
+            new THREE.LineDashedMaterial({ color, dashSize: this.sketchUnitsPerPixel() * 7, gapSize: this.sketchUnitsPerPixel() * 4, depthTest: false, depthWrite: false }),
         );
         guide.computeLineDistances();
         guide.renderOrder = 1000;
@@ -422,7 +424,7 @@ export class Viewport {
             ((border.material as LineMaterial).color).set(SKETCH_COLORS.reference);
             border.renderOrder = 1002;
             this.sketchReferences.add(border);
-        } else {
+        } else if (match.reference.kind === 'point') {
             const marker = new THREE.Mesh(new THREE.SphereGeometry(1.65, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
             marker.position.copy(this.sketchWorld(match.reference.point, 0.24));
             marker.renderOrder = 1004;
@@ -438,6 +440,13 @@ export class Viewport {
         const match = matchSketchGuide({
             entities: this.document.entities.filter((item) => item.kind === 'sketch' && item.planeId === this.activePlane!.id),
             point,
+            origins: [
+                { id: 'plane', point: [0, 0] },
+                { id: 'world', point: (() => {
+                    const offset = new THREE.Vector3(...this.activePlane!.origin).negate();
+                    return [offset.dot(new THREE.Vector3(...this.activePlane!.u)), offset.dot(new THREE.Vector3(...this.activePlane!.v))];
+                })() },
+            ],
             edgeStart: options.edgeStart,
             excludeEntityId: options.excludeEntityId,
             excludePoint: options.excludePointIndex !== undefined && this.editingSketchId ? { entityId: this.editingSketchId, index: options.excludePointIndex } : undefined,
@@ -480,6 +489,10 @@ export class Viewport {
         this.pointerStart.set(event.clientX, event.clientY);
         this.raycaster.params.Line.threshold = 1.5;
         if (event.button === 2 && !this.sketchMode) this.controls.mouseButtons.RIGHT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+        if (!this.sketchMode && event.button === 2) {
+            this.camera.up.set(0, 1, 0);
+            this.controls.update();
+        }
         if (this.sketchMode && event.button === 2) {
             this.clearSketchReferences();
             event.preventDefault(); event.stopImmediatePropagation();
@@ -493,6 +506,7 @@ export class Viewport {
         if (event.button !== 0) return;
         if (this.isGizmoEvent(event)) {
             this.clearSketchReferences();
+            if (!this.sketchMode) this.camera.up.set(0, 1, 0);
             event.preventDefault(); event.stopImmediatePropagation();
             this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: false };
             this.capturePointer(event);
@@ -635,15 +649,9 @@ export class Viewport {
     }
     private rotatePlaneView(dx: number, dy: number) {
         if (!this.activePlane) return;
-        const target = new THREE.Vector3(...this.activePlane.origin);
-        const offset = this.camera.position.clone().sub(target);
-        const horizontalAxis = this.camera.up.clone().normalize();
-        const verticalAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
-        offset.applyAxisAngle(horizontalAxis, -dx * 0.009);
-        offset.applyAxisAngle(verticalAxis, -dy * 0.009);
-        this.camera.position.copy(target).add(offset);
-        this.camera.lookAt(target);
-        this.controls.target.copy(target);
+        const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
+        this.camera.up.applyAxisAngle(normal, (dx + dy) * 0.009);
+        this.camera.lookAt(this.controls.target);
         this.controls.update();
     }
     private onPointerMove(event: PointerEvent) {
@@ -663,9 +671,7 @@ export class Viewport {
             const angle = (event.clientX - this.viewRotateDrag.x) * 0.006;
             this.viewRotateDrag.moved ||= Math.abs(event.clientX - this.viewRotateDrag.startX) > 4;
             const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
-            const offset = this.camera.position.clone().sub(this.controls.target).applyAxisAngle(normal, angle);
             this.camera.up.applyAxisAngle(normal, angle);
-            this.camera.position.copy(this.controls.target).add(offset);
             this.camera.lookAt(this.controls.target);
             this.controls.update();
             this.viewRotateDrag.x = event.clientX;
@@ -1092,7 +1098,7 @@ export class Viewport {
             this.camera.position.lerpVectors(transition.fromPosition, transition.toPosition, eased);
             this.controls.target.lerpVectors(transition.fromTarget, transition.toTarget, eased);
             this.camera.quaternion.slerpQuaternions(transition.fromQuaternion, transition.toQuaternion, eased);
-            this.camera.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
+            this.camera.up.lerpVectors(transition.fromUp, transition.toUp, eased).normalize();
             this.clearColor.lerpColors(transition.fromColor, transition.toColor, eased);
             this.clearAlpha = THREE.MathUtils.lerp(transition.fromAlpha, transition.toAlpha, eased);
             this.renderer.setClearColor(this.clearColor, this.clearAlpha);
@@ -1130,8 +1136,7 @@ export class Viewport {
         if (key !== this.lastScale) { this.lastScale = key; this.callbacks.onScale({ width, value: nice }); }
     }
     private formatLength(value: number) {
-        const converted = value / (this.lengthUnit === 'm' ? 1000 : this.lengthUnit === 'cm' ? 10 : 1);
-        return `${Number(converted.toFixed(2))} ${this.lengthUnit}`;
+        return `${Number(value.toFixed(2))} ${this.lengthUnit}`;
     }
     setLengthUnit(unit: LengthUnit) {
         this.lengthUnit = unit;
@@ -1380,6 +1385,7 @@ export class Viewport {
         this.cameraTransition = {
             started: performance.now(), fromPosition: this.camera.position.clone(), toPosition: position,
             fromTarget: this.controls.target.clone(), toTarget: target, fromQuaternion: this.camera.quaternion.clone(), toQuaternion: orientationCamera.quaternion.clone(),
+            fromUp: this.camera.up.clone(), toUp: up.clone(),
             fromColor: this.clearColor.clone(), toColor: new THREE.Color(color), fromAlpha: this.clearAlpha, toAlpha: alpha,
         };
         this.controls.enabled = false;
@@ -1404,6 +1410,7 @@ export class Viewport {
                 this.grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...this.activePlane.normal).normalize());
             }
         } else {
+            this.camera.up.set(0, 1, 0);
             this.planes.visible = true;
             this.grid.position.set(0, -0.02, 0);
             this.grid.quaternion.identity();
@@ -1412,7 +1419,7 @@ export class Viewport {
         this.controls.update();
         if (!active && wasSketch && this.beforeSketchView) {
             const view = this.beforeSketchView;
-            this.startCameraTransition(view.position, view.target, view.up, view.projection, `#${view.color.getHexString()}`, view.alpha, view.orthoHeight);
+            this.startCameraTransition(view.position, view.target, new THREE.Vector3(0, 1, 0), view.projection, `#${view.color.getHexString()}`, view.alpha, view.orthoHeight);
         }
         if (this.document) this.sync(this.document);
         this.updateSketch(points, selectedIndex);
@@ -1532,14 +1539,26 @@ export class Viewport {
         element.className = 'sketch-length-input';
         const input = window.document.createElement('input');
         input.type = 'number';
-        input.step = '0.01';
-        const factor = target.kind === 'angle' ? 1 : unit === 'm' ? 1000 : unit === 'cm' ? 10 : 1;
+        input.step = '1';
+        const factor = 1;
         input.value = (value / factor).toFixed(2);
         input.addEventListener('pointerdown', (event) => event.stopPropagation());
-        input.addEventListener('blur', () => {
+        const commit = () => {
             const next = Number(input.value);
             if (Number.isFinite(next) && next > 0) window.setTimeout(() => this.callbacks.onSketchDimension(target, target.kind === 'angle' ? next : next * factor), 0);
             else input.value = (value / factor).toFixed(2);
+        };
+        input.addEventListener('blur', commit);
+        input.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            input.value = String(integerStep(Number(input.value), event.deltaY < 0 ? 1 : -1));
+            commit();
+        }, { passive: false });
+        input.addEventListener('keydown', (event) => {
+            if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+            event.preventDefault();
+            input.value = String(integerStep(Number(input.value), event.key === 'ArrowUp' ? 1 : -1));
+            commit();
         });
         element.appendChild(input);
         if (target.kind === 'angle') {

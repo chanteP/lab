@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as THREE from 'three';
-import { NButton, NCheckbox, NIcon, NInput, NInputNumber, NModal, NPopconfirm, NPopover, NSelect, NTooltip, useMessage } from 'naive-ui';
+import { NButton, NCheckbox, NIcon, NInput, NModal, NPopconfirm, NPopover, NSelect, NTooltip, useMessage } from 'naive-ui';
 import {
     AddOutline, AnalyticsOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, CameraOutline,
     ChevronDownOutline, CloseOutline, CopyOutline, CreateOutline, CubeOutline,
@@ -27,8 +27,10 @@ import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
 import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
+import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
 import { INTERACTION } from './config/const';
 import { solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
+import { restitchSketchEdges, type RestitchEdge } from './engine/sketchRestitch';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
     type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
@@ -45,6 +47,7 @@ let directBase: ModelEntity | null = null;
 let directHistoryPushed = false;
 let extrudeGestureMoved = false;
 let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves } | null = null;
+let sketchRefreshFrame = 0;
 
 const projects = ref<ProjectRecord[]>([]);
 const document = ref<ModelDocument>(createDocument(storedLengthUnit()));
@@ -113,7 +116,7 @@ const selected = computed(() => selectedEntities.value.length === 1 ? selectedEn
 const { canUndo, canRedo, pushHistory, popHistory, undo, redo, clearHistory } = useUndoHistory(document, selectedIds);
 const { lengthUnit, scaleBar, scaleBarLabel, setLengthUnit, displayLength, inputLength, formatLength } = useUnits(document, () => { viewport?.setLengthUnit(lengthUnit.value); refreshSketch(); });
 const canBoolean = computed(() => selectedEntities.value.length === 2);
-const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
+const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : ['polygon', 'line'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const extrudeBody = computed(() => operation.value?.type === 'extrude' ? document.value.entities.find((item) => item.id === operation.value!.bodyId) : null);
 const booleanDraft = computed(() => operation.value?.type === 'boolean' ? operation.value : null);
@@ -802,7 +805,7 @@ function startSketch(editProfile = false) {
     sketchCurves.value = editing?.curves ? JSON.parse(JSON.stringify(editing.curves)) : {};
     sketchSides.value = editing?.sides || 3;
     sketchSectorAngle.value = editing?.sectorAngle || 360;
-    sketchOpen.value = !!editing?.open;
+    sketchOpen.value = editing ? !!editing.open : ['polygon', 'arc'].includes(sketchType.value);
     sketchProfileStartAngle.value = editing?.profileStartAngle;
     sketchAppendMode.value = !editing || editing.profileType === 'polygon';
     sketchSelectionTool.value = document.value.entities.some((item) => item.kind === 'sketch' && item.planeId === activePlaneId.value);
@@ -820,7 +823,7 @@ function startSketch(editProfile = false) {
     viewport?.normalToSketch();
 }
 function persistSketchProgress(resetAfter: boolean) {
-    const ready = ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3;
+    const ready = ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : ['polygon', 'line'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3;
     if (!ready) return;
     let id = editingSketchId.value;
     if (!id) {
@@ -851,9 +854,23 @@ function persistSketchProgress(resetAfter: boolean) {
         sketchAppendMode.value = sketchType.value === 'polygon';
         viewport?.setSketchEditing(id!);
         refreshSketch();
+        activateSketchSelectionTool();
     }
 }
 function refreshSketch() {
+    if (transforming) {
+        if (sketchRefreshFrame) return;
+        sketchRefreshFrame = requestAnimationFrame(() => {
+            sketchRefreshFrame = 0;
+            renderSketch();
+        });
+        return;
+    }
+    if (sketchRefreshFrame) cancelAnimationFrame(sketchRefreshFrame);
+    sketchRefreshFrame = 0;
+    renderSketch();
+}
+function renderSketch() {
     viewport?.setSketchEditing(editingSketchId.value);
     viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value);
 }
@@ -867,7 +884,7 @@ function setSketchType(type: ProfileType) {
     sketchCurves.value = {};
     sketchLockedPoints.value = [];
     sketchSectorAngle.value = 360;
-    sketchOpen.value = false;
+    sketchOpen.value = ['polygon', 'arc'].includes(type);
     sketchProfileStartAngle.value = undefined;
     sketchAppendMode.value = true;
     viewport?.setSketchEditing(null);
@@ -898,6 +915,7 @@ function clearSketchSelection() {
     sketchContextMenu.value = null;
     viewport?.setSketchEditing(null);
     refreshSketch();
+    activateSketchSelectionTool();
 }
 function selectSketchEntity(id: string) {
     const entity = document.value.entities.find((item) => item.id === id && item.kind === 'sketch');
@@ -1024,8 +1042,10 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
         curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
     });
-    syncEditingSketch();
-    if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    if (phase === 'end' || !transforming) {
+        syncEditingSketch();
+        if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    }
     refreshSketch();
     if (phase === 'end') finishSketchHandleDrag();
 }
@@ -1058,8 +1078,10 @@ function moveSketchCenter(point: Point2, phase: EditPhase) {
         curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
     });
     sketchCurves.value = curves;
-    syncEditingSketch();
-    if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    if (phase === 'end' || !transforming) {
+        syncEditingSketch();
+        if (sketchPoints.value.length >= 3) persistSketchProgress(false);
+    }
     refreshSketch();
     if (phase === 'end') {
         sketchCenterDrag = null;
@@ -1130,9 +1152,9 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
             if (type === 'arc') return makeOpen([samples[0], samples[Math.floor(samples.length / 2)], samples[samples.length - 1]], undefined, true);
             const source = entity.points || [];
             const a = source[segment.index], b = source[(segment.index + 1) % source.length];
-            const curve = entity.curves?.[segment.index];
+            const curve = segment.sourceCount === 1 ? entity.curves?.[segment.index] : undefined;
             if (!a || !b) return makeOpen(samples);
-            if (!curve) return makeOpen([samples[0], samples[samples.length - 1]]);
+            if (!curve) return makeOpen(samples);
             if (from === 0 && to === 1) return makeOpen([a, b], { c1: [...curve.c1], c2: [...curve.c2] });
             if (from === 0) {
                 const part = splitCubic(a, curve.c1, curve.c2, b, to).left;
@@ -1148,88 +1170,26 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
     clearSketchSelection();
 }
 function recloseProfiles(planeId: string) {
-    type Edge = { a: Point2; b: Point2; points: Point2[]; c1?: Point2; c2?: Point2 };
     const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId
         && (item.open || ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'))
         && !document.value.entities.some((entity) => entity.profileId === item.id));
     if (!candidates.length) return;
-    const edges: Edge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({
+    const edges: RestitchEdge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({
         a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points.map((point) => [...point] as Point2),
-        c1: entity.curves?.[segment.index]?.c1, c2: entity.curves?.[segment.index]?.c2,
+        c1: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c1 : undefined,
+        c2: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c2 : undefined,
     })));
-    const key = (point: Point2) => `${Math.round(point[0] * 100)},${Math.round(point[1] * 100)}`;
-    const components: Edge[][] = [];
-    const visited = new Set<Edge>();
-    edges.forEach((edge) => {
-        if (visited.has(edge)) return;
-        const component: Edge[] = [];
-        const queue = [edge];
-        visited.add(edge);
-        for (let cursor = 0; cursor < queue.length; cursor++) {
-            const current = queue[cursor];
-            component.push(current);
-            edges.forEach((other) => {
-                if (visited.has(other)) return;
-                const connected = [key(current.a), key(current.b)].some((node) => node === key(other.a) || node === key(other.b));
-                if (connected) { visited.add(other); queue.push(other); }
-            });
-        }
-        components.push(component);
-    });
-    const rebuilt: ModelEntity[] = [];
-    const make = (edges: Edge[], closed: boolean) => {
-        if (closed) {
-            const entity = createEntity('sketch', uid());
-            entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + rebuilt.length + 1}`;
-            entity.planeId = planeId;
-            entity.position = [0, 0, 0];
-            entity.profileType = 'polygon';
-            entity.open = false;
-            entity.points = [];
-            entity.curves = {};
-            const unused = new Set(edges);
-            const ordered: { edge: Edge; forward: boolean }[] = [];
-            const first = edges[0];
-            let current = first.b;
-            ordered.push({ edge: first, forward: true });
-            unused.delete(first);
-            while (unused.size) {
-                const next = [...unused].find((edge) => key(edge.a) === key(current) || key(edge.b) === key(current));
-                if (!next) break;
-                const forward = key(next.a) === key(current);
-                ordered.push({ edge: next, forward });
-                current = forward ? next.b : next.a;
-                unused.delete(next);
-            }
-            ordered.forEach(({ edge, forward }) => {
-                if (edge.c1 && edge.c2) {
-                    entity.points!.push([...(forward ? edge.a : edge.b)]);
-                    entity.curves![entity.points!.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
-                } else {
-                    const samples = forward ? edge.points : [...edge.points].reverse();
-                    samples.slice(0, -1).forEach((point) => entity.points!.push([...point]));
-                }
-                current = forward ? edge.b : edge.a;
-            });
-            delete entity.depth;
-            rebuilt.push(entity);
-        } else edges.forEach((edge) => {
-            const entity = createEntity('sketch', uid());
-            entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + rebuilt.length + 1}`;
-            entity.planeId = planeId;
-            entity.position = [0, 0, 0];
-            entity.profileType = 'polygon';
-            entity.open = true;
-            entity.points = edge.c1 && edge.c2 ? [[...edge.a], [...edge.b]] : edge.points.map((point) => [...point]);
-            if (edge.c1 && edge.c2) entity.curves = { 0: { c1: [...edge.c1], c2: [...edge.c2] } };
-            delete entity.depth;
-            rebuilt.push(entity);
-        });
-    };
-    components.forEach((component) => {
-        const degree = new Map<string, number>();
-        component.forEach((edge) => { degree.set(key(edge.a), (degree.get(key(edge.a)) || 0) + 1); degree.set(key(edge.b), (degree.get(key(edge.b)) || 0) + 1); });
-        make(component, component.length >= 2 && [...degree.values()].every((value) => value === 2));
+    const rebuilt = restitchSketchEdges(edges).map((path, index) => {
+        const entity = createEntity('sketch', uid());
+        entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + index + 1}`;
+        entity.planeId = planeId;
+        entity.position = [0, 0, 0];
+        entity.profileType = 'polygon';
+        entity.open = !path.closed;
+        entity.points = path.points;
+        entity.curves = path.curves;
+        delete entity.depth;
+        return entity;
     });
     document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
     document.value.entities.push(...rebuilt);
@@ -1259,8 +1219,10 @@ function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: 
     }
     ensureSketchSegment(segment);
     sketchCurves.value[segment][handle === 1 ? 'c1' : 'c2'] = point;
-    persistSketchProgress(false);
-    syncEditingSketch();
+    if (phase === 'end' || !transforming) {
+        persistSketchProgress(false);
+        syncEditingSketch();
+    }
     refreshSketch();
     if (phase === 'end') finishSketchHandleDrag();
 }
@@ -1357,7 +1319,7 @@ function onSketchSectorMove(point: Point2, phase: EditPhase) {
     const quarterDistance = Math.min(Math.abs(degrees - quarter), 360 - Math.abs(degrees - quarter));
     const snapped = quarterDistance <= INTERACTION.sectorQuarterSnapThresholdDeg ? quarter : Math.round(degrees);
     sketchSectorAngle.value = snapped % 360 === 0 ? 360 : Math.max(1, snapped);
-    syncEditingSketch();
+    if (phase === 'end' || !transforming) syncEditingSketch();
     refreshSketch();
     if (phase === 'end') finishSketchHandleDrag();
 }
@@ -1406,8 +1368,10 @@ function finishSketch() {
     if (!sketchMode.value) return;
     const points = [...sketchPoints.value];
     if (sketchType.value === 'polygon' && points.length > 1 && Math.hypot(points[0][0] - points[points.length - 1][0], points[0][1] - points[points.length - 1][1]) < 0.01) points.pop();
-    const ready = ['circle', 'regular'].includes(sketchType.value) ? points.length >= 2 : points.length >= 3;
+    const ready = ['circle', 'regular'].includes(sketchType.value) ? points.length >= 2 : ['polygon', 'line'].includes(sketchType.value) ? points.length >= 2 : points.length >= 3;
     if (!ready) return message.warning('当前草图工具的定义点不足');
+    if (['polygon', 'line'].includes(sketchType.value)) sketchOpen.value = points.length < 3;
+    if (sketchType.value === 'arc') sketchOpen.value = true;
     let id = editingSketchId.value;
     const existing = document.value.entities.find((entity) => entity.id === id);
     if (existing) {
@@ -1761,6 +1725,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
     clearTimeout(saveTimer);
+    cancelAnimationFrame(sketchRefreshFrame);
     flushSave();
     window.removeEventListener('keydown', onKeyDown);
     window.document.removeEventListener('contextmenu', preventContextMenu);
@@ -1849,10 +1814,10 @@ onBeforeUnmount(() => {
                     <template v-if="operation?.type === 'extrude' && extrudeBody">
                         <div class="context-title"><strong>拉伸</strong><span>{{ historyEditId ? '历史记录编辑' : '拖动画布箭头或输入距离' }}</span></div>
                         <div class="context-fields operation-fields">
-                            <label>距离<NInputNumber class="extrude-distance-input" :precision="4" :value="displayLength(extrudeBody.depth)" :min="displayLength(0.1)" size="small" @update:value="updateExtrudeLength" /></label>
+                            <label>距离<IntegerInputNumber class="extrude-distance-input" :precision="4" :value="displayLength(extrudeBody.depth)" :min="displayLength(0.1)" size="small" @update:value="updateExtrudeLength" /></label>
                             <label>方向<NSelect :value="extrudeBody.direction" size="small" :options="[{ label: '正向', value: 1 }, { label: '反向', value: -1 }]" @update:value="updateExtrude('direction', $event)" /></label>
                             <label>侧面<NSelect :value="extrudeBody.sideMode" size="small" :options="[{ label: '单侧', value: 'one' }, { label: '对称', value: 'symmetric' }]" @update:value="updateExtrude('sideMode', $event)" /></label>
-                            <label>拔模°<NInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="updateExtrude('draftAngle', $event)" /></label>
+                            <label>拔模°<IntegerInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="updateExtrude('draftAngle', $event)" /></label>
                             <label>结果<NSelect :value="operation.result" size="small" :options="[{ label: '新实体', value: 'new' }, { label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="updateExtrudeResult" /></label>
                             <NSelect v-if="operation.result !== 'new'" :value="operation.targetId" :options="operationTargets" placeholder="目标实体" size="small" @update:value="operation.targetId = $event" />
                             <NButton size="small" type="primary" @click="doneOperation">完成</NButton><NButton size="small" quaternary @click="cancelOperation">取消</NButton>
@@ -1872,10 +1837,10 @@ onBeforeUnmount(() => {
                         <div class="context-title"><NIcon><CreateOutline /></NIcon><strong>{{ editingSketchId ? '编辑草图' : '绘制草图' }}</strong><span>单击添加点，拖动顶点调整</span></div>
                         <div class="context-fields">
                             <NSelect v-if="!editingSketchId" :value="activePlaneId" :options="planeOptions" size="small" class="plane-select" @update:value="changeActivePlane" />
-                            <label>厚度<NInputNumber :precision="4" :value="displayLength(sketchDepth)" :min="displayLength(0.1)" size="small" @update:value="updateSketchDepth(inputLength($event))" /></label>
+                            <label>厚度<IntegerInputNumber :precision="4" :value="displayLength(sketchDepth)" :min="displayLength(0.1)" size="small" @update:value="updateSketchDepth(inputLength($event))" /></label>
                             <template v-if="selectedSketchPoint >= 0 && sketchPoints[selectedSketchPoint]">
-                                <label>X<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
-                                <label>Z<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
+                                <label>X<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
+                                <label>Z<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
                             </template>
                             <NButton size="small" secondary @click="viewport?.normalToSketch()">正视草图</NButton>
                             <NButton size="small" type="primary" :disabled="!sketchClosed" @click="finishSketch">退出草图</NButton>
@@ -1889,18 +1854,18 @@ onBeforeUnmount(() => {
                     <template v-else-if="selected">
                         <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
                         <div v-if="activeVector" class="context-fields vector-fields">
-                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
+                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<IntegerInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
                         <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
-                            <label>面偏移<NInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="updateFaceOffsetInput(inputLength($event))" /></label>
+                            <label>面偏移<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="updateFaceOffsetInput(inputLength($event))" /></label>
                             <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
                         </div>
                         <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">
-                            <label>距离<NInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.edge?.size || 0)" :min="0" :max="selected ? displayLength(edgeLimitFor(selected)) : 0" size="small" @update:value="updateEdgeSize" /></label>
+                            <label>距离<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.edge?.size || 0)" :min="0" :max="selected ? displayLength(edgeLimitFor(selected)) : 0" size="small" @update:value="updateEdgeSize" /></label>
                             <button class="text-button" @click="clearEdge">清除边处理</button>
                         </div>
                         <div v-else class="context-fields">
-                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<NInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="updateLengthEntity(field.key, $event)" /></label>
+                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<IntegerInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="updateLengthEntity(field.key, $event)" /></label>
                             <label v-if="selected.kind === 'extrude'" class="context-action"><NButton size="small" secondary @click="startSketch(true)">编辑轮廓</NButton></label>
                             <input class="context-color" type="color" :value="selected.color" title="实体颜色" @input="updateEntity('color', ($event.target as HTMLInputElement).value)" />
                         </div>
