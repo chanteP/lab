@@ -53,7 +53,7 @@ interface ViewportCallbacks {
     onViewportContext: (id: string | null, x: number, y: number) => void;
     onSpaceChange: (active: boolean) => void;
     onMeasureChange: (active: boolean) => void;
-    onScale: (scale: { width: number; label: string }) => void;
+    onScale: (scale: { width: number; value: number }) => void;
     onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
 }
 
@@ -106,6 +106,7 @@ export class Viewport {
     private altDeletePoint = -1;
     private altBorderDelete: { entityId: string; index: number; start: number; end: number } | null = null;
     private projectionMode: 'perspective' | 'orthographic' = 'perspective';
+    private lengthUnit: LengthUnit = 'mm';
     private projectionBeforeSketch: 'perspective' | 'orthographic' = 'perspective';
     private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number } | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
@@ -411,6 +412,8 @@ export class Viewport {
         if (event.button === 2 && !this.sketchMode) this.controls.mouseButtons.RIGHT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
         if (this.sketchMode && event.button === 2) {
             event.preventDefault(); event.stopImmediatePropagation();
+            this.controls.enableDamping = false;
+            this.controls.update();
             this.viewRotateDrag = { x: event.clientX, startX: event.clientX, moved: false };
             this.controls.enabled = false;
             this.capturePointer(event);
@@ -733,7 +736,9 @@ export class Viewport {
             event.preventDefault(); event.stopImmediatePropagation();
             if (!this.viewRotateDrag.moved) this.callbacks.onSketchCancelSelection();
             this.viewRotateDrag = null;
+            this.controls.enableDamping = true;
             this.controls.enabled = true;
+            this.controls.update();
             return;
         }
         if (this.gizmoDrag) {
@@ -1027,9 +1032,17 @@ export class Viewport {
         const fraction = raw / power;
         const nice = (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power;
         const width = Math.round(nice / unitsPerPixel);
-        const label = `${Number(nice.toFixed(2))} mm`;
-        const key = `${width}/${label}`;
-        if (key !== this.lastScale) { this.lastScale = key; this.callbacks.onScale({ width, label }); }
+        const key = `${width}/${nice}`;
+        if (key !== this.lastScale) { this.lastScale = key; this.callbacks.onScale({ width, value: nice }); }
+    }
+    private formatLength(value: number) {
+        const converted = value / (this.lengthUnit === 'm' ? 1000 : this.lengthUnit === 'cm' ? 10 : 1);
+        return `${Number(converted.toFixed(2))} ${this.lengthUnit}`;
+    }
+    setLengthUnit(unit: LengthUnit) {
+        this.lengthUnit = unit;
+        if (this.measurePoints.length === 2) { this.clearGroup(this.measurements); this.drawMeasurement(); }
+        if (this.document) this.updateExtrudeGuide(this.document);
     }
     private clearGroup(group: THREE.Group) {
         group.traverse((object) => {
@@ -1620,7 +1633,7 @@ export class Viewport {
             this.guides.add(arrow);
             const element = window.document.createElement('div');
             element.className = 'measure-value extrude-dimension';
-            element.textContent = `${Number(value.toFixed(4))} mm`;
+            element.textContent = this.formatLength(value);
             element.addEventListener('click', () => this.callbacks.onExtrudeDimension());
             const label = new CSS2DObject(element);
             label.position.copy(origin).add(normal.clone().multiplyScalar(length));
@@ -1643,7 +1656,7 @@ export class Viewport {
         this.guides.add(arrow);
         const element = window.document.createElement('div');
         element.className = 'measure-value extrude-dimension';
-        element.textContent = `${length.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')} mm`;
+        element.textContent = this.formatLength(length);
         element.addEventListener('click', () => this.callbacks.onExtrudeDimension());
         const label = new CSS2DObject(element);
         label.position.copy(arrowOrigin).add(normal.multiplyScalar(direction * 18));
@@ -1730,11 +1743,11 @@ export class Viewport {
     }
     private drawMeasurement() {
         const [a, b] = this.measurePoints;
-        this.doubleArrow(a, b, '#147d70', `${a.distanceTo(b).toFixed(2)} mm`, 'measure-total');
+        this.doubleArrow(a, b, '#147d70', this.formatLength(a.distanceTo(b)), 'measure-total');
         const x = new THREE.Vector3(b.x, a.y, a.z), y = new THREE.Vector3(b.x, b.y, a.z);
-        if (Math.abs(b.x - a.x) > 0.0001) this.doubleArrow(a, x, '#ef5261', `${Math.abs(b.x - a.x).toFixed(2)} mm`, 'axis-x');
-        if (Math.abs(b.y - a.y) > 0.0001) this.doubleArrow(x, y, '#63ad45', `${Math.abs(b.y - a.y).toFixed(2)} mm`, 'axis-y');
-        if (Math.abs(b.z - a.z) > 0.0001) this.doubleArrow(y, b, '#4c86e8', `${Math.abs(b.z - a.z).toFixed(2)} mm`, 'axis-z');
+        if (Math.abs(b.x - a.x) > 0.0001) this.doubleArrow(a, x, '#ef5261', this.formatLength(Math.abs(b.x - a.x)), 'axis-x');
+        if (Math.abs(b.y - a.y) > 0.0001) this.doubleArrow(x, y, '#63ad45', this.formatLength(Math.abs(b.y - a.y)), 'axis-y');
+        if (Math.abs(b.z - a.z) > 0.0001) this.doubleArrow(y, b, '#4c86e8', this.formatLength(Math.abs(b.z - a.z)), 'axis-z');
     }
     private clearMeasurement() {
         this.clearHoverFace();

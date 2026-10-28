@@ -71,7 +71,7 @@ const operation = ref<OperationState | null>(null);
 const historyEditId = ref<string | null>(null);
 const stats = ref({ vertices: 0, triangles: 0, objects: 0 });
 const measureMode = ref(false);
-const scaleBar = ref({ width: 76, label: '50 mm' });
+const scaleBar = ref({ width: 76, value: 50 });
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
 const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
@@ -99,6 +99,7 @@ const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
 const sketchSelectionTool = ref(false);
 const lengthUnit = ref<LengthUnit>(storedLengthUnit());
+const scaleBarLabel = computed(() => formatLength(scaleBar.value.value));
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
@@ -154,7 +155,7 @@ const dimensionFields = computed(() => {
 });
 const activeVector = computed(() => {
     if (!selected.value) return null;
-    if (activeTool.value === 'translate') return { key: 'position' as const, label: '位置', value: selected.value.position, step: 1 };
+    if (activeTool.value === 'translate') return { key: 'position' as const, label: '位置', value: selected.value.position, step: displayLength(1) };
     if (activeTool.value === 'rotate') return { key: 'rotation' as const, label: '旋转', value: selected.value.rotation, step: 15 };
     if (activeTool.value === 'scale') return { key: 'scale' as const, label: '缩放', value: selected.value.scale, step: 0.1 };
     return null;
@@ -205,8 +206,12 @@ function setLengthUnit(unit: LengthUnit) {
     lengthUnit.value = unit;
     document.value.lengthUnit = unit;
     localStorage.setItem('lab:model3d:sketch:lengthUnit', unit);
+    viewport?.setLengthUnit(unit);
     refreshSketch();
 }
+function displayLength(value: number) { return value / (lengthUnit.value === 'm' ? 1000 : lengthUnit.value === 'cm' ? 10 : 1); }
+function inputLength(value: number | null) { return value === null ? null : value * (lengthUnit.value === 'm' ? 1000 : lengthUnit.value === 'cm' ? 10 : 1); }
+function formatLength(value: number) { return `${Number(displayLength(value).toFixed(2))} ${lengthUnit.value}`; }
 function cloneEntity(entity: ModelEntity) { return JSON.parse(JSON.stringify(entity)) as ModelEntity; }
 function uniqueName(kind: ModelEntity['kind']) {
     const base = ENTITY_NAMES[kind];
@@ -374,7 +379,7 @@ async function openProject(id: string, saveCurrent = true) {
     restoring = true;
     project.value = next;
     document.value = normalizeDocument(cloneDocument(next.document));
-    lengthUnit.value = document.value.lengthUnit || storedLengthUnit();
+    lengthUnit.value = storedLengthUnit();
     activePlaneId.value = document.value.planes[0]?.id || null;
     selectedIds.value = [];
     isolateActive.value = false;
@@ -445,10 +450,16 @@ function updateEntity(key: keyof ModelEntity, value: any) {
     pushHistory();
     (selected.value as any)[key] = value;
 }
+function updateLengthEntity(key: keyof ModelEntity, value: number | null) { updateEntity(key, inputLength(value)); }
+function updateExtrudeLength(value: number | null) { updateExtrude('depth', inputLength(value)); }
+function updateEdgeSize(value: number | null) {
+    if (!selected.value || !['fillet', 'chamfer'].includes(activeTool.value)) return;
+    updateEntity('edge', { type: activeTool.value, size: inputLength(value) || 0, segments: selected.value.edge?.segments || 6 });
+}
 function updateVector(key: 'position' | 'rotation' | 'scale', index: number, value: number | null) {
     if (!selected.value || value === null) return;
     pushHistory();
-    selected.value[key][index] = key === 'scale' ? Math.max(0.01, value) : value;
+    selected.value[key][index] = key === 'scale' ? Math.max(0.01, value) : key === 'position' ? inputLength(value)! : value;
 }
 function removeSelected() {
     if (selectedIds.value.length) deleteNodeIds(selectedIds.value);
@@ -1690,6 +1701,7 @@ onMounted(async () => {
         onStats: (value) => stats.value = value,
     });
     viewport.sync(document.value);
+    viewport.setLengthUnit(lengthUnit.value);
     window.addEventListener('keydown', onKeyDown);
     window.document.addEventListener('contextmenu', preventContextMenu);
     window.document.addEventListener('wheel', preventBrowserZoom, { passive: false });
@@ -1843,27 +1855,27 @@ onBeforeUnmount(() => {
                 </aside>
 
                 <nav class="sketch-toolbar" :class="{ 'toolbar-enter': sketchMode || activePanel === 'sketch' }">
-                    <button class="sketch-close" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
+                    <button class="sketch-close" :class="{ 'is-exiting': sketchMode }" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
                     <div v-if="!sketchMode" class="sketch-plane-picker"><p>选择一个绘制平面。视角将转为垂直于该平面的正交视图。</p><div class="inline-command-row"><button @click="createPlane('XZ'); beginSketch(activePlaneId!)">XZ</button><button @click="createPlane('XY'); beginSketch(activePlaneId!)">XY</button><button @click="createPlane('YZ'); beginSketch(activePlaneId!)">YZ</button></div><button v-for="plane in document.planes" :key="plane.id" class="menu-command" @click="beginSketch(plane.id)"><NIcon><GridOutline /></NIcon><span><strong>{{ plane.name }}</strong></span></button><button v-if="selectionKind === 'face'" class="menu-command" @click="beginSketch()"><NIcon><CubeOutline /></NIcon><span><strong>所选实体平面</strong></span></button></div>
                     <div v-else class="sketch-tool-list">
                         <button :class="{ active: sketchSelectionTool }" @click="activateSketchSelectionTool"><span class="sketch-tool-icon"><NIcon><NavigateOutline /></NIcon></span><span>选择</span></button>
                         <button :class="{ active: !sketchSelectionTool && sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 曲线</span></button>
                         <button :class="{ active: !sketchSelectionTool && sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
                         <button :class="{ active: !sketchSelectionTool && sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
-                        <button :class="{ active: !sketchSelectionTool && sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
+                        <button :class="{ active: !sketchSelectionTool && sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><SvgIcon name="ellipse" /></span><span>椭圆</span></button>
                         <div class="sketch-polygon-tool" :class="{ active: !sketchSelectionTool && sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
                     </div>
                 </nav>
                 <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggleSketchPointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
 
-                <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>mm</div>
+                <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 
                 <section v-if="contextVisible" class="context-panel">
                     <button class="parameter-close" title="收起参数卡，不退出工具" @click="parameterCardOpen = false"><NIcon><ChevronDownOutline /></NIcon></button>
                     <template v-if="operation?.type === 'extrude' && extrudeBody">
                         <div class="context-title"><strong>拉伸</strong><span>{{ historyEditId ? '历史记录编辑' : '拖动画布箭头或输入距离' }}</span></div>
                         <div class="context-fields operation-fields">
-                            <label>距离<NInputNumber class="extrude-distance-input" :precision="4" :value="extrudeBody.depth" :min="0.1" size="small" @update:value="updateExtrude('depth', $event)" /></label>
+                            <label>距离<NInputNumber class="extrude-distance-input" :precision="4" :value="displayLength(extrudeBody.depth)" :min="displayLength(0.1)" size="small" @update:value="updateExtrudeLength" /></label>
                             <label>方向<NSelect :value="extrudeBody.direction" size="small" :options="[{ label: '正向', value: 1 }, { label: '反向', value: -1 }]" @update:value="updateExtrude('direction', $event)" /></label>
                             <label>侧面<NSelect :value="extrudeBody.sideMode" size="small" :options="[{ label: '单侧', value: 'one' }, { label: '对称', value: 'symmetric' }]" @update:value="updateExtrude('sideMode', $event)" /></label>
                             <label>拔模°<NInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="updateExtrude('draftAngle', $event)" /></label>
@@ -1886,7 +1898,7 @@ onBeforeUnmount(() => {
                         <div class="context-title"><NIcon><CreateOutline /></NIcon><strong>{{ editingSketchId ? '编辑草图' : '绘制草图' }}</strong><span>单击添加点，拖动顶点调整</span></div>
                         <div class="context-fields">
                             <NSelect v-if="!editingSketchId" :value="activePlaneId" :options="planeOptions" size="small" class="plane-select" @update:value="changeActivePlane" />
-                            <label>厚度<NInputNumber :precision="4" :value="sketchDepth" :min="0.1" size="small" @update:value="updateSketchDepth" /></label>
+                            <label>厚度<NInputNumber :precision="4" :value="displayLength(sketchDepth)" :min="displayLength(0.1)" size="small" @update:value="updateSketchDepth(inputLength($event))" /></label>
                             <template v-if="selectedSketchPoint >= 0 && sketchPoints[selectedSketchPoint]">
                                 <label>X<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
                                 <label>Z<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
@@ -1903,18 +1915,18 @@ onBeforeUnmount(() => {
                     <template v-else-if="selected">
                         <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
                         <div v-if="activeVector" class="context-fields vector-fields">
-                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
+                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
                         <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
-                            <label>面偏移<NInputNumber class="direct-distance-input" :precision="2" :value="selected.faceOffset?.distance || 0" size="small" @update:value="updateFaceOffsetInput" /></label>
+                            <label>面偏移<NInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="updateFaceOffsetInput(inputLength($event))" /></label>
                             <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
                         </div>
                         <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">
-                            <label>距离<NInputNumber class="direct-distance-input" :precision="4" :value="selected.edge?.size || 0" :min="0" :max="selected ? edgeLimitFor(selected) : 0" size="small" @update:value="updateEntity('edge', { type: activeTool, size: $event || 0, segments: selected.edge?.segments || 6 })" /></label>
+                            <label>距离<NInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.edge?.size || 0)" :min="0" :max="selected ? displayLength(edgeLimitFor(selected)) : 0" size="small" @update:value="updateEdgeSize" /></label>
                             <button class="text-button" @click="clearEdge">清除边处理</button>
                         </div>
                         <div v-else class="context-fields">
-                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<NInputNumber :precision="4" :value="field.value" :min="0.1" size="small" :show-button="false" @update:value="updateEntity(field.key, $event)" /></label>
+                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<NInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="updateLengthEntity(field.key, $event)" /></label>
                             <label v-if="selected.kind === 'extrude'" class="context-action"><NButton size="small" secondary @click="startSketch(true)">编辑轮廓</NButton></label>
                             <input class="context-color" type="color" :value="selected.color" title="实体颜色" @input="updateEntity('color', ($event.target as HTMLInputElement).value)" />
                         </div>
@@ -1930,7 +1942,7 @@ onBeforeUnmount(() => {
                         <NTooltip><template #trigger><button @click.stop="toggleProjection"><NIcon><component :is="projectionMode === 'perspective' ? CameraOutline : GridOutline" /></NIcon></button></template>{{ projectionMode === 'perspective' ? '切换正交相机' : '切换透视相机' }}</NTooltip>
                         <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图</NTooltip>
                     </div>
-                    <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
+                    <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBarLabel }}</span></div>
                 </div>
                 <div class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>

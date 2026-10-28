@@ -321,9 +321,22 @@ button { color: inherit; }
 .sketch-polygon-tool .n-select { width: 72px; height: 24px; min-height: 24px; margin: 4px 0 6px 45px; font-size: 10px; }
 .sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 22px; min-height: 22px; font-size: 10px; }
 .sketch-polygon-tool .n-select .n-base-selection-input { padding-top: 0; padding-bottom: 0; line-height: 22px; }
-.sketch-polygon-tool .n-select { transform: scale(.55); transform-origin: left top; margin: 0 0 -10px 45px; padding: 1px; }
-.sketch-polygon-tool .n-select .n-base-selection-input { padding-right: 0; font-size: 8px; }
-.sketch-polygon-tool .n-select .n-base-selection-arrow, .sketch-polygon-tool .n-select .n-base-suffix { width: 10px; font-size: 8px; }
 .viewport.is-panning, .viewport.is-sketching.is-panning { cursor: grab; }
 .viewport.is-panning:active, .viewport.is-sketching.is-panning:active { cursor: grabbing; }
 .viewport.is-arrow-hover { cursor: grab; }
+/* Subtitle-style polygon selector: no scale transform, white box or large title gap. */
+.sketch-polygon-tool .n-select { width: 54px; height: 14px; min-height: 14px; margin: 1px 0 0 45px; padding: 0; transform: none; font-size: 10px; }
+.sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 14px; min-height: 14px; padding: 0; color: #89958e; background: transparent; border: 0; box-shadow: none; font-size: 10px; line-height: 14px; }
+.sketch-polygon-tool .n-select .n-base-selection-input { padding: 0; }
+.sketch-polygon-tool .n-select .n-base-selection-arrow, .sketch-polygon-tool .n-select .n-base-suffix { width: 10px; margin: 0; padding: 0; color: #89958e; font-size: 9px; }
+.sketch-polygon-tool .n-select .n-base-selection-input .n-base-selection-input__content { padding: 0; }
+/* Elastic icon and independent title/subtitle feedback. */
+.vertical-toolbar .tool-group button, .menu-command > .n-icon, .menu-command > .svg-icon, .sketch-tool-icon, .menu-command > span:last-child, .sketch-tool-list > button > span:last-child, .sketch-polygon-tool > button > span:last-child { transition: transform .22s cubic-bezier(.34,1.56,.64,1), color .15s ease; }
+.vertical-toolbar .tool-group button:hover { transform: scale(1.12); }
+.vertical-toolbar .tool-group button:active { transform: scale(.92); }
+.menu-command:hover > .n-icon, .menu-command:hover > .svg-icon, .sketch-tool-list > button:hover .sketch-tool-icon, .sketch-polygon-tool > button:hover .sketch-tool-icon { transform: scale(1.16); }
+.menu-command:hover > span:last-child, .sketch-tool-list > button:hover > span:last-child, .sketch-polygon-tool > button:hover > span:last-child { transform: scale(1.045); transform-origin: left center; }
+.menu-command:active > .n-icon, .menu-command:active > .svg-icon, .sketch-tool-list > button:active .sketch-tool-icon { transform: scale(.9); }
+.sketch-close.is-exiting { padding: 8px 9px 10px; color: #fff; background: #c94f4f; border-bottom: 0; border-radius: 7px; }
+.sketch-close.is-exiting strong { font-size: 14px; font-weight: 700; }
+.sketch-close.is-exiting .sketch-tool-icon { color: #fff; background: #c94f4f; border-color: #ffffff70; }
