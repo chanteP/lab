@@ -25,6 +25,7 @@ export class OrientationGizmo extends Object3D {
 
 		this.isViewHelper = true;
 		this.camera = camera;
+		this.orientation = new Quaternion();
 
 		this.animating = false;
 		this.center = new Vector3();
@@ -107,7 +108,7 @@ export class OrientationGizmo extends Object3D {
 
 		this.render = function ( renderer ) {
 
-			this.quaternion.copy( this.camera.quaternion ).invert();
+			this.quaternion.copy( this.camera.quaternion ).invert().multiply( this.orientation );
 			this.updateMatrixWorld();
 
 			point.set( 0, 0, 1 );
@@ -176,6 +177,12 @@ export class OrientationGizmo extends Object3D {
 			options.labelZ = labelZ;
 
 			updateLabels();
+
+		};
+
+		this.setOrientation = function ( quaternion ) {
+
+			this.orientation.copy( quaternion );
 
 		};
 

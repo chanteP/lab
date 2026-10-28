@@ -8,6 +8,7 @@ export const SKETCH_COLORS = {
     deletePoint: '#e05252',
     arrow: '#6f91ad',
     planeBlue: '#5b8fc9',
+    edge: '#26302c',
     point: '#ffffff',
     pointActive: '#ffb65c',
     pointLocked: '#54a184',
