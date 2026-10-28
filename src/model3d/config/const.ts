@@ -12,6 +12,7 @@ export const INTERACTION = {
     cameraTransitionMs: 600,
     clickTolerancePx: 5,
     sectorQuarterSnapThresholdDeg: 4,
+    sketchGuideSnapPx: 8,
 } as const;
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */

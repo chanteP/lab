@@ -63,6 +63,8 @@
 - border 求交必须包含 T 型的端点-边相交，不能只接受边-边内部交叉；选中形状的 handler、辅助线使用最高渲染层，禁止被其他轮廓覆盖。
 - 椭圆使用两个带方向的正交半径向量，拖动任一半径点时另一个保持原半径并同步旋转，扇形点与裁边统一使用椭圆局部参数角；控制点拖动期间不重建完整场景。
 - 圆/椭圆扇形点拖动吸附整数角度，90° 倍数附近有增强磁吸；双击恢复完整圆/椭圆。双击贝塞尔控制点将其放回直线，拖动端点不改变原本直线段的曲率。
+- 草图参考线计算独立放在 `engine/sketchGuides.ts`，视口叠加层与草图几何分离；不为参考高亮修改原轮廓材质，清空叠加层即恢复显示。
+- 单点使用所有参考点的同轴水平/垂直线；形成 Line 边时增加所有真实直线的平行/垂直线。磁吸阈值使用屏幕像素，禁止直接以固定世界距离判断。
 - 非 Line 形状提供中心操作点，拖动中心只平移整个形状及其曲线控制点，不改变尺寸。
 - Line 操作点支持 Alt/Option＋点击删除；至少保留两个点，删除后同步重排曲线与锁定点索引。
 - 当前选中形状统一使用 active 颜色；操作点带描边，抓手/删除光标与边框 hover、选中深色必须明确区分。
@@ -88,3 +90,4 @@
 - 界面颜色也在同一文件：`UI_COLORS` 对应 `var(--model3d-ui-<hex>)`，`UI_NAMED_COLORS` 对应 `var(--model3d-ui-<name>)`，由 `index.ts` 在挂载前注入。调整色值只改 const，不在 Vue/CSS 中新增硬编码颜色。
 - 平行线颜色使用 `SKETCH_COLORS.line`；线宽、间距和不透明度在 `config/const.ts` 的 `SKETCH_STYLE.hatchLineWidth / hatchSpacing / hatchOpacity` 调整，单位与草图平面坐标一致。
 - 扇形磁吸阈值在 `INTERACTION.sectorQuarterSnapThresholdDeg` 调整；默认在 90° 倍数前后 4° 内吸附。
+- 草图参考线及参考对象使用 `SKETCH_COLORS.reference`（参考色）；统一屏幕磁吸距离在 `INTERACTION.sketchGuideSnapPx` 调整，默认 8px。

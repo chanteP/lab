@@ -12,6 +12,7 @@ import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipsePoi
 import { GIZMO_COLORS, SKETCH_COLORS, VIEWPORT_COLORS } from '../config/colors';
 import { INTERACTION, SKETCH_STYLE } from '../config/const';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
+import { matchSketchGuide, type SketchGuideMatch } from './sketchGuides';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
@@ -19,6 +20,7 @@ export type CameraView = 'perspective' | 'front' | 'top' | 'right';
 export type EditPhase = 'start' | 'move' | 'end';
 export type SketchDimension = { kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 type GeometryAnchor = { id: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
+type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
 
 interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
@@ -81,6 +83,7 @@ export class Viewport {
     private guides = new THREE.Group();
     private faceFeedback = new THREE.Group();
     private trimFeedback = new THREE.Group();
+    private sketchReferences = new THREE.Group();
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
     private shadow: THREE.Mesh;
@@ -99,6 +102,7 @@ export class Viewport {
     private viewRotateDrag: { x: number; startX: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
     private sketchProfileType: ProfileType = 'polygon';
+    private currentSketchPoints: Point2[] = [];
     private sketchSelectionTool = false;
     private sketchSelectionGuardUntil = 0;
     private sketchSelectionGuardPointerUp = false;
@@ -211,7 +215,7 @@ export class Viewport {
         this.planeGizmo.setLabels('U', 'V', 'N');
         this.planeGizmo.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
 
-        this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback);
+        this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences);
         this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
         this.grid.position.y = -0.02;
         (this.grid.material as THREE.Material).transparent = true;
@@ -278,6 +282,7 @@ export class Viewport {
         if (event.code !== 'Space' || this.isTypingTarget(event.target)) return;
         event.preventDefault();
         if (!this.spacePressed) {
+            this.clearSketchReferences();
             this.spacePressed = true;
             this.shapeDrag = null;
             this.sketchDrag = null;
@@ -389,6 +394,70 @@ export class Viewport {
         return [Math.round(point.dot(new THREE.Vector3(...this.activePlane.u)) * 10) / 10,
             Math.round(point.dot(new THREE.Vector3(...this.activePlane.v)) * 10) / 10];
     }
+    private sketchUnitsPerPixel() {
+        const height = Math.max(1, this.renderer.domElement.clientHeight);
+        if (this.camera instanceof THREE.OrthographicCamera) return (this.camera.top - this.camera.bottom) / this.camera.zoom / height;
+        const distance = this.camera.position.distanceTo(this.controls.target);
+        return 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
+    }
+    private clearSketchReferences() {
+        this.clearGroup(this.sketchReferences);
+    }
+    private renderSketchReference(match: SketchGuideMatch) {
+        this.clearSketchReferences();
+        const span = Math.max(10, this.sketchUnitsPerPixel() * this.renderer.domElement.clientHeight * 1.5);
+        const direction = new THREE.Vector2(match.b[0] - match.a[0], match.b[1] - match.a[1]).normalize();
+        const a = this.sketchWorld([match.a[0] - direction.x * span, match.a[1] - direction.y * span], 0.2);
+        const b = this.sketchWorld([match.a[0] + direction.x * span, match.a[1] + direction.y * span], 0.2);
+        const guide = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([a, b]),
+            new THREE.LineDashedMaterial({ color: SKETCH_COLORS.reference, dashSize: this.sketchUnitsPerPixel() * 7, gapSize: this.sketchUnitsPerPixel() * 4, depthTest: false, depthWrite: false }),
+        );
+        guide.computeLineDistances();
+        guide.renderOrder = 1000;
+        this.sketchReferences.add(guide);
+
+        if (match.reference.kind === 'line') {
+            const border = this.createFatLine([this.sketchWorld(match.reference.a, 0.22), this.sketchWorld(match.reference.b, 0.22)]);
+            ((border.material as LineMaterial).color).set(SKETCH_COLORS.reference);
+            border.renderOrder = 1002;
+            this.sketchReferences.add(border);
+        } else {
+            const marker = new THREE.Mesh(new THREE.SphereGeometry(1.65, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
+            marker.position.copy(this.sketchWorld(match.reference.point, 0.24));
+            marker.renderOrder = 1004;
+            this.sketchReferences.add(marker);
+        }
+    }
+    private sketchOperationPoint(event: PointerEvent, options: SketchGuideOptions = {}) {
+        const point = this.sketchPoint(event);
+        if (!point || options.disabled || !this.document || !this.activePlane) {
+            this.clearSketchReferences();
+            return point;
+        }
+        const match = matchSketchGuide({
+            entities: this.document.entities.filter((item) => item.kind === 'sketch' && item.planeId === this.activePlane!.id),
+            point,
+            edgeStart: options.edgeStart,
+            excludeEntityId: options.excludeEntityId,
+            excludePoint: options.excludePointIndex !== undefined && this.editingSketchId ? { entityId: this.editingSketchId, index: options.excludePointIndex } : undefined,
+            threshold: this.sketchUnitsPerPixel() * INTERACTION.sketchGuideSnapPx,
+        });
+        if (match) this.renderSketchReference(match);
+        else this.clearSketchReferences();
+        return match?.point || point;
+    }
+    private sketchDragPoint(event: PointerEvent) {
+        if (!this.sketchDrag) return this.sketchPoint(event);
+        return this.sketchOperationPoint(event, {
+            disabled: this.sketchDrag.sector,
+            excludeEntityId: this.sketchDrag.center ? this.editingSketchId || undefined : undefined,
+            excludePointIndex: !this.sketchDrag.center && !this.sketchDrag.handle && !this.sketchDrag.sector ? this.sketchDrag.index : undefined,
+        });
+    }
+    private drawingEdgeStart() {
+        return !this.sketchSelectionTool && ['polygon', 'line'].includes(this.sketchProfileType) ? this.currentSketchPoints[this.currentSketchPoints.length - 1] : undefined;
+    }
     private sketchWorld([u, v]: Point2, offset = 0.12) {
         if (!this.activePlane) return new THREE.Vector3(u, offset, v);
         return new THREE.Vector3(...this.activePlane.origin)
@@ -412,6 +481,7 @@ export class Viewport {
         this.raycaster.params.Line.threshold = 1.5;
         if (event.button === 2 && !this.sketchMode) this.controls.mouseButtons.RIGHT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
         if (this.sketchMode && event.button === 2) {
+            this.clearSketchReferences();
             event.preventDefault(); event.stopImmediatePropagation();
             this.controls.enableDamping = false;
             this.controls.update();
@@ -422,6 +492,7 @@ export class Viewport {
         }
         if (event.button !== 0) return;
         if (this.isGizmoEvent(event)) {
+            this.clearSketchReferences();
             event.preventDefault(); event.stopImmediatePropagation();
             this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: false };
             this.capturePointer(event);
@@ -467,13 +538,14 @@ export class Viewport {
                 }
                 this.sketchDrag = center ? { index, center: true } : sector ? { index, sector: true } : handle ? { index, handle: hit.object.userData.handleIndex } : { index };
                 this.container.classList.add('is-handle-dragging');
-                if (center) this.callbacks.onSketchCenterMove(this.sketchPoint(event)!, 'start');
-                else if (sector) this.callbacks.onSketchSectorMove(this.sketchPoint(event)!, 'start');
+                const point = this.sketchDragPoint(event)!;
+                if (center) this.callbacks.onSketchCenterMove(point, 'start');
+                else if (sector) this.callbacks.onSketchSectorMove(point, 'start');
                 else if (!handle) {
                     this.selectedSketchPoint = index;
                     this.callbacks.onSketchSelect(index);
-                    this.callbacks.onSketchPointMove(index, this.sketchPoint(event)!, 'start');
-                } else this.callbacks.onSketchHandleMove(index, hit.object.userData.handleIndex, this.sketchPoint(event)!, 'start');
+                    this.callbacks.onSketchPointMove(index, point, 'start');
+                } else this.callbacks.onSketchHandleMove(index, hit.object.userData.handleIndex, point, 'start');
                 this.controls.enabled = false;
                 this.capturePointer(event);
                 this.updateMarkerColors();
@@ -509,7 +581,7 @@ export class Viewport {
                 this.callbacks.onSketchEntitySelect(sketchEntity);
                 return;
             }
-            const start = this.sketchPoint(event);
+            const start = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
             if (start) { this.shapeDrag = { start, moved: false }; this.capturePointer(event); }
             return;
         }
@@ -623,7 +695,7 @@ export class Viewport {
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
-            const point = this.sketchPoint(event);
+            const point = this.sketchDragPoint(event);
             if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'move') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'move') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'move') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
             return;
         }
@@ -642,7 +714,7 @@ export class Viewport {
             return;
         }
         if (this.shapeDrag && this.sketchMode) {
-            const point = this.sketchPoint(event);
+            const point = this.sketchOperationPoint(event, { edgeStart: ['polygon', 'line'].includes(this.sketchProfileType) ? this.shapeDrag.start : undefined });
             if (point && this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) {
                 this.shapeDrag.moved = true;
                 this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'move');
@@ -668,7 +740,12 @@ export class Viewport {
             else this.clearHoverFace();
             return;
         }
-        if (this.sketchMode && !event.buttons) { this.setSketchHover(this.sketchSelectionTool ? this.hitSketchEntity(event) : null); this.updateSketchCursor(event); }
+        if (this.sketchMode && !event.buttons) {
+            if (this.sketchSelectionTool) this.clearSketchReferences();
+            else this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
+            this.setSketchHover(this.sketchSelectionTool ? this.hitSketchEntity(event) : null);
+            this.updateSketchCursor(event);
+        }
         if (!event.buttons && !this.sketchMode) this.updateArrowHover(event);
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
@@ -724,6 +801,7 @@ export class Viewport {
     private onPointerUp(event: PointerEvent) {
         this.releasePointer(event);
         if (this.sketchMode && (this.spacePressed || this.spaceSketchPointerBlocked)) {
+            this.clearSketchReferences();
             this.spaceSketchPointerBlocked = false;
             this.shapeDrag = null;
             this.sketchDrag = null;
@@ -752,6 +830,7 @@ export class Viewport {
             return;
         }
         if (this.sketchMode && event.button === 0 && (this.sketchSelectionGuardPointerUp || performance.now() < this.sketchSelectionGuardUntil)) {
+            this.clearSketchReferences();
             event.preventDefault(); event.stopImmediatePropagation();
             this.sketchSelectionGuardPointerUp = false;
             this.shapeDrag = null;
@@ -760,8 +839,9 @@ export class Viewport {
         }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
-            const point = this.sketchPoint(event);
+            const point = this.sketchDragPoint(event);
             if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'end') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'end') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'end') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
+            this.clearSketchReferences();
             this.sketchDrag = null;
             this.container.classList.remove('is-handle-dragging');
             this.controls.enabled = true;
@@ -789,9 +869,13 @@ export class Viewport {
         }
         this.updateOrbitRotation();
         if (this.sketchMode && this.shapeDrag) {
-            const point = this.sketchPoint(event);
+            const edgeStart = this.shapeDrag.moved
+                ? (['polygon', 'line'].includes(this.sketchProfileType) ? this.shapeDrag.start : undefined)
+                : this.drawingEdgeStart();
+            const point = this.sketchOperationPoint(event, { edgeStart });
             if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
             else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            this.clearSketchReferences();
             this.shapeDrag = null;
             return;
         }
@@ -810,8 +894,9 @@ export class Viewport {
         }
         if (this.sketchMode) {
             if (this.sketchSegmentHandled) { this.sketchSegmentHandled = false; return; }
-            const point = this.sketchPoint(event);
+            const point = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
             if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            this.clearSketchReferences();
             return;
         }
         const hit = this.hitEntity(event);
@@ -1164,7 +1249,10 @@ export class Viewport {
         this.applyIsolation();
     }
     setSketchEditing(id: string | null) {
-        if (this.editingSketchId !== id) this.setSketchHover(null);
+        if (this.editingSketchId !== id) {
+            this.setSketchHover(null);
+            this.clearSketchReferences();
+        }
         this.editingSketchId = id;
         this.applyIsolation();
     }
@@ -1297,6 +1385,7 @@ export class Viewport {
         this.controls.enabled = false;
     }
     setSketchMode(active: boolean, points: Point2[] = [], selectedIndex = -1) {
+        this.clearSketchReferences();
         const wasSketch = this.sketchMode;
         if (active && !wasSketch) this.beforeSketchView = { position: this.camera.position.clone(), target: this.controls.target.clone(), up: this.camera.up.clone(), projection: this.projectionMode, orthoHeight: this.orthoHeight, color: this.clearColor.clone(), alpha: this.clearAlpha };
         if (active) this.projectionBeforeSketch = this.projectionMode;
@@ -1484,6 +1573,7 @@ export class Viewport {
     updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number) {
         this.clearAltBorder();
         this.clearGroup(this.sketch);
+        this.currentSketchPoints = points.map((point) => [...point]);
         this.selectedSketchPoint = selectedIndex;
         this.activeSketchSegment = selectedSegment;
         this.sketchProfileType = profileType;
@@ -1820,7 +1910,7 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
-        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback].forEach((group) => this.clearGroup(group));
+        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();
         this.labelRenderer.domElement.remove();

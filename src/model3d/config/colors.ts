@@ -16,6 +16,7 @@ export const SKETCH_COLORS = {
     sectorHandle: '#f2c94c',
     guide: '#7a8d84',
     guideActive: '#dc9441',
+    reference: '#35b66f',
     inputBackground: '#fffaf3',
     inputBorder: '#e7a45c',
     inputText: '#76501f',
