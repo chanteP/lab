@@ -79,7 +79,6 @@ export class Viewport {
     private guides = new THREE.Group();
     private faceFeedback = new THREE.Group();
     private trimFeedback = new THREE.Group();
-    private hatchTexture: THREE.CanvasTexture | null = null;
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
     private shadow: THREE.Mesh;
@@ -130,7 +129,7 @@ export class Viewport {
     private hoverFaceAnchor: GeometryAnchor | null = null;
     private surfaceCache = new Map<string, { vertices: Vec3[]; indices: number[]; point: Vec3 }>();
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
-    private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromUp: THREE.Vector3; toUp: THREE.Vector3; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
+    private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromQuaternion: THREE.Quaternion; toQuaternion: THREE.Quaternion; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
     private beforeSketchView: { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; projection: 'perspective' | 'orthographic'; orthoHeight: number; color: THREE.Color; alpha: number } | null = null;
     private clearColor = new THREE.Color('#e7ebe8');
     private clearAlpha = 1;
@@ -665,7 +664,7 @@ export class Viewport {
             else this.clearHoverFace();
             return;
         }
-        if (this.sketchMode && !event.buttons) { this.setSketchHover(this.hitSketchEntity(event)); this.updateSketchCursor(event); }
+        if (this.sketchMode && !event.buttons) { this.setSketchHover(this.sketchSelectionTool ? this.hitSketchEntity(event) : null); this.updateSketchCursor(event); }
         if (!event.buttons && !this.sketchMode) this.updateArrowHover(event);
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
@@ -997,8 +996,8 @@ export class Viewport {
             const eased = t * t * (3 - 2 * t);
             this.camera.position.lerpVectors(transition.fromPosition, transition.toPosition, eased);
             this.controls.target.lerpVectors(transition.fromTarget, transition.toTarget, eased);
-            this.camera.up.lerpVectors(transition.fromUp, transition.toUp, eased).normalize();
-            this.camera.lookAt(this.controls.target);
+            this.camera.quaternion.slerpQuaternions(transition.fromQuaternion, transition.toQuaternion, eased);
+            this.camera.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
             this.clearColor.lerpColors(transition.fromColor, transition.toColor, eased);
             this.clearAlpha = THREE.MathUtils.lerp(transition.fromAlpha, transition.toAlpha, eased);
             this.renderer.setClearColor(this.clearColor, this.clearAlpha);
@@ -1074,7 +1073,7 @@ export class Viewport {
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.sketchMode) {
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
-                if (material) { material.transparent = true; material.opacity = 0; }
+                if (material) { material.transparent = true; material.opacity = entityProfileClosed(entity) ? 0.12 : 0; }
                 if (entityProfileClosed(entity)) child.add(new THREE.Mesh((child as THREE.Mesh).geometry, this.sketchHatchMaterial()));
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
@@ -1253,7 +1252,10 @@ export class Viewport {
             this.orthographicCamera.quaternion.copy(previous.quaternion);
             this.camera = this.orthographicCamera;
         } else {
-            this.perspectiveCamera.position.copy(previous.position);
+            const target = this.controls.target.clone();
+            const direction = previous.position.clone().sub(target).normalize();
+            const distance = this.orthoHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2)));
+            this.perspectiveCamera.position.copy(target).add(direction.multiplyScalar(distance));
             this.perspectiveCamera.quaternion.copy(previous.quaternion);
             this.camera = this.perspectiveCamera;
         }
@@ -1273,9 +1275,13 @@ export class Viewport {
         this.setProjection(projection);
         if (orthoHeight !== undefined) { this.orthoHeight = orthoHeight; this.resize(); }
         this.fitAnimation = null;
+        const orientationCamera = new THREE.PerspectiveCamera();
+        orientationCamera.position.copy(position);
+        orientationCamera.up.copy(up);
+        orientationCamera.lookAt(target);
         this.cameraTransition = {
             started: performance.now(), fromPosition: this.camera.position.clone(), toPosition: position,
-            fromTarget: this.controls.target.clone(), toTarget: target, fromUp: this.camera.up.clone(), toUp: up,
+            fromTarget: this.controls.target.clone(), toTarget: target, fromQuaternion: this.camera.quaternion.clone(), toQuaternion: orientationCamera.quaternion.clone(),
             fromColor: this.clearColor.clone(), toColor: new THREE.Color(color), fromAlpha: this.clearAlpha, toAlpha: alpha,
         };
         this.controls.enabled = false;
@@ -1372,24 +1378,14 @@ export class Viewport {
         return line;
     }
     private sketchHatchMaterial() {
-        if (!this.hatchTexture) {
-            const canvas = window.document.createElement('canvas');
-            canvas.width = canvas.height = 64;
-            const context = canvas.getContext('2d')!;
-            context.clearRect(0, 0, 64, 64);
-            context.strokeStyle = '#26302c55';
-            context.lineWidth = 3;
-            for (let offset = -64; offset <= 64; offset += 16) {
-                context.beginPath();
-                context.moveTo(offset, 64);
-                context.lineTo(offset + 64, 0);
-                context.stroke();
-            }
-            this.hatchTexture = new THREE.CanvasTexture(canvas);
-            this.hatchTexture.wrapS = this.hatchTexture.wrapT = THREE.RepeatWrapping;
-            this.hatchTexture.repeat.set(0.08, 0.08);
-        }
-        return new THREE.MeshBasicMaterial({ map: this.hatchTexture, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
+        return new THREE.ShaderMaterial({
+            uniforms: { uColor: { value: new THREE.Color('#147d70') } },
+            vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+            fragmentShader: 'uniform vec3 uColor; void main() { float stripe = mod(gl_FragCoord.x + gl_FragCoord.y, 14.0); if (stripe > 1.0) discard; gl_FragColor = vec4(uColor, 0.72); }',
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
     }
     private updateSketchCursor(event: PointerEvent) {
         this.setPointer(event);
@@ -1489,10 +1485,15 @@ export class Viewport {
             shape.moveTo(...displayPoints[0]);
             displayPoints.slice(1).forEach((point) => shape.lineTo(...point));
             shape.closePath();
-            const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), this.sketchHatchMaterial());
+            const geometry = new THREE.ShapeGeometry(shape);
+            const fill = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
             fill.applyMatrix4(this.activePlane ? this.planeMatrix(this.activePlane) : new THREE.Matrix4());
             fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.04) : new THREE.Vector3(0, 0.04, 0));
-            this.sketch.add(fill);
+            const hatch = new THREE.Mesh(geometry.clone(), this.sketchHatchMaterial());
+            hatch.position.copy(fill.position);
+            hatch.quaternion.copy(fill.quaternion);
+            hatch.scale.copy(fill.scale);
+            this.sketch.add(fill, hatch);
         }
         const midpoint = (a: Point2, b: Point2): Point2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
         if (profileType === 'polygon') {
@@ -1809,7 +1810,6 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
-        this.hatchTexture?.dispose();
         [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();

@@ -470,6 +470,7 @@ function deleteNodeIds(ids: string[]) {
     const referenced = document.value.entities.find((item) => !allIds.includes(item.id) && ((item.kind === 'boolean' && item.operands?.some((id) => allIds.includes(id))) || (item.profileId && allIds.includes(item.profileId))));
     if (referenced) return message.warning(`请先删除依赖它的「${referenced.name}」`);
     pushHistory();
+    if (sketchMode.value && activePlaneId.value && ids.includes(activePlaneId.value)) cancelSketch();
     allIds.forEach((id) => {
         const item = document.value.entities.find((entity) => entity.id === id);
         if (item?.kind === 'boolean') item.operands?.forEach((operandId) => {
