@@ -4,7 +4,7 @@
 
 ## 全局
 
-- 页面内禁用浏览器右键菜单；实体树的右键事件单独处理，不被浏览器菜单覆盖。
+- 页面内禁用浏览器原生右键菜单；实体树与画布分别使用自定义上下文菜单。
 - 禁用 Ctrl / Command + 滚轮、触控板手势和键盘快捷键造成的浏览器页面缩放。普通滚轮仍用于 Three.js 相机缩放。
 - 空白新项目不自动创建任何实体。
 - 所有数值输入最多展示 4 位小数。测量和比例尺是辅助显示，使用最多 2 位小数。
@@ -14,10 +14,12 @@
 实现：`EntityTree.vue`、`App.vue` 中的 `treeNodes`、`reparentNodes` 和节点菜单方法。
 
 - 文件夹和实体共享同一套 `id / parentId` 父节点数据。实体也可以包含子节点，文件夹不是唯一容器。
+- Items 不显示 Sketch 条目；草图仍作为独立数据保存，并通过 History 或画布轮廓重新进入编辑。
 - 单击选择，Ctrl / Command / Shift + 单击多选。可见性按钮只作用于实体。
 - 节点可单个或多个拖到另一个节点下；拖入空白树区域会移动到根节点。
 - 拖入自身或自己的后代会被拒绝，避免循环树。
 - 文件夹和实体的右键菜单均提供删除、重命名。
+- 平面同样支持右键删除，以及选中后的 Delete / Backspace。删除平面会同时删除其草图；存在 Extrude 引用时先阻止并提示依赖。
 - 删除文件夹不会删除其中的模型；其子节点会移到根节点。删除实体会同时检查布尔引用。
 - 实体始终使用 cube 图标，文件夹始终使用 folder 图标，不随模型类型变化。
 
@@ -36,8 +38,11 @@
 
 实现：`Viewport.onPointerDown`、 `OrientationGizmo.ts`。
 
-- 选择工具下，无论从空白还是模型表面开始拖动，都可以旋转视角；单击仍用于选择。
-- 空格 + 拖动平移，普通滚轮缩放。
+- 左键单击选择 face / edge，双击选择完整 Body，Shift + 单击累加选择。变换工具激活时，单击实体仍可重新选择几何；只有 gizmo、直接编辑手柄和显式工具消费拖动。
+- 实体 face hover 与选中使用透明橙色高亮；选中 edge 使用独立的橙色粗线高亮，不再用整个 Body 的材质变化代替。
+- 左键空白拖动进入框选：从左往右只选完全包含的 Body，从右往左选择接触框线的 Body。
+- 右键拖动 Orbit，中键拖动 Pan，Shift + 右键拖动也可 Pan；右键单击打开上下文菜单，普通滚轮缩放。
+- 悬停实体平面时按空格，在该面建立草图并切换到正交正视图。
 - 坐标球点击轴端点切换对应方向视图，拖动坐标球旋转相机。
 - 拖动坐标球接近主轴时，以点积阈值 `0.975` 磁吸到该轴，保持当前轨道半径。
 - 坐标球渲染 viewport 比画布底部抬高 42px，与比例尺共享基线。
@@ -67,7 +72,8 @@
 ## 投影
 
 - 地面阴影默认关闭，不随项目保存。
-- 右上角“投影”开关只控制阴影接收平面、方向光投影和 shadow map，不改变网格或相机投影方式。
+- Display Modes 中的 Ground Shadow 只控制阴影接收平面、方向光投影和 shadow map，不改变网格或相机投影方式。
+- Shaded / Wireframe / X-Ray、Show Edges、Isolate 和 Section View 只改变显示或视觉裁切，不写入实体尺寸；Section View 不等于 Split Body。
 
 ## 选择驱动的 UI 状态机
 
@@ -79,11 +85,11 @@
 - `ToolActive`：Extrude、Offset Face、Chamfer/Fillet 或 Boolean 正在预览；显示参数、Done、Cancel。
 - `HistoryEdit`：从 History 重新打开已有 Extrude/Boolean，引用和参数在提交后写回同一实体。
 
-Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实体面、实体边、Body 分别触发 Extrude、Offset Face、Chamfer/Fillet、Move/Rotate。双击画布中的面选择完整 Body。
+实体面、实体边、Body 分别触发 Offset Face、Chamfer/Fillet、Move/Rotate。闭合 Profile 单击只选择，必须拖动视图中的双向粗箭头才进入 Extrude。双击画布中的面选择完整 Body。
 
 ## Profile 与草图工具
 
-实现：`profiles.ts`。草图与 Body 是不同的 Items。
+实现：`profiles.ts`。草图与 Body 是不同的数据对象，但 Sketch 不在 Items 中占用实体条目。
 
 - Line/Polygon：逐点放置，闭合后可用于 Extrude。
 - Rectangle：两个对角点生成四个源顶点。
@@ -95,7 +101,8 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 
 ## Extrude
 
-- 选择闭合 Profile 后出现方向 ArrowHelper、距离标签和实时实体预览。
+- 选择闭合 Profile（支持 Shift 多选）后出现上下双向粗箭头；点击箭头不拖动会取消预览，拖动后才生成实体。
+- 单向拉伸始终把草图所在面作为固定底面，只移动另一侧；多个选中轮廓分别生成同深度 Body。
 - 拖动 Profile/箭头方向或输入距离都会更新同一 `depth` 参数。
 - 支持正向/反向、One-Sided/Symmetric、Draft Angle。
 - Result 支持 New Body、Union、Subtract、Intersect；相交 Body 会作为自动布尔建议，用户可覆盖目标和结果。
@@ -104,8 +111,8 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 
 ## Offset Face 与 Chamfer/Fillet
 
-- Offset Face 修改既有实体的尺寸/位置，不从 Profile 创建实体。
-- Chamfer/Fillet 有明确类型入口和尺寸输入，拖动时持续重建预览；与 Extrude 的方向、距离和布尔参数不共享。
+- Offset Face 选中面后显示法向粗箭头，只有拖箭头或修改新增厚度才写入 `faceOffset`。基础 Body 的尺寸、位置和旋转保持不变，几何以所选面为底面向外拼接新增部分。
+- Chamfer/Fillet 选中边后显示粗箭头，拖动时持续重建预览；圆角/倒角被约束在原实体边界内。Extrude 的 bevel 使用负 offset，避免轮廓向外扩张。
 
 ## Boolean 执行态与 History
 
@@ -115,14 +122,17 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 - 保留 Target、保留 Tool 在 Done 时分别应用；Cancel 恢复执行前文档。
 - History 可重新打开 Boolean，切换类型、交换角色和修改保留策略。
 
-## 默认工具栏与绘制工具栏
+## 一级工具、Adaptive menu 与绘制工具栏
 
-- 默认菜单只保留选择/变换、添加绘制平面、绘制形状和项目节点操作；Extrude、Offset Face、Chamfer/Fillet 不在这里重复出现。
+- 一级入口包含 Search、Sketch、Insert、Construct、Transform、Tools、Section View、Isolate、Measure、Display Modes、Items 和 History。
+- 选中几何后显示 Adaptive menu：face 推荐 Offset Face / Sketch，edge 推荐 Chamfer/Fillet，Body 推荐 Move/Rotate/Scale，多 Body 推荐 Boolean。
+- 再次点击当前工具只展开或收起 Parameter Card，不退出工具；单击不修改几何，拖动或数值输入才产生编辑。
 - 添加平面不显示确认弹窗：无面选择时直接创建 XZ 平面；选中模型面后创建同法向平面，示意中心对齐该面的中心。
 - 平面是 Items 中的独立对象，支持点击选择、眼睛显隐、Move/Rotate Gizmo；Scale 对平面禁用。
 - 平面变换写回 `origin / normal / u / v`，附着草图按局部坐标随动。绘制射线使用无限 Plane，80mm 网格仅是示意。
+- 隐藏平面会在场景构建时隐藏其所有草图，但不覆写草图自身显隐；Extrude Done 会同时隐藏已使用的草图和平面。
 - 只有当前选中的绘制平面才启用铅笔。进入后相机正对平面并以平面原点为中心。
-- 默认工具栏向左收起，带文字的画图工具栏向右进入；Close 保存有效闭合形状或退出未完成绘制。
+- 默认工具栏向左收起，带文字的画图工具栏向右进入；Exit Sketching 保存有效闭合形状或退出未完成绘制。Constraints 独立显示在画布右侧，支持方向、平行、垂直、等长和点锁定。
 
 ## 绘制形状与贝塞尔编辑
 
@@ -134,7 +144,10 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 - 椭圆：圆心 + X 半径点 + Y 半径点；拖拽时以起止点两个分量生成三个源点。
 - 正多边形：中心 + 外顶点 + 边数，支持正三角形、正方形、正五至正八边形。
 - 所有闭合形状显示半透明填充。源点、曲线控制点、边数与 `planeId` 一并保存，选中平面可继续编辑。
-- 双击不再隐式提交草图，Close、完成当前图形和后续实体操作保持不同语义。
+- 创建成形后保持选中并显示操作点与长度输入；再次点击同类工具才开始下一个形状。Esc / 右键只结束当前路径或取消选择，Exit Sketching 才退出草图。
+- 右键点击已有草图提供删除与取消选择；右键拖动仍只旋转视图。删除前检查 Extrude 引用。
+- 长度输入统一显示两位小数和单位（mm / cm / m），blur 后写回；项目内部始终以 mm 保存，当前单位记录在 `document.lengthUnit`，并以 `lab:model3d:sketch:lengthUnit` 作为新项目默认值。
+- 圆与椭圆额外保存 `sectorAngle`。黄色扇形点沿 CCW 方向改变扇形角，双击恢复 360°；半径、椭圆双半径、矩形长宽、多边形半径、线段及贝塞尔控制线均有对应输入。
 
 ## 显隐与底部辅助图标
 
@@ -144,7 +157,7 @@ Tool-first 与 Selection-first 均可进入核心工具。闭合 Profile、实�
 ## 实时记录、正交绘制与手势结束
 
 - 圆、矩形、椭圆、正多边形在定义点完成或拖拽 pointerup 时立即创建 Profile，并触发 IndexedDB 自动保存；无需 Close。
-- 成形后清空的是当前草稿，不是已保存图形，可连续创建多个 Profile。Line/Arc 的轮廓和贝塞尔编辑同样实时写入。
+- 成形后保留当前图形为选中编辑态；Esc 取消选择后才可开始另一段 Line，选中已有 Line 后左键点击才可追加点。所有图形实时写入。
 - 草图相机使用独立 OrthographicCamera，退出后恢复 PerspectiveCamera。比例尺在草图中按 `(top - bottom) / zoom / canvasHeight` 计算，反映该平面的真实单位。
 - 草图模式隐藏有限平面边框，以平面底色铺满画布，网格旋转到当前平面。坐标球、测量和适配按钮隐藏，仅保留比例尺。
 - 草图右键拖拽只绕平面法向做二维 roll，不改变为正交三维轨道；三维 Orbit 在草图中禁用。

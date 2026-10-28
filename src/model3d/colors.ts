@@ -1,0 +1,16 @@
+export const SKETCH_COLORS = {
+    line: '#147d70',
+    fill: '#38a894',
+    hoverLine: '#e99a45',
+    hoverFill: '#f2a65a',
+    point: '#ffffff',
+    pointActive: '#ffb65c',
+    pointLocked: '#54a184',
+    handle: '#e5a34d',
+    sectorHandle: '#f2c94c',
+    guide: '#7a8d84',
+    guideActive: '#dc9441',
+    inputBackground: '#fffaf3',
+    inputBorder: '#e7a45c',
+    inputText: '#76501f',
+} as const;

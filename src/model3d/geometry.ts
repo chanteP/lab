@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { profileClosed, profilePoints, profileShape } from './profiles';
+import { SKETCH_COLORS } from './colors';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from './types';
 
 function qualityValues(quality: GeometryQuality) {
@@ -61,16 +63,31 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const width = entity.width!;
         const height = entity.height!;
         const depth = entity.depth!;
-        if (!edge) return new THREE.BoxGeometry(width, height, depth);
-        const size = Math.min(edge.size, width * 0.48, height * 0.48, depth * 0.48);
-        return edge.type === 'fillet'
+        const size = edge ? Math.min(edge.size, width * 0.48, height * 0.48, depth * 0.48) : 0;
+        const base = !edge ? new THREE.BoxGeometry(width, height, depth) : edge.type === 'fillet'
             ? new RoundedBoxGeometry(width, height, depth, q.edge, size)
             : chamferedBox(width, height, depth, size);
+        if (!entity.faceOffset?.distance) return base;
+        const normal = new THREE.Vector3(...entity.faceOffset.normal).normalize();
+        const axis = Math.abs(normal.x) > 0.5 ? 0 : Math.abs(normal.y) > 0.5 ? 1 : 2;
+        const sign = Math.sign(normal.getComponent(axis)) || 1;
+        const thickness = entity.faceOffset.distance;
+        const dimensions = [width, height, depth];
+        const extensionDimensions = [...dimensions];
+        extensionDimensions[axis] = thickness;
+        const extension = new THREE.BoxGeometry(...extensionDimensions as Vec3);
+        extension.translate(axis === 0 ? sign * (width / 2 + thickness / 2) : 0, axis === 1 ? sign * (height / 2 + thickness / 2) : 0, axis === 2 ? sign * (depth / 2 + thickness / 2) : 0);
+        return mergeGeometries([base, extension]) || base;
     }
     if (entity.kind === 'cylinder') {
-        return edge
+        const base = edge
             ? treatedCylinder(entity.radius!, entity.height!, entity, quality)
             : new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height!, q.radial, 1, false);
+        if (!entity.faceOffset?.distance || Math.abs(entity.faceOffset.normal[1]) < 0.5) return base;
+        const sign = Math.sign(entity.faceOffset.normal[1]) || 1;
+        const extension = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.faceOffset.distance, q.radial, 1, false);
+        extension.translate(0, sign * (entity.height! / 2 + entity.faceOffset.distance / 2), 0);
+        return mergeGeometries([base, extension]) || base;
     }
     if (entity.kind === 'sphere') {
         return new THREE.SphereGeometry(entity.radius!, q.sphere, Math.max(16, q.sphere / 2));
@@ -78,7 +95,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
     const points = entity.points || [];
     if (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3)) return new THREE.BufferGeometry();
-    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides);
+    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle);
     const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: entity.depth! - size * 2,
@@ -86,7 +103,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         bevelEnabled: !!edge,
         bevelThickness: size,
         bevelSize: size,
-        bevelOffset: 0,
+        bevelOffset: -size,
         bevelSegments: edge?.type === 'fillet' ? q.edge : 1,
         curveSegments: 12,
     });
@@ -119,6 +136,15 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const legacyBox = geometry.boundingBox!;
         geometry.translate(0, -(legacyBox.min.y + legacyBox.max.y) / 2, 0);
     }
+    if (entity.faceOffset?.distance && plane) {
+        const planeNormal = new THREE.Vector3(...plane.normal).normalize();
+        const direction = Math.sign(new THREE.Vector3(...entity.faceOffset.normal).dot(planeNormal)) || 1;
+        const extension = baseGeometry({ ...entity, depth: entity.faceOffset.distance, direction: direction as 1 | -1, sideMode: 'one', draftAngle: 0, edge: null, faceOffset: null }, quality, document);
+        const originalDirection = entity.direction === -1 ? -1 : 1;
+        const extent = direction === originalDirection ? (entity.sideMode === 'symmetric' ? entity.depth! / 2 : entity.depth!) : (entity.sideMode === 'symmetric' ? -entity.depth! / 2 : 0);
+        extension.translate(...planeNormal.multiplyScalar(originalDirection * extent).toArray());
+        return mergeGeometries([geometry, extension]) || geometry;
+    }
     return geometry;
 }
 
@@ -138,17 +164,17 @@ export function buildEntityMesh(
         const type = entity.profileType || 'polygon';
         const source = entity.points || [];
         const closed = profileClosed(type);
-        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source, 64, entity.curves, entity.sides)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source, 64, entity.curves, entity.sides).map((point) => new THREE.Vector3(point[0], point[1], 0)));
+        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source, 64, entity.curves, entity.sides, entity.sectorAngle)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source, 64, entity.curves, entity.sides, entity.sectorAngle).map((point) => new THREE.Vector3(point[0], point[1], 0)));
         const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
         if (plane) geometry.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)));
         else geometry.rotateX(-Math.PI / 2);
         const material = closed
-            ? new THREE.MeshBasicMaterial({ color: '#3185d8', transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
-            : new THREE.LineBasicMaterial({ color: '#3185d8' });
+            ? new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+            : new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line });
         mesh = closed ? new THREE.Mesh(geometry, material) : new THREE.Line(geometry, material) as unknown as THREE.Mesh;
     } else if (entity.kind !== 'boolean') {
         const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : null;
-        const geometryEntity = profile ? { ...entity, points: profile.points, profileType: profile.profileType, planeId: profile.planeId } : entity;
+        const geometryEntity = profile ? { ...entity, points: profile.points, profileType: profile.profileType, planeId: profile.planeId, curves: profile.curves, sides: profile.sides, sectorAngle: profile.sectorAngle } : entity;
         mesh = new THREE.Mesh(baseGeometry(geometryEntity, quality, document), createMaterial(entity.color));
     } else {
         const [aId, bId] = entity.operands || [];
@@ -181,7 +207,11 @@ export function buildEntityMesh(
 export function buildScene(document: ModelDocument, quality: GeometryQuality = 'preview', includeSketches = true) {
     const group = new THREE.Group();
     group.name = 'Model';
-    document.entities.filter((entity) => entity.visible && (includeSketches || entity.kind !== 'sketch')).forEach((entity) => {
+    document.entities.filter((entity) => {
+        if (!entity.visible || (!includeSketches && entity.kind === 'sketch')) return false;
+        if (entity.kind === 'sketch' && entity.planeId) return document.planes.find((plane) => plane.id === entity.planeId)?.visible !== false;
+        return true;
+    }).forEach((entity) => {
         try {
             group.add(buildEntityMesh(entity, document, quality));
         } catch (error) {

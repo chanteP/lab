@@ -7,15 +7,30 @@ export type ProfileCurves = Record<number, { c1: Point2; c2: Point2 }>;
 export function profileClosed(type: ProfileType) { return type !== 'arc'; }
 
 // Source points stay semantic: circle = center + circumference, arc = start + mid + end.
-export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3): Point2[] {
-    if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides).getPoints(segments).map((point) => [point.x, point.y]);
+export function profileArcCenter(source: Point2[]): Point2 | null {
+    if (source.length < 3) return null;
+    const [a, b, c] = source;
+    const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    if (Math.abs(d) < 0.000001) return null;
+    const aa = a[0] ** 2 + a[1] ** 2, bb = b[0] ** 2 + b[1] ** 2, cc = c[0] ** 2 + c[1] ** 2;
+    return [
+        (aa * (b[1] - c[1]) + bb * (c[1] - a[1]) + cc * (a[1] - b[1])) / d,
+        (aa * (c[0] - b[0]) + bb * (a[0] - c[0]) + cc * (b[0] - a[0])) / d,
+    ];
+}
+
+export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360): Point2[] {
+    if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides, sectorAngle).getPoints(segments).map((point) => [point.x, point.y]);
     if (type === 'circle' && source.length >= 2) {
         const [center, edge] = source;
         const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
-        return Array.from({ length: segments }, (_, index) => {
-            const angle = index / segments * Math.PI * 2;
+        const start = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
+        const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
+            const angle = start + index / segments * travel;
             return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius];
         });
+        return sectorAngle < 360 ? [[...center] as Point2, ...points] : points.slice(0, -1);
     }
     if ((type === 'ellipse' || type === 'regular') && source.length >= 2) {
         const [center, edge] = source;
@@ -30,10 +45,13 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
         const vertical = source[2] || [center[0], center[1] + Math.abs(edge[1] - center[1])];
         const rx = Math.abs(edge[0] - center[0]);
         const ry = Math.abs(vertical[1] - center[1]);
-        return Array.from({ length: segments }, (_, index) => {
-            const angle = index / segments * Math.PI * 2;
+        const start = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
+        const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
+            const angle = start + index / segments * travel;
             return [center[0] + Math.cos(angle) * rx, center[1] + Math.sin(angle) * ry];
         });
+        return sectorAngle < 360 ? [[...center] as Point2, ...points] : points.slice(0, -1);
     }
     if (type === 'arc' && source.length >= 3) {
         const [a, b, c] = source;
@@ -60,7 +78,7 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
     return source;
 }
 
-export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3) {
+export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360) {
     if (curves && Object.keys(curves).length && source.length > 1) {
         const shape = new THREE.Shape();
         shape.moveTo(...source[0]);
@@ -76,7 +94,7 @@ export function profileShape(type: ProfileType, source: Point2[], segments = 64,
         }
         return shape;
     }
-    const points = profilePoints(type, source, segments, undefined, sides);
+    const points = profilePoints(type, source, segments, undefined, sides, sectorAngle);
     const shape = new THREE.Shape();
     if (!points.length) return shape;
     shape.moveTo(...points[0]);

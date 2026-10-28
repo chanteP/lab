@@ -3,22 +3,23 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three';
 import { NButton, NCheckbox, NIcon, NInput, NInputNumber, NModal, NPopconfirm, NPopover, NSelect, NTooltip, useMessage } from 'naive-ui';
 import {
-    AddOutline, AnalyticsOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, CameraOutline, CheckmarkOutline,
-    ChevronDownOutline, CloseOutline, CloudDoneOutline, CopyOutline, CreateOutline, CubeOutline,
+    AddOutline, AnalyticsOutline, ArrowRedoOutline, ArrowUndoOutline, ArrowUpOutline, CameraOutline,
+    ChevronDownOutline, CloseOutline, CopyOutline, CreateOutline, CubeOutline,
     CutOutline, DocumentOutline, DownloadOutline, EllipseOutline, EyeOffOutline, EyeOutline, FolderOpenOutline,
     GridOutline, HelpCircleOutline, LayersOutline, MoveOutline, RepeatOutline, ResizeOutline,
     ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline,
+    SearchOutline, BuildOutline, ListOutline, TimeOutline, LockClosedOutline, LockOpenOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type EditPhase, type ViewTool } from './Viewport';
+import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './Viewport';
 import EntityTree, { type OutlinerNode } from './EntityTree.vue';
 import SvgIcon from './SvgIcon.vue';
-import { profileClosed, type ProfileType, type ProfileCurves } from './profiles';
+import { profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './profiles';
 import { buildEntityMesh } from './geometry';
 import { exportGLB, exportProject, exportSTL } from './exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './store';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
-    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane,
+    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
 } from './types';
 
 const message = useMessage();
@@ -29,12 +30,14 @@ let saveTimer: ReturnType<typeof setTimeout>;
 let restoring = false;
 let transforming = false;
 let directBase: ModelEntity | null = null;
+let directHistoryPushed = false;
+let extrudeGestureMoved = false;
 const undoStack: ModelDocument[] = [];
 const redoStack: ModelDocument[] = [];
 const historyVersion = ref(0);
 
 const projects = ref<ProjectRecord[]>([]);
-const document = ref<ModelDocument>(createDocument());
+const document = ref<ModelDocument>(createDocument(storedLengthUnit()));
 const project = ref<ProjectRecord>(createProject('未命名项目'));
 const selectedIds = ref<string[]>([]);
 const saveState = ref<'saved' | 'saving' | 'dirty'>('saved');
@@ -57,7 +60,7 @@ const sketchDepth = ref(10);
 const selectedSketchPoint = ref(-1);
 const editingSketchId = ref<string | null>(null);
 type OperationState = {
-    type: 'extrude'; profileId: string; bodyId: string; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean;
+    type: 'extrude'; profileId: string; bodyId: string; profileIds: string[]; bodyIds: string[]; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean;
 } | {
     type: 'boolean'; resultId: string; targetId: string; toolId: string; before: ModelDocument; keepTarget: boolean; keepTool: boolean; existing: boolean;
 };
@@ -69,27 +72,69 @@ const scaleBar = ref({ width: 76, label: '50 mm' });
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
 const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
+const viewportMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
+const sketchContextMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
 const showRename = ref(false);
 const renameValue = ref('');
 const renameTarget = ref<OutlinerNode | null>(null);
+type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'transform' | 'tools' | 'display';
+type SelectionKind = 'face' | 'edge' | 'body' | 'plane' | 'sketch' | 'mixed' | null;
+const activePanel = ref<PrimaryPanel | null>(null);
+const selectionKind = ref<SelectionKind>(null);
+const parameterCardOpen = ref(true);
+const itemsVisible = ref(true);
+const commandSearch = ref('');
+const isolateActive = ref(false);
+const sectionActive = ref(false);
+const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
+const showEdges = ref(true);
+const selectedSketchSegments = ref<number[]>([]);
+const sketchLockedPoints = ref<number[]>([]);
+const sketchSectorAngle = ref(360);
+const sketchAppendMode = ref(true);
+const lengthUnit = ref<LengthUnit>(storedLengthUnit());
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
+const selectedSketches = computed(() => selectedEntities.value.filter((item) => item.kind === 'sketch'));
 const selected = computed(() => selectedEntities.value.length === 1 ? selectedEntities.value[0] : null);
 const canUndo = computed(() => (historyVersion.value, undoStack.length > 0));
 const canRedo = computed(() => (historyVersion.value, redoStack.length > 0));
 const canBoolean = computed(() => selectedEntities.value.length === 2);
-const saveLabel = computed(() => saveState.value === 'saved' ? '已保存到本机' : saveState.value === 'saving' ? '保存中…' : '有未保存更改');
 const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const extrudeBody = computed(() => operation.value?.type === 'extrude' ? document.value.entities.find((item) => item.id === operation.value!.bodyId) : null);
 const booleanDraft = computed(() => operation.value?.type === 'boolean' ? operation.value : null);
 const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
-const historySteps = computed(() => document.value.entities.filter((item) => ['sketch', 'extrude', 'boolean'].includes(item.kind)).map((item) => ({ id: item.id, name: item.name, kind: item.kind })).reverse());
+const historySteps = computed(() => document.value.entities.flatMap((item) => {
+    const steps = ['sketch', 'extrude', 'boolean'].includes(item.kind) ? [{ id: item.id, name: item.name, kind: item.kind as string }] : [];
+    if (item.edge) steps.push({ id: `${item.id}:edge`, name: item.name, kind: item.edge.type });
+    return steps;
+}).reverse());
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => sketchMode.value || !!selected.value || selectedEntities.value.length > 1 || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value));
+const contextVisible = computed(() => parameterCardOpen.value && (sketchMode.value || (!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
+const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
+const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
+const commandResults = computed(() => {
+    const commands = [
+        { id: 'sketch', label: 'Sketch', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
+        { id: 'extrude', label: 'Extrude', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
+        { id: 'offsetFace', label: 'Offset Face', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
+        { id: 'fillet', label: 'Fillet', hint: '为所选实体边创建圆角', keys: '圆角 fillet' },
+        { id: 'chamfer', label: 'Chamfer', hint: '为所选实体边创建倒角', keys: '倒角 chamfer' },
+        { id: 'translate', label: 'Move / Rotate', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
+        { id: 'scale', label: 'Scale', hint: '缩放所选实体', keys: '缩放 scale' },
+        { id: 'plane', label: 'Construction Plane', hint: '添加构造平面', keys: '平面 构造 plane' },
+        { id: 'box', label: 'Box', hint: '插入立方体', keys: '立方体 box' },
+        { id: 'cylinder', label: 'Cylinder', hint: '插入圆柱体', keys: '圆柱 cylinder' },
+        { id: 'sphere', label: 'Sphere', hint: '插入球体', keys: '球体 sphere' },
+        { id: 'measure', label: 'Measure', hint: '测量两个点之间的距离与 XYZ 分量', keys: '测量 measure' },
+    ];
+    const query = commandSearch.value.trim().toLowerCase();
+    return query ? commands.filter((item) => `${item.label} ${item.keys}`.toLowerCase().includes(query)) : commands;
+});
 const dimensionFields = computed(() => {
     const item = selected.value;
     if (!item) return [];
@@ -113,7 +158,7 @@ const treeNodes = computed(() => {
     // Folders and entities share one parent graph, so either can contain nested nodes.
     const build = (parentId: string | null, trail: string[] = []): OutlinerNode[] => {
         const folders = document.value.folders.filter((item) => item.parentId === parentId).map((folder) => ({ folder, order: 0 }));
-        const entities = document.value.entities.filter((item) => item.parentId === parentId).map((entity) => ({ entity, order: 1 }));
+        const entities = document.value.entities.filter((item) => item.kind !== 'sketch' && item.parentId === parentId).map((entity) => ({ entity, order: 1 }));
         return [...folders, ...entities].flatMap((entry: any) => {
             const item = entry.folder || entry.entity;
             if (trail.includes(item.id)) return [];
@@ -127,10 +172,29 @@ const treeNodes = computed(() => {
     return [...planeNodes, ...build(null)];
 });
 
-function uid() { return crypto.randomUUID(); }
+function uid() {
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
+    if (cryptoApi?.getRandomValues) {
+        const values = new Uint32Array(4);
+        cryptoApi.getRandomValues(values);
+        return Array.from(values, (value) => value.toString(36)).join('-');
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
 function createProject(name: string): ProjectRecord {
     const now = Date.now();
-    return { id: uid(), name, createdAt: now, updatedAt: now, document: createDocument() };
+    return { id: uid(), name, createdAt: now, updatedAt: now, document: createDocument(storedLengthUnit()) };
+}
+function storedLengthUnit(): LengthUnit {
+    const value = localStorage.getItem('lab:model3d:sketch:lengthUnit');
+    return value === 'cm' || value === 'm' ? value : 'mm';
+}
+function setLengthUnit(unit: LengthUnit) {
+    lengthUnit.value = unit;
+    document.value.lengthUnit = unit;
+    localStorage.setItem('lab:model3d:sketch:lengthUnit', unit);
+    refreshSketch();
 }
 function cloneEntity(entity: ModelEntity) { return JSON.parse(JSON.stringify(entity)) as ModelEntity; }
 function uniqueName(kind: ModelEntity['kind']) {
@@ -161,6 +225,111 @@ function redo() {
     undoStack.push(cloneDocument(document.value));
     document.value = next;
     selectedIds.value = selectedIds.value.filter((id) => next.entities.some((item) => item.id === id));
+}
+
+function togglePanel(panel: PrimaryPanel) {
+    if (sketchMode.value && panel !== 'sketch') cancelSketch();
+    activePanel.value = activePanel.value === panel ? null : panel;
+    viewportMenu.value = null;
+}
+function chooseTool(tool: ViewTool) {
+    if (activeTool.value === tool && !operation.value) {
+        parameterCardOpen.value = !parameterCardOpen.value;
+        return;
+    }
+    parameterCardOpen.value = true;
+    activePanel.value = null;
+    setTool(tool);
+}
+function createPrimitive(kind: 'box' | 'cylinder' | 'sphere') {
+    pushHistory();
+    const entity = createEntity(kind, uid());
+    entity.name = uniqueName(kind);
+    document.value.entities.push(entity);
+    selectedIds.value = [entity.id];
+    selectionKind.value = 'body';
+    activePanel.value = null;
+    parameterCardOpen.value = true;
+    setTool('translate');
+    nextTick(() => viewport?.fitSelection());
+}
+function beginSketch(planeId?: string) {
+    if (planeId) selectPlane(planeId);
+    if (!canDraw.value && !(selectionKind.value === 'face' && selected.value && lastFace.value?.bodyId === selected.value.id)) {
+        activePanel.value = 'sketch';
+        return;
+    }
+    activePanel.value = null;
+    startSketch();
+}
+function runCommand(id: string) {
+    commandSearch.value = '';
+    activePanel.value = null;
+    if (id === 'sketch') return beginSketch();
+    if (id === 'extrude' && selected.value?.kind === 'sketch') return startExtrude(selected.value.id);
+    if (id === 'extrude') return message.warning('请先选择闭合 Sketch profile');
+    if (['offsetFace', 'fillet', 'chamfer', 'translate', 'scale'].includes(id)) return chooseTool(id as ViewTool);
+    if (id === 'plane') return createPlane();
+    if (['box', 'cylinder', 'sphere'].includes(id)) return createPrimitive(id as 'box' | 'cylinder' | 'sphere');
+    if (id === 'measure') return toggleMeasure();
+}
+function toggleIsolate() {
+    if (isolateActive.value) {
+        viewport?.setIsolate(null);
+        isolateActive.value = false;
+        return;
+    }
+    if (!selectedIds.value.length) return message.warning('请先选择要隔离的对象');
+    viewport?.setIsolate(selectedIds.value);
+    isolateActive.value = true;
+    activePanel.value = null;
+}
+function toggleSection() {
+    sectionActive.value = !sectionActive.value;
+    const plane = activePlane.value && selectedIds.value.includes(activePlane.value.id) ? activePlane.value : null;
+    const normal = plane?.normal || lastFace.value?.normal || [0, 1, 0];
+    const point = plane?.origin || lastFace.value?.point || [0, 0, 0];
+    viewport?.setSection(sectionActive.value, normal as Vec3, point as Vec3);
+}
+function updateDisplayMode(mode: 'shaded' | 'wireframe' | 'xray') {
+    displayMode.value = mode;
+    viewport?.setDisplayMode(mode, showEdges.value);
+}
+function openViewportMenu(id: string | null, x: number, y: number) {
+    if (id && !selectedIds.value.includes(id)) {
+        selectedIds.value = [id];
+        selectionKind.value = document.value.entities.find((item) => item.id === id)?.kind === 'sketch' ? 'sketch' : 'body';
+    }
+    viewportMenu.value = { id, x: Math.min(x, window.innerWidth - 190), y: Math.min(y, window.innerHeight - 170) };
+}
+function zoomToSelection() {
+    viewport?.fitSelection();
+    viewportMenu.value = null;
+}
+function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
+    const entity = document.value.entities.find((item) => item.id === id);
+    if (!entity || entity.kind === 'sketch' || sketchMode.value) return;
+    selectedIds.value = [id];
+    selectionKind.value = 'face';
+    lastFace.value = { bodyId: id, normal, point };
+    createPlane();
+    beginSketch(activePlaneId.value!);
+}
+function onMarqueeSelect(ids: string[], additive: boolean) {
+    selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
+    selectionKind.value = selectedIds.value.length === 1 ? 'body' : selectedIds.value.length > 1 ? 'mixed' : null;
+    activePanel.value = null;
+    parameterCardOpen.value = true;
+    setTool(selectedIds.value.length === 1 ? 'translate' : 'select');
+}
+function onBlankCommit() {
+    if (operation.value) return doneOperation();
+    if (['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)) {
+        setTool('select');
+        parameterCardOpen.value = false;
+        return;
+    }
+    selectEntity(null);
 }
 
 async function flushSave() {
@@ -194,8 +363,13 @@ async function openProject(id: string, saveCurrent = true) {
     restoring = true;
     project.value = next;
     document.value = normalizeDocument(cloneDocument(next.document));
+    lengthUnit.value = document.value.lengthUnit || storedLengthUnit();
     activePlaneId.value = document.value.planes[0]?.id || null;
     selectedIds.value = [];
+    isolateActive.value = false;
+    sectionActive.value = false;
+    viewport?.setIsolate(null);
+    viewport?.setSection(false);
     undoStack.length = 0;
     redoStack.length = 0;
     historyVersion.value++;
@@ -241,6 +415,7 @@ async function removeProject() {
 function selectEntity(id: string | null, additive = false) {
     if (!id) {
         if (!additive) selectedIds.value = [];
+        if (!additive) selectionKind.value = null;
         return;
     }
     selectedIds.value = additive
@@ -265,25 +440,32 @@ function updateVector(key: 'position' | 'rotation' | 'scale', index: number, val
     selected.value[key][index] = key === 'scale' ? Math.max(0.01, value) : value;
 }
 function removeSelected() {
-    const ids = selectedIds.value;
-    if (!ids.length) return;
-    const referenced = document.value.entities.find((item) => item.kind === 'boolean' && item.operands?.some((id) => ids.includes(id)) && !ids.includes(item.id));
+    if (selectedIds.value.length) deleteNodeIds(selectedIds.value);
+}
+function deleteNodeIds(ids: string[]) {
+    const planeSketchIds = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId && ids.includes(item.planeId)).map((item) => item.id);
+    const allIds = [...new Set([...ids, ...planeSketchIds])];
+    const referenced = document.value.entities.find((item) => !allIds.includes(item.id) && ((item.kind === 'boolean' && item.operands?.some((id) => allIds.includes(id))) || (item.profileId && allIds.includes(item.profileId))));
     if (referenced) return message.warning(`请先删除依赖它的「${referenced.name}」`);
     pushHistory();
-    ids.forEach((id) => {
+    allIds.forEach((id) => {
         const item = document.value.entities.find((entity) => entity.id === id);
         if (item?.kind === 'boolean') item.operands?.forEach((operandId) => {
             const operand = document.value.entities.find((entity) => entity.id === operandId);
             if (operand) operand.visible = true;
         });
-    });
-    ids.forEach((id) => {
         document.value.folders.filter((folder) => folder.parentId === id).forEach((folder) => folder.parentId = null);
         document.value.entities.filter((entity) => entity.parentId === id).forEach((entity) => entity.parentId = null);
     });
-    document.value.entities = document.value.entities.filter((item) => !ids.includes(item.id));
-    document.value.folders = document.value.folders.filter((item) => !ids.includes(item.id));
+    document.value.entities = document.value.entities.filter((item) => !allIds.includes(item.id));
+    document.value.folders = document.value.folders.filter((item) => !allIds.includes(item.id));
+    document.value.planes = document.value.planes.filter((item) => !allIds.includes(item.id));
+    if (activePlaneId.value && allIds.includes(activePlaneId.value)) {
+        activePlaneId.value = document.value.planes[0]?.id || null;
+        viewport?.setActivePlane(activePlane.value);
+    }
     selectedIds.value = [];
+    selectionKind.value = null;
 }
 function duplicateSelected() {
     const item = selected.value;
@@ -315,51 +497,77 @@ function applyBoolean(type: BooleanOperation) {
     };
     document.value.entities.push(entity);
     operation.value = { type: 'boolean', resultId: entity.id, targetId: target.id, toolId: tool.id, before, keepTarget: false, keepTool: false, existing: false };
+    activePanel.value = null;
     selectedIds.value = [target.id, tool.id];
     viewport?.setBooleanRoles({ target: target.id, tool: tool.id });
 }
-function startExtrude(profileId: string, existingBody?: ModelEntity) {
+function startExtrude(profileId: string, existingBody?: ModelEntity, keepView = false) {
     if (operation.value) return;
-    const profile = document.value.entities.find((item) => item.id === profileId && item.kind === 'sketch');
-    if (!profile || !profileClosed(profile.profileType || 'polygon')) return;
+    const primary = document.value.entities.find((item) => item.id === profileId && item.kind === 'sketch');
+    if (!primary || !profileClosed(primary.profileType || 'polygon')) return;
+    const profiles = existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && profileClosed(item.profileType || 'polygon'))];
     const before = cloneDocument(document.value);
     pushHistory();
-    let body = existingBody;
-    if (!body) {
-        body = createEntity('extrude', uid());
-        body.name = uniqueName('extrude');
-        body.parentId = profile.parentId;
-        body.profileId = profile.id;
-        body.points = profile.points!.map((point) => [...point]);
-        body.profileType = profile.profileType;
-        body.planeId = profile.planeId;
-        body.depth = 10;
-        body.sideMode = 'one';
-        body.direction = 1;
-        body.position = [0, 0, 0];
-        document.value.entities.push(body);
-    }
-    profile.visible = true;
-    body.visible = true;
+    const bodies: ModelEntity[] = [];
+    profiles.forEach((profile, index) => {
+        let body = index === 0 ? existingBody : undefined;
+        if (!body) {
+            body = createEntity('extrude', uid());
+            body.name = uniqueName('extrude');
+            body.parentId = profile.parentId;
+            body.profileId = profile.id;
+            body.points = profile.points!.map((point) => [...point]);
+            body.profileType = profile.profileType;
+            body.planeId = profile.planeId;
+            body.depth = 10;
+            body.sideMode = 'one';
+            body.direction = 1;
+            body.position = [0, 0, 0];
+            body.sectorAngle = profile.sectorAngle;
+            document.value.entities.push(body);
+        }
+        profile.visible = true;
+        body.visible = true;
+        bodies.push(body);
+    });
+    const body = bodies[0];
     let targetId: string | null = null;
     let result: 'new' | BooleanOperation = 'new';
     if (!existingBody) {
         const bounds = new THREE.Box3().setFromObject(buildEntityMesh(body, document.value));
-        const target = document.value.entities.find((item) => item.visible && item.id !== body!.id && item.kind !== 'sketch' && (() => {
+        const target = document.value.entities.find((item) => item.visible && !bodies.some((entry) => entry.id === item.id) && item.kind !== 'sketch' && (() => {
             try { return bounds.intersectsBox(new THREE.Box3().setFromObject(buildEntityMesh(item, document.value))); } catch { return false; }
         })());
         if (target) { targetId = target.id; result = body.direction === -1 ? 'subtract' : 'union'; }
     }
-    operation.value = { type: 'extrude', profileId, bodyId: body.id, before, result, targetId, existing: !!existingBody };
+    operation.value = { type: 'extrude', profileId, bodyId: body.id, profileIds: profiles.map((item) => item.id), bodyIds: bodies.map((item) => item.id), before, result, targetId, existing: !!existingBody };
+    activePanel.value = null;
     historyEditId.value = existingBody?.id || null;
-    selectedIds.value = [profileId];
+    selectedIds.value = profiles.map((item) => item.id);
     activeTool.value = 'extrude';
     viewport?.setTool('extrude');
-    viewport?.setView('perspective');
+    if (!keepView) viewport?.setView('perspective');
 }
 function updateExtrude(key: 'depth' | 'direction' | 'sideMode' | 'draftAngle', value: any) {
-    if (!extrudeBody.value || value === null) return;
-    (extrudeBody.value as any)[key] = value;
+    if (operation.value?.type !== 'extrude' || value === null) return;
+    operation.value.bodyIds.forEach((id) => {
+        const body = document.value.entities.find((item) => item.id === id);
+        if (body) (body as any)[key] = value;
+    });
+}
+function onExtrudeGesture(profileId: string, direction: 1 | -1, delta: number, phase: EditPhase) {
+    if (phase === 'start') {
+        extrudeGestureMoved = false;
+        if (!operation.value) startExtrude(profileId, undefined, true);
+        if (operation.value?.type !== 'extrude') return;
+        updateExtrude('direction', direction);
+        updateExtrude('depth', 0.1);
+        return;
+    }
+    if (phase === 'move' && operation.value?.type === 'extrude') {
+        extrudeGestureMoved = true;
+        updateExtrude('depth', Math.max(0.1, Math.round(delta * 100) / 100));
+    } else if (phase === 'end' && !extrudeGestureMoved && operation.value?.type === 'extrude') cancelOperation();
 }
 function updateExtrudeResult(result: 'new' | BooleanOperation) {
     if (operation.value?.type === 'extrude') operation.value.result = result;
@@ -377,9 +585,13 @@ function doneOperation() {
     const current = operation.value;
     if (!current) return;
     if (current.type === 'extrude') {
-        const profile = document.value.entities.find((item) => item.id === current.profileId);
         const body = document.value.entities.find((item) => item.id === current.bodyId);
-        if (profile) profile.visible = false;
+        current.profileIds.forEach((profileId) => {
+            const profile = document.value.entities.find((item) => item.id === profileId);
+            if (profile) profile.visible = false;
+            const plane = document.value.planes.find((item) => item.id === profile?.planeId);
+            if (plane) plane.visible = false;
+        });
         let selectedId = current.bodyId;
         if (current.result !== 'new') {
             if (!current.targetId) return message.warning('请选择自动布尔的目标 Body');
@@ -422,6 +634,17 @@ function cancelOperation() {
     setTool('select');
 }
 function editHistory(id: string) {
+    if (id.endsWith(':edge')) {
+        const entity = document.value.entities.find((item) => item.id === id.slice(0, -5));
+        if (!entity?.edge) return;
+        selectedIds.value = [entity.id];
+        selectionKind.value = 'edge';
+        historyEditId.value = entity.id;
+        activePanel.value = null;
+        parameterCardOpen.value = true;
+        setTool(entity.edge.type);
+        return;
+    }
     const entity = document.value.entities.find((item) => item.id === id);
     if (!entity) return;
     if (entity.kind === 'sketch') return startExtrude(id);
@@ -440,23 +663,44 @@ function editHistory(id: string) {
 function selectFromItems(id: string, additive: boolean) {
     if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
     selectEntity(id, additive);
+    selectionKind.value = additive ? 'mixed' : 'body';
+    activePanel.value = null;
+    parameterCardOpen.value = true;
     if (additive) return;
     const entity = document.value.entities.find((item) => item.id === id);
-    if (entity?.kind === 'sketch') startExtrude(id);
+    if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool('select'); }
     else if (entity && entity.kind !== 'boolean') setTool('translate');
 }
-function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3) {
+function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false) {
+    const picked = document.value.entities.find((item) => item.id === id);
+    if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
+        operation.value.targetId = id;
+        if (operation.value.result === 'new') operation.value.result = 'union';
+        return;
+    }
     lastFace.value = { bodyId: id, normal, point };
-    selectEntity(id);
-    const entity = document.value.entities.find((item) => item.id === id);
+    selectEntity(id, additive);
+    selectionKind.value = additive ? 'mixed' : picked?.kind === 'sketch' ? 'sketch' : type;
+    activePanel.value = null;
+    parameterCardOpen.value = true;
+    if (additive) { setTool('select'); return; }
+    const entity = picked;
     if (entity?.kind === 'sketch') {
-        if (profileClosed(entity.profileType || 'polygon')) startExtrude(id);
-        else startSketch();
+        if (!profileClosed(entity.profileType || 'polygon')) startSketch(true);
+        else setTool('select');
     } else if (type === 'edge') setTool('fillet');
     else setTool('offsetFace');
 }
 function onBodySelect(id: string) {
     selectEntity(id);
+    if (document.value.entities.find((item) => item.id === id)?.kind === 'sketch') {
+        selectionKind.value = 'sketch';
+        startSketch(true);
+        return;
+    }
+    selectionKind.value = 'body';
+    activePanel.value = null;
+    parameterCardOpen.value = true;
     setTool('translate');
 }
 function edgeLimitFor(item: ModelEntity) {
@@ -470,11 +714,25 @@ function clearEdge() {
     pushHistory();
     selected.value.edge = null;
 }
+function updateFaceOffsetInput(value: number | null) {
+    const item = selected.value;
+    if (!item || value === null || !lastFace.value) return;
+    pushHistory();
+    if (value <= 0) item.faceOffset = null;
+    else {
+        const rotation = new THREE.Euler(...item.rotation.map(THREE.MathUtils.degToRad) as Vec3);
+        const normal = new THREE.Vector3(...lastFace.value.normal).applyQuaternion(new THREE.Quaternion().setFromEuler(rotation).invert()).normalize().toArray() as Vec3;
+        item.faceOffset = { normal, distance: value };
+    }
+}
 
 function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase) {
     if (activeTool.value === 'extrude') {
         if (phase === 'start') directBase = extrudeBody.value ? cloneEntity(extrudeBody.value) : null;
-        else if (phase === 'move' && directBase && extrudeBody.value) extrudeBody.value.depth = Math.round(Math.max(0.1, (directBase.depth || 10) + delta) * 10000) / 10000;
+        else if (phase === 'move' && directBase && operation.value?.type === 'extrude') operation.value.bodyIds.forEach((id) => {
+            const body = document.value.entities.find((item) => item.id === id);
+            if (body) body.depth = Math.round(Math.max(0.1, (directBase!.depth || 10) + delta) * 10000) / 10000;
+        });
         else directBase = null;
         return;
     }
@@ -483,10 +741,14 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
     const edgeTool = activeTool.value === 'fillet' || activeTool.value === 'chamfer';
     if (phase ==='start') {
         if (edgeTool && !['box', 'cylinder', 'extrude'].includes(item.kind)) return message.warning('该实体暂不支持边处理');
-        if (!edgeTool && item.kind === 'boolean') return message.warning('请推拉基础实体的面');
-        pushHistory();
-        if (edgeTool) item.edge = { type: activeTool.value as 'fillet' | 'chamfer', size: item.edge?.size || 3, segments: item.edge?.segments || 6 };
+        if (!edgeTool && !['box', 'cylinder', 'extrude'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
+        if (!edgeTool && item.kind === 'cylinder' && Math.abs(normal[1]) < 0.5) return message.warning('圆柱侧面暂不支持向外拉伸');
+        if (!edgeTool && item.kind === 'extrude') {
+            const plane = document.value.planes.find((entry) => entry.id === item.planeId);
+            if (plane && Math.abs(new THREE.Vector3(...normal).dot(new THREE.Vector3(...plane.normal))) < 0.9) return message.warning('请选择拉伸体的顶面或底面');
+        }
         directBase = cloneEntity(item);
+        directHistoryPushed = false;
         return;
     }
     if (phase === 'end') {
@@ -494,27 +756,17 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
         return;
     }
     if (!directBase) return;
+    if (!directHistoryPushed) {
+        pushHistory();
+        if (edgeTool) item.edge = { type: activeTool.value as 'fillet' | 'chamfer', size: item.edge?.size || 3, segments: item.edge?.segments || 6 };
+        directHistoryPushed = true;
+    }
     if (edgeTool) {
         const size = Math.round(THREE.MathUtils.clamp((directBase.edge?.size || 3) + delta, 0.1, edgeLimitFor(directBase)) * 10000) / 10000;
         item.edge = { ...directBase.edge!, size };
         return;
     }
-    const axis = Math.abs(normal[0]) > 0.5 ? 0 : Math.abs(normal[1]) > 0.5 ? 1 : 2;
-    const sign = Math.sign(normal[axis]) || 1;
-    let key: 'width' | 'height' | 'depth' | 'radius' = 'height';
-    if (item.kind === 'box') key = axis === 0 ? 'width' : axis === 1 ? 'height' : 'depth';
-    else if (item.kind === 'cylinder') key = axis === 1 ? 'height' : 'radius';
-    else if (item.kind === 'extrude') key = 'depth';
-    else if (item.kind === 'sphere') key = 'radius';
-    const baseValue = directBase[key] || 1;
-    const nextValue = Math.round(Math.max(0.1, baseValue + delta * (item.kind === 'sphere' ? 0.5 : sign)) * 10000) / 10000;
-    item[key] = nextValue;
-    const shouldOffset = item.kind === 'box' || (item.kind === 'cylinder' && axis === 1) || (item.kind === 'extrude' && axis === 1);
-    if (shouldOffset) {
-        const actual = nextValue - baseValue;
-        const direction = new THREE.Vector3(...normal).normalize().applyEuler(new THREE.Euler(...directBase.rotation.map(THREE.MathUtils.degToRad) as Vec3));
-        item.position = directBase.position.map((value, index) => value + direction.getComponent(index) * actual / 2) as Vec3;
-    }
+    item.faceOffset = { normal: [...normal], distance: Math.round(Math.max(0.1, (directBase.faceOffset?.distance || 0) + delta) * 100) / 100 };
 }
 
 function startSketch(editProfile = false) {
@@ -541,11 +793,16 @@ function startSketch(editProfile = false) {
     sketchType.value = editing?.profileType || 'polygon';
     sketchCurves.value = editing?.curves ? JSON.parse(JSON.stringify(editing.curves)) : {};
     sketchSides.value = editing?.sides || 3;
+    sketchSectorAngle.value = editing?.sectorAngle || 360;
+    sketchAppendMode.value = !editing || editing.profileType === 'polygon';
     selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
     selectedSketchPoint.value = -1;
+    sketchLockedPoints.value = editing?.lockedPoints ? [...editing.lockedPoints] : [];
     if (!editing) selectedIds.value = [];
     setTool('select');
     sketchMode.value = true;
+    viewport?.setSketchEditing(editing?.id || null);
     viewport?.setSketchMode(true, sketchPoints.value);
     refreshSketch();
     viewport?.normalToSketch();
@@ -570,21 +827,21 @@ function persistSketchProgress(resetAfter: boolean) {
         entity.points = sketchPoints.value.map((point) => [...point]);
         entity.profileType = sketchType.value;
         entity.curves = JSON.parse(JSON.stringify(sketchCurves.value));
+        entity.lockedPoints = [...sketchLockedPoints.value];
         entity.sides = sketchSides.value;
+        entity.sectorAngle = sketchSectorAngle.value;
         entity.visible = true;
     }
     if (resetAfter) {
-        editingSketchId.value = null;
-        sketchPoints.value = [];
-        sketchCurves.value = {};
-        selectedSketchPoint.value = -1;
-        selectedSketchSegment.value = -1;
-        selectedIds.value = [activePlaneId.value!];
+        selectedIds.value = [id!];
+        sketchAppendMode.value = sketchType.value === 'polygon';
+        viewport?.setSketchEditing(id!);
         refreshSketch();
     }
 }
 function refreshSketch() {
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value);
+    viewport?.setSketchEditing(editingSketchId.value);
+    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value);
 }
 function setSketchType(type: ProfileType) {
     sketchType.value = type;
@@ -592,11 +849,81 @@ function setSketchType(type: ProfileType) {
     if (activePlaneId.value) selectedIds.value = [activePlaneId.value];
     sketchPoints.value = [];
     sketchCurves.value = {};
+    sketchLockedPoints.value = [];
+    sketchSectorAngle.value = 360;
+    sketchAppendMode.value = true;
+    viewport?.setSketchEditing(null);
+    selectedSketchSegments.value = [];
     selectedSketchPoint.value = -1;
     selectedSketchSegment.value = -1;
     refreshSketch();
 }
+function clearSketchSelection() {
+    editingSketchId.value = null;
+    sketchPoints.value = [];
+    sketchCurves.value = {};
+    sketchLockedPoints.value = [];
+    sketchSectorAngle.value = 360;
+    sketchAppendMode.value = false;
+    selectedSketchPoint.value = -1;
+    selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
+    selectedIds.value = activePlaneId.value ? [activePlaneId.value] : [];
+    sketchContextMenu.value = null;
+    viewport?.setSketchEditing(null);
+    refreshSketch();
+}
+function selectSketchEntity(id: string) {
+    const entity = document.value.entities.find((item) => item.id === id && item.kind === 'sketch');
+    if (!entity) return;
+    if (entity.planeId && entity.planeId !== activePlaneId.value) {
+        activePlaneId.value = entity.planeId;
+        viewport?.setActivePlane(activePlane.value);
+    }
+    editingSketchId.value = id;
+    sketchPoints.value = cloneEntity(entity).points || [];
+    sketchType.value = entity.profileType || 'polygon';
+    sketchCurves.value = JSON.parse(JSON.stringify(entity.curves || {}));
+    sketchSides.value = entity.sides || 3;
+    sketchSectorAngle.value = entity.sectorAngle || 360;
+    sketchLockedPoints.value = [...(entity.lockedPoints || [])];
+    sketchAppendMode.value = sketchType.value === 'polygon';
+    selectedSketchPoint.value = -1;
+    selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
+    selectedIds.value = [id];
+    sketchContextMenu.value = null;
+    viewport?.setSketchEditing(id);
+    refreshSketch();
+}
+function openSketchContext(id: string | null, x: number, y: number) {
+    if (id && id !== editingSketchId.value) selectSketchEntity(id);
+    const targetId = id || editingSketchId.value;
+    if (!targetId) return clearSketchSelection();
+    sketchContextMenu.value = { id: targetId, x: Math.min(x, window.innerWidth - 160), y: Math.min(y, window.innerHeight - 110) };
+}
+function deleteSketchFromContext() {
+    const id = sketchContextMenu.value?.id;
+    if (!id) return;
+    const dependent = document.value.entities.find((item) => item.profileId === id);
+    if (dependent) {
+        sketchContextMenu.value = null;
+        return message.warning(`请先删除引用此草图的「${dependent.name}」`);
+    }
+    pushHistory();
+    document.value.entities = document.value.entities.filter((item) => item.id !== id);
+    clearSketchSelection();
+}
+function deleteViewportSketch() {
+    const id = viewportMenu.value?.id;
+    viewportMenu.value = null;
+    if (!id) return;
+    sketchContextMenu.value = { id, x: 0, y: 0 };
+    deleteSketchFromContext();
+}
 function addSketchPoint(point: Point2) {
+    if (sketchType.value === 'polygon' && !sketchAppendMode.value) return;
+    if (editingSketchId.value && !['polygon', 'arc'].includes(sketchType.value)) return;
     if (sketchType.value === 'circle' && sketchPoints.value.length >= 2) return;
     if (sketchType.value === 'arc' && sketchPoints.value.length >= 3) return;
     if (sketchType.value === 'ellipse' && sketchPoints.value.length >= 3) return;
@@ -610,9 +937,14 @@ function addSketchPoint(point: Point2) {
     } else sketchPoints.value.push(point);
     syncEditingSketch();
     refreshSketch();
-    if (sketchType.value !== 'polygon' && sketchType.value !== 'arc') persistSketchProgress(true);
+    if (sketchType.value === 'polygon' || sketchType.value === 'arc') persistSketchProgress(false);
+    else persistSketchProgress(true);
 }
 function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
+    if (sketchLockedPoints.value.includes(index)) {
+        if (phase === 'start') message.info('该点已锁定，请先在 Constraints 中解锁');
+        return;
+    }
     if (phase === 'start') {
         if (editingSketchId.value) pushHistory();
         return;
@@ -620,7 +952,15 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (!sketchPoints.value[index]) return;
     const previous = sketchPoints.value[index];
     const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
-    sketchPoints.value[index] = point;
+    if (sketchType.value === 'rectangle' && sketchPoints.value.length === 4) {
+        const opposite = sketchPoints.value[(index + 2) % 4];
+        sketchPoints.value = [point, [opposite[0], point[1]], opposite, [point[0], opposite[1]]];
+        if (index === 1) sketchPoints.value = [[opposite[0], point[1]], point, [point[0], opposite[1]], opposite];
+        else if (index === 2) sketchPoints.value = [opposite, [point[0], opposite[1]], point, [opposite[0], point[1]]];
+        else if (index === 3) sketchPoints.value = [[point[0], opposite[1]], opposite, [opposite[0], point[1]], point];
+    } else if (index === 0 && ['circle', 'ellipse', 'regular'].includes(sketchType.value)) {
+        sketchPoints.value = sketchPoints.value.map((source) => [source[0] + delta[0], source[1] + delta[1]]);
+    } else sketchPoints.value[index] = point;
     Object.entries(sketchCurves.value).forEach(([key, curve]) => {
         const segment = Number(key);
         if (segment === index) curve.c1 = [curve.c1[0] + delta[0], curve.c1[1] + delta[1]];
@@ -638,8 +978,11 @@ function ensureSketchSegment(index: number) {
         sketchCurves.value[index] = { c1: [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3] };
     }
 }
-function selectSketchSegment(index: number) {
+function selectSketchSegment(index: number, additive = false) {
     ensureSketchSegment(index);
+    selectedSketchSegments.value = additive
+        ? selectedSketchSegments.value.includes(index) ? selectedSketchSegments.value.filter((item) => item !== index) : [...selectedSketchSegments.value, index]
+        : [index];
     persistSketchProgress(false);
     selectedSketchPoint.value = -1;
     syncEditingSketch();
@@ -661,6 +1004,7 @@ function selectSketchPoint(index: number) {
     refreshSketch();
 }
 function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
+    if (editingSketchId.value) return;
     if (phase === 'start') return;
     if (sketchType.value === 'rectangle') sketchPoints.value = [start, [point[0], start[1]], point, [start[0], point[1]]];
     else if (sketchType.value === 'ellipse') sketchPoints.value = [start, [point[0], start[1]], [start[0], point[1]]];
@@ -685,7 +1029,45 @@ function updateSketchCoordinate(axis: 0 | 1, value: number | null) {
 function syncEditingSketch() {
     if (!editingSketchId.value) return;
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
-    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; }
+    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; }
+}
+function applySketchConstraint(type: 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal') {
+    const segments = selectedSketchSegments.value.filter((index) => sketchPoints.value[index] && sketchPoints.value[(index + 1) % sketchPoints.value.length]);
+    if (!segments.length) return;
+    if (editingSketchId.value) pushHistory();
+    const reference = sketchPoints.value[segments[0]];
+    const referenceEnd = sketchPoints.value[(segments[0] + 1) % sketchPoints.value.length];
+    const referenceAngle = Math.atan2(referenceEnd[1] - reference[1], referenceEnd[0] - reference[0]);
+    const referenceLength = Math.hypot(referenceEnd[0] - reference[0], referenceEnd[1] - reference[1]);
+    segments.forEach((index, order) => {
+        const endIndex = (index + 1) % sketchPoints.value.length;
+        if (sketchLockedPoints.value.includes(endIndex)) return;
+        const a = sketchPoints.value[index];
+        const b = sketchPoints.value[endIndex];
+        const resolved = type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : type;
+        if (resolved === 'horizontal') b[1] = a[1];
+        else if (resolved === 'vertical') b[0] = a[0];
+        else if (order > 0 && type === 'equal') {
+            const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+            sketchPoints.value[endIndex] = [a[0] + Math.cos(angle) * referenceLength, a[1] + Math.sin(angle) * referenceLength];
+        } else if (order > 0 && (type === 'parallel' || type === 'perpendicular')) {
+            const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            const angle = referenceAngle + (type === 'perpendicular' ? Math.PI / 2 : 0);
+            sketchPoints.value[endIndex] = [a[0] + Math.cos(angle) * length, a[1] + Math.sin(angle) * length];
+        }
+    });
+    syncEditingSketch();
+    persistSketchProgress(false);
+    refreshSketch();
+}
+function toggleSketchPointLock() {
+    const index = selectedSketchPoint.value;
+    if (index < 0) return;
+    if (editingSketchId.value) pushHistory();
+    sketchLockedPoints.value = sketchLockedPoints.value.includes(index) ? sketchLockedPoints.value.filter((item) => item !== index) : [...sketchLockedPoints.value, index];
+    syncEditingSketch();
+    persistSketchProgress(false);
+    refreshSketch();
 }
 function updateSketchDepth(value: number | null) {
     if (value === null) return;
@@ -693,6 +1075,58 @@ function updateSketchDepth(value: number | null) {
     sketchDepth.value = Math.max(0.1, value);
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
     if (item) item.depth = sketchDepth.value;
+}
+function onSketchSectorMove(point: Point2, phase: EditPhase) {
+    if (phase === 'start') {
+        if (editingSketchId.value) pushHistory();
+        return;
+    }
+    const center = sketchPoints.value[0], radiusPoint = sketchPoints.value[1];
+    if (!center || !radiusPoint) return;
+    const start = Math.atan2(radiusPoint[1] - center[1], radiusPoint[0] - center[0]);
+    const current = Math.atan2(point[1] - center[1], point[0] - center[0]);
+    sketchSectorAngle.value = Math.max(0.01, ((current - start) * 180 / Math.PI + 360) % 360);
+    syncEditingSketch();
+    refreshSketch();
+}
+function resetSketchSector() {
+    if (editingSketchId.value) pushHistory();
+    sketchSectorAngle.value = 360;
+    syncEditingSketch();
+    refreshSketch();
+}
+function onSketchDimension(target: SketchDimension, value: number) {
+    if (!Number.isFinite(value) || value <= 0) return;
+    if (editingSketchId.value) pushHistory();
+    const points = sketchPoints.value;
+    const setRadius = (center: Point2, edge: Point2, radius: number) => {
+        const angle = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius] as Point2;
+    };
+    if (target.kind === 'angle') sketchSectorAngle.value = Math.min(360, value);
+    else if (target.kind === 'segment' && target.index !== undefined) {
+        const a = points[target.index], b = points[(target.index + 1) % points.length];
+        if (a && b) points[(target.index + 1) % points.length] = setRadius(a, b, value);
+    } else if ((target.kind === 'width' || target.kind === 'height') && points.length === 4) {
+        const axis = target.kind === 'width' ? 0 : 1;
+        const center = (points[0][axis] + points[2][axis]) / 2;
+        points.forEach((point) => point[axis] = center + (point[axis] < center ? -value / 2 : value / 2));
+    } else if (target.kind === 'radius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
+    else if (target.kind === 'regularRadius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
+    else if (target.kind === 'radiusX' && points[0] && points[1]) points[1][0] = points[0][0] + (points[1][0] < points[0][0] ? -value : value);
+    else if (target.kind === 'radiusY' && points[0] && points[2]) points[2][1] = points[0][1] + (points[2][1] < points[0][1] ? -value : value);
+    else if (target.kind === 'control' && target.index !== undefined && target.handle) {
+        const curve = sketchCurves.value[target.index];
+        const anchor = target.handle === 1 ? points[target.index] : points[(target.index + 1) % points.length];
+        const key = target.handle === 1 ? 'c1' : 'c2';
+        if (curve && anchor) curve[key] = setRadius(anchor, curve[key], value);
+    } else if (target.kind === 'arcRadius') {
+        const center = profileArcCenter(points);
+        if (center) points.forEach((point, index) => points[index] = setRadius(center, point, value));
+    }
+    syncEditingSketch();
+    persistSketchProgress(false);
+    refreshSketch();
 }
 function finishSketch() {
     if (!sketchMode.value) return;
@@ -705,6 +1139,8 @@ function finishSketch() {
     if (existing) {
         existing.points = points;
         existing.profileType = sketchType.value;
+        existing.lockedPoints = [...sketchLockedPoints.value];
+        existing.sectorAngle = sketchSectorAngle.value;
         if (existing.kind === 'extrude') existing.depth = sketchDepth.value;
     } else {
         pushHistory();
@@ -713,6 +1149,8 @@ function finishSketch() {
         entity.points = points;
         entity.profileType = sketchType.value;
         entity.sides = sketchSides.value;
+        entity.lockedPoints = [...sketchLockedPoints.value];
+        entity.sectorAngle = sketchSectorAngle.value;
         entity.planeId = activePlaneId.value!;
         entity.position = [0, 0, 0];
         delete entity.depth;
@@ -730,9 +1168,13 @@ function closeSketch() {
 }
 function cancelSketch() {
     sketchMode.value = false;
+    sketchContextMenu.value = null;
+    viewport?.setSketchEditing(null);
     sketchPoints.value = [];
     selectedSketchPoint.value = -1;
     selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
+    sketchLockedPoints.value = [];
     sketchCurves.value = {};
     editingSketchId.value = null;
     viewport?.setSketchMode(false);
@@ -768,24 +1210,8 @@ function deleteContextNodes() {
     const menu = contextMenu.value;
     if (!menu) return;
     const ids = selectedIds.value.includes(menu.node.id) ? [...selectedIds.value] : [menu.node.id];
-    const referenced = document.value.entities.find((item) => item.kind === 'boolean' && item.operands?.some((id) => ids.includes(id)) && !ids.includes(item.id));
-    if (referenced) { contextMenu.value = null; return message.warning(`请先删除依赖它的「${referenced.name}」`); }
-    pushHistory();
-    ids.forEach((id) => {
-        const entity = document.value.entities.find((item) => item.id === id);
-        if (entity?.kind === 'boolean') entity.operands?.forEach((operandId) => {
-            const operand = document.value.entities.find((item) => item.id === operandId);
-            if (operand) operand.visible = true;
-        });
-        if (document.value.folders.some((folder) => folder.id === id)) {
-            document.value.folders.filter((folder) => folder.parentId === id).forEach((folder) => folder.parentId = null);
-            document.value.entities.filter((entity) => entity.parentId === id).forEach((entity) => entity.parentId = null);
-        }
-    });
-    document.value.entities = document.value.entities.filter((item) => !ids.includes(item.id));
-    document.value.folders = document.value.folders.filter((item) => !ids.includes(item.id));
-    selectedIds.value = [];
     contextMenu.value = null;
+    deleteNodeIds(ids);
 }
 function reparentNodes(ids: string[], targetId: string | null) {
     // A node may contain folders or entities, but dragging into its own descendant is rejected.
@@ -802,26 +1228,30 @@ function reparentNodes(ids: string[], targetId: string | null) {
     pushHistory();
     valid.forEach((id) => nodes.get(id)!.parentId = targetId);
 }
-function createPlane() {
-    const useFace = !!selected.value && lastFace.value?.bodyId === selected.value.id;
-    const normal = useFace ? new THREE.Vector3(...lastFace.value!.normal).normalize() : new THREE.Vector3(0, 1, 0);
+function createPlane(kind: SketchPlane['kind'] = 'XZ') {
+    const useFace = selectionKind.value === 'face' && !!selected.value && lastFace.value?.bodyId === selected.value.id;
+    const normal = useFace ? new THREE.Vector3(...lastFace.value!.normal).normalize() : new THREE.Vector3(kind === 'YZ' ? 1 : 0, kind === 'XZ' ? 1 : 0, kind === 'XY' ? 1 : 0);
     const reference = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    const u = useFace ? reference.clone().cross(normal).normalize() : new THREE.Vector3(1, 0, 0);
-    const v = useFace ? normal.clone().cross(u).normalize() : new THREE.Vector3(0, 0, -1);
+    const u = useFace ? reference.clone().cross(normal).normalize() : kind === 'YZ' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const v = useFace ? normal.clone().cross(u).normalize() : kind === 'XZ' ? new THREE.Vector3(0, 0, -1) : kind === 'YZ' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
     const plane: SketchPlane = {
-        id: uid(), name: useFace ? `实体面平面 ${document.value.planes.length + 1}` : `XZ 平面 ${document.value.planes.length + 1}`,
-        kind: useFace ? 'XY' : 'XZ', origin: useFace ? lastFace.value!.point : [0, 0, 0], normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: true,
+        id: uid(), name: useFace ? `实体面平面 ${document.value.planes.length + 1}` : `${kind} 平面 ${document.value.planes.length + 1}`,
+        kind: useFace ? 'XY' : kind, origin: useFace ? lastFace.value!.point : [0, 0, 0], normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: true,
     };
     pushHistory();
     document.value.planes.push(plane);
     activePlaneId.value = plane.id;
     selectedIds.value = [plane.id];
+    selectionKind.value = 'plane';
     viewport?.setActivePlane(plane);
     setTool('select');
+    activePanel.value = null;
 }
 function selectPlane(id: string) {
     activePlaneId.value = id;
     selectedIds.value = [id];
+    selectionKind.value = 'plane';
+    activePanel.value = null;
     viewport?.setActivePlane(activePlane.value);
     setTool('select');
 }
@@ -840,7 +1270,11 @@ function toggleNodeVisibility(id: string) {
         return;
     }
     const plane = document.value.planes.find((item) => item.id === id);
-    if (plane) { plane.visible = !plane.visible; return; }
+    if (plane) {
+        plane.visible = !plane.visible;
+        if (!plane.visible && activePlaneId.value === plane.id && sketchMode.value) cancelSketch();
+        return;
+    }
     const entity = document.value.entities.find((item) => item.id === id);
     if (entity) entity.visible = !entity.visible;
 }
@@ -910,12 +1344,20 @@ function onKeyDown(event: KeyboardEvent) {
     if (event.metaKey || event.ctrlKey || event.code === 'Space') return;
     if (event.code === 'Enter' && operation.value) doneOperation();
     else if (event.code === 'Enter' && sketchMode.value) finishSketch();
-    else if (event.code === 'Escape') operation.value ? cancelOperation() : sketchMode.value ? cancelSketch() : setTool('select');
+    else if (event.code === 'Escape') {
+        if (operation.value) cancelOperation();
+        else if (sketchMode.value) clearSketchSelection();
+        else if (activeTool.value !== 'select') setTool('select');
+        else { activePanel.value = null; selectEntity(null); }
+    }
     else if (event.code === 'Delete' || event.code === 'Backspace') removeSelected();
     else if (event.code === 'KeyV') setTool('select');
     else if (event.code === 'KeyG') setTool('translate');
     else if (event.code === 'KeyR') setTool('rotate');
-    else if (event.code === 'KeyS') setTool('scale');
+    else if (event.code === 'KeyS' && selectionKind.value !== 'plane') setTool('scale');
+    else if (event.code === 'KeyE' && operation.value?.type === 'extrude' && extrudeBody.value) updateExtrude('sideMode', extrudeBody.value.sideMode === 'one' ? 'symmetric' : 'one');
+    else if (event.code === 'KeyE' && selected.value?.kind === 'sketch') startExtrude(selected.value.id);
+    else if (event.code === 'KeyF' && selectionKind.value === 'edge') chooseTool('fillet');
     else if (event.code === 'KeyF') viewport?.fit();
 }
 
@@ -927,6 +1369,7 @@ watch(selectedIds, (ids) => viewport?.setSelected(ids), { deep: true });
 watch(() => project.value.name, scheduleSave);
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
+watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
 
 onMounted(async () => {
     viewport = new Viewport(viewportElement.value!, {
@@ -964,8 +1407,21 @@ onMounted(async () => {
         onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
         onSketchComplete: finishSketch,
-        onBlankCommit: () => operation.value ? doneOperation() : setTool('select'),
-        onExtrudeDimension: () => nextTick(() => window.document.querySelector<HTMLInputElement>('.extrude-distance-input input')?.focus()),
+        onSketchEntitySelect: selectSketchEntity,
+        onSketchContext: openSketchContext,
+        onSketchSectorMove,
+        onSketchSectorReset: resetSketchSector,
+        onSketchDimension,
+        onLengthUnitChange: setLengthUnit,
+        onExtrudeGesture,
+        onBlankCommit,
+        onExtrudeDimension: () => {
+            parameterCardOpen.value = true;
+            nextTick(() => window.document.querySelector<HTMLInputElement>('.extrude-distance-input input, .direct-distance-input input')?.focus());
+        },
+        onMarqueeSelect,
+        onHoverSketch,
+        onViewportContext: openViewportMenu,
         onSpaceChange: (active) => spaceActive.value = active,
         onMeasureChange: (active) => measureMode.value = active,
         onScale: (value) => scaleBar.value = value,
@@ -1006,12 +1462,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="studio-shell" @click="contextMenu = null">
+    <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
         <header class="topbar">
             <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>FORM</strong><span>3D STUDIO</span></div></div>
-            <div class="topbar-project"><span class="local-badge"><i></i> 本地项目</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /></div>
+            <div class="topbar-project"><span class="local-badge"><i></i> 本地项目</span><NInput v-model:value="project.name" class="project-name" size="small" :bordered="false" /><span v-if="saveState === 'saving'" class="project-saving" title="保存中"><i></i></span></div>
             <div class="topbar-actions">
-                <span class="save-state" :class="saveState"><NIcon :size="15"><CheckmarkOutline /></NIcon>{{ saveLabel }}</span>
                 <NTooltip><template #trigger><button class="icon-button" :disabled="!canUndo" @click="undo"><NIcon><ArrowUndoOutline /></NIcon></button></template>撤销 ⌘Z</NTooltip>
                 <NTooltip><template #trigger><button class="icon-button" :disabled="!canRedo" @click="redo"><NIcon><ArrowRedoOutline /></NIcon></button></template>重做 ⇧⌘Z</NTooltip>
                 <button class="icon-button" @click="showHelp = true"><NIcon><HelpCircleOutline /></NIcon></button>
@@ -1030,9 +1485,9 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="workspace">
-            <aside class="left-panel panel">
+            <aside v-show="itemsVisible" class="left-panel panel">
                 <section class="objects-section">
-                    <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ document.entities.length }}</i></span></div>
+                    <div class="section-label">实体 <span class="section-actions"><button title="新建文件夹" @click="createFolder"><NIcon><FolderOutline /></NIcon> +</button><i>{{ visibleEntityCount }}</i></span></div>
                     <div class="object-list">
                         <div v-if="!treeNodes.length" class="empty-objects">使用画布左侧工具开始建模</div>
                         <EntityTree :nodes="treeNodes" :selected-ids="selectedIds" @select="selectFromItems" @context="openNodeContext" @drop="reparentNodes"
@@ -1049,68 +1504,122 @@ onBeforeUnmount(() => {
                         <NPopconfirm @positive-click="removeProject"><template #trigger><button class="danger-hover"><NIcon><TrashOutline /></NIcon><span>删除</span></button></template>删除当前项目？此操作不可撤销。</NPopconfirm>
                     </div>
                 </section>
-                <div class="storage-note"><NIcon><CloudDoneOutline /></NIcon><div><strong>自动保存</strong><span>项目仅存储在此浏览器的 IndexedDB 中</span></div></div>
             </aside>
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode }">
                 <div ref="viewportElement" class="viewport"></div>
-                <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode }">
-                    <div class="menu-state">建模工具</div>
-                    <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'select' }" @click="setTool('select')"><NIcon><NavigateOutline /></NIcon></button></template>选择 · V</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'translate' }" @click="setTool('translate')"><NIcon><MoveOutline /></NIcon></button></template>移动 · G</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: activeTool === 'rotate' }" @click="setTool('rotate')"><NIcon><RepeatOutline /></NIcon></button></template>旋转 · R</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!!activePlane && selectedIds.includes(activePlane.id)" :class="{ active: activeTool === 'scale' }" @click="setTool('scale')"><NIcon><ResizeOutline /></NIcon></button></template>缩放 · S（平面不可用）</NTooltip>
-                    </div>
-                    <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button @click="createPlane"><NIcon><LayersOutline /></NIcon></button></template>添加绘制平面</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!canDraw" @click="startSketch()"><SvgIcon name="pencil" /></button></template>绘制形状（先选平面）</NTooltip>
+                <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }">
+                    <div class="menu-state">建模</div>
+                    <div class="tool-group primary-tools">
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'search' }" @click="togglePanel('search')"><NIcon><SearchOutline /></NIcon></button></template>搜索 / 命令搜索</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'sketch' || sketchMode }" @click="beginSketch()"><SvgIcon name="pencil" /></button></template>草图</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'insert' }" @click="togglePanel('insert')"><NIcon><AddOutline /></NIcon></button></template>插入</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'construct' }" @click="togglePanel('construct')"><NIcon><LayersOutline /></NIcon></button></template>构造</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'transform' }" @click="togglePanel('transform')"><NIcon><MoveOutline /></NIcon></button></template>变换</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'tools' }" @click="togglePanel('tools')"><NIcon><BuildOutline /></NIcon></button></template>工具</NTooltip>
                     </div>
                     <div class="toolbar-spacer"></div>
-                    <div class="tool-group">
-                        <NTooltip placement="right"><template #trigger><button :disabled="!selected || selected.kind === 'boolean'" @click="duplicateSelected"><NIcon><CopyOutline /></NIcon></button></template>复制实体</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :disabled="!selectedIds.length" @click="removeSelected"><NIcon><TrashOutline /></NIcon></button></template>删除</NTooltip>
-                        <NTooltip placement="right"><template #trigger><button :class="{ active: gridVisible }" @click="gridVisible = !gridVisible"><NIcon><GridOutline /></NIcon></button></template>地面网格</NTooltip>
+                    <div class="tool-group primary-tools">
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: sectionActive }" @click="toggleSection"><NIcon><CutOutline /></NIcon></button></template>剖视图</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: isolateActive }" :disabled="!isolateActive && !selectedIds.length" @click="toggleIsolate"><NIcon><EyeOutline /></NIcon></button></template>隔离</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: measureMode }" @click="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: activePanel === 'display' }" @click="togglePanel('display')"><NIcon><CameraOutline /></NIcon></button></template>显示模式</NTooltip>
+                        <NTooltip placement="right"><template #trigger><button :class="{ active: itemsVisible }" @click="itemsVisible = !itemsVisible"><NIcon><ListOutline /></NIcon></button></template>实体树</NTooltip>
+                        <NPopover trigger="click" placement="right-start"><template #trigger><button title="历史记录"><NIcon><TimeOutline /></NIcon></button></template><div class="history-panel"><strong>历史记录</strong><button v-for="step in historySteps" :key="step.id" @click="editHistory(step.id)"><span>{{ ({ sketch: '草图', extrude: '拉伸', boolean: '布尔运算', fillet: '圆角', chamfer: '倒角' } as Record<string, string>)[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button><div v-if="!historySteps.length" class="history-empty">暂无建模步骤</div></div></NPopover>
                     </div>
                 </nav>
-                <nav class="sketch-toolbar" :class="{ 'toolbar-enter': sketchMode }">
-                    <button class="sketch-close" @click="closeSketch"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>Close</strong></button>
-                    <div class="sketch-tool-list">
-                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>Line / Arc</span></button>
+
+                <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel">
+                    <div class="tool-panel-title"><strong>{{ ({ search: '命令搜索', insert: '插入', construct: '构造', transform: '变换', tools: '工具', display: '显示模式' } as Record<string, string>)[activePanel] }}</strong><button @click="activePanel = null"><NIcon><CloseOutline /></NIcon></button></div>
+                    <template v-if="activePanel === 'search'">
+                        <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索工具或命令" />
+                        <div class="command-results"><button v-for="command in commandResults" :key="command.id" @click="runCommand(command.id)"><strong>{{ command.label }}</strong><span>{{ command.hint }}</span></button><div v-if="!commandResults.length" class="history-empty">没有匹配的命令</div></div>
+                    </template>
+                    <template v-else-if="activePanel === 'insert'">
+                        <div class="panel-section-label">基础实体</div>
+                        <button class="menu-command" @click="createPrimitive('box')"><NIcon><CubeOutline /></NIcon><span><strong>立方体</strong><small>插入参数化立方体</small></span></button>
+                        <button class="menu-command" @click="createPrimitive('cylinder')"><NIcon><ShapesOutline /></NIcon><span><strong>圆柱体</strong><small>插入参数化圆柱体</small></span></button>
+                        <button class="menu-command" @click="createPrimitive('sphere')"><NIcon><EllipseOutline /></NIcon><span><strong>球体</strong><small>插入参数化球体</small></span></button>
+                        <div class="panel-section-label">项目</div>
+                        <button class="menu-command" @click="importProject"><NIcon><FolderOpenOutline /></NIcon><span><strong>文件</strong><small>导入可编辑项目 JSON</small></span></button>
+                    </template>
+                    <template v-else-if="activePanel === 'construct'">
+                        <p class="panel-note">选择实体平面后可创建贴合该面的构造平面；也可以直接添加基准面。</p>
+                        <button class="menu-command" @click="createPlane('XZ')"><NIcon><GridOutline /></NIcon><span><strong>XZ 平面</strong><small>水平基准面</small></span></button>
+                        <button class="menu-command" @click="createPlane('XY')"><NIcon><GridOutline /></NIcon><span><strong>XY 平面</strong><small>正视基准面</small></span></button>
+                        <button class="menu-command" @click="createPlane('YZ')"><NIcon><GridOutline /></NIcon><span><strong>YZ 平面</strong><small>侧视基准面</small></span></button>
+                    </template>
+                    <template v-else-if="activePanel === 'transform'">
+                        <button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>平移所选对象 · G</small></span></button>
+                        <button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong><small>旋转所选对象 · R</small></span></button>
+                        <button class="menu-command" :disabled="selectionKind === 'plane'" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong><small>缩放实体，不改变相机 · S</small></span></button>
+                        <button class="menu-command" @click="duplicateSelected" :disabled="!selected || selected.kind === 'boolean'"><NIcon><CopyOutline /></NIcon><span><strong>复制</strong><small>创建所选实体的独立副本</small></span></button>
+                    </template>
+                    <template v-else-if="activePanel === 'tools'">
+                        <button class="menu-command" :disabled="!selectedSketches.length" @click="message.info('请拖动视图中的上下粗箭头进行拉伸')"><NIcon><ArrowUpOutline /></NIcon><span><strong>拉伸</strong><small>选择封闭轮廓后拖动双向粗箭头</small></span></button>
+                        <button class="menu-command" :disabled="selectionKind !== 'face'" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>沿面法向推拉实体</small></span></button>
+                        <button class="menu-command" :disabled="selectionKind !== 'edge'" @click="chooseTool('chamfer')"><NIcon><CutOutline /></NIcon><span><strong>倒角</strong><small>处理所选实体边</small></span></button>
+                        <button class="menu-command" :disabled="selectionKind !== 'edge'" @click="chooseTool('fillet')"><NIcon><EllipseOutline /></NIcon><span><strong>圆角</strong><small>圆角半径可拖动或精确输入</small></span></button>
+                        <div class="panel-section-label">布尔运算 · 选择两个实体</div>
+                        <div class="inline-command-row"><button :disabled="!canBoolean" @click="applyBoolean('union')">并集</button><button :disabled="!canBoolean" @click="applyBoolean('subtract')">差集</button><button :disabled="!canBoolean" @click="applyBoolean('intersect')">交集</button></div>
+                    </template>
+                    <template v-else-if="activePanel === 'display'">
+                        <div class="display-mode-grid"><button :class="{ active: displayMode === 'shaded' }" @click="updateDisplayMode('shaded')">实体着色</button><button :class="{ active: displayMode === 'wireframe' }" @click="updateDisplayMode('wireframe')">线框</button><button :class="{ active: displayMode === 'xray' }" @click="updateDisplayMode('xray')">透视</button></div>
+                        <NCheckbox :checked="showEdges" size="small" @update:checked="showEdges = $event">显示边线</NCheckbox>
+                        <NCheckbox v-model:checked="shadowVisible" size="small">地面投影</NCheckbox>
+                        <NCheckbox v-model:checked="gridVisible" size="small">网格</NCheckbox>
+                    </template>
+                </aside>
+
+                <aside v-if="!activePanel && selectedIds.length && !sketchMode && !operation" class="tool-panel adaptive-panel">
+                    <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button @click="selectEntity(null)"><NIcon><CloseOutline /></NIcon></button></div>
+                    <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
+                    <template v-else-if="selectedEntities.length > 1"><div class="inline-command-row vertical"><button @click="applyBoolean('union')">并集</button><button @click="applyBoolean('subtract')">差集</button><button @click="applyBoolean('intersect')">交集</button></div></template>
+                    <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button><button class="menu-command" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong></span></button></template>
+                    <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>拖动模型面或输入尺寸</small></span></button><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
+                    <template v-else-if="selectionKind === 'edge'"><button class="menu-command" :class="{ active: activeTool === 'fillet' }" @click="chooseTool('fillet')"><NIcon><EllipseOutline /></NIcon><span><strong>圆角</strong><small>圆角 · F</small></span></button><button class="menu-command" :class="{ active: activeTool === 'chamfer' }" @click="chooseTool('chamfer')"><NIcon><CutOutline /></NIcon><span><strong>倒角</strong><small>倒角</small></span></button></template>
+                    <template v-else><button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>移动整个实体</small></span></button><button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong></span></button><button class="menu-command" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong></span></button></template>
+                    <button class="more-tools" @click="togglePanel('tools')">更多工具 <span>›</span></button>
+                </aside>
+
+                <nav class="sketch-toolbar" :class="{ 'toolbar-enter': sketchMode || activePanel === 'sketch' }">
+                    <button class="sketch-close" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
+                    <div v-if="!sketchMode" class="sketch-plane-picker"><p>选择一个绘制平面。视角将转为垂直于该平面的正交视图。</p><div class="inline-command-row"><button @click="createPlane('XZ'); beginSketch(activePlaneId!)">XZ</button><button @click="createPlane('XY'); beginSketch(activePlaneId!)">XY</button><button @click="createPlane('YZ'); beginSketch(activePlaneId!)">YZ</button></div><button v-for="plane in document.planes" :key="plane.id" class="menu-command" @click="beginSketch(plane.id)"><NIcon><GridOutline /></NIcon><span><strong>{{ plane.name }}</strong></span></button><button v-if="selectionKind === 'face'" class="menu-command" @click="beginSketch()"><NIcon><CubeOutline /></NIcon><span><strong>所选实体平面</strong></span></button></div>
+                    <div v-else class="sketch-tool-list">
+                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 圆弧</span></button>
                         <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
                         <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
                         <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
-                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }">
-                            <button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span>正多边形</span></button>
-                            <NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `正${['','','','三','四','五','六','七','八'][n]}边形`, value: n }))" @update:value="setSketchSides" />
-                        </div>
+                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span>正多边形</span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
                     </div>
                 </nav>
+                <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggle草图PointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>
 
-                <div class="view-options"><NCheckbox v-model:checked="shadowVisible" size="small">投影</NCheckbox><NPopover trigger="click" placement="bottom-end"><template #trigger><button class="history-button">History</button></template><div class="history-panel"><strong>History</strong><button v-for="step in historySteps" :key="step.id" @click="editHistory(step.id)"><span>{{ step.kind === 'sketch' ? 'Sketch' : step.kind === 'extrude' ? 'Extrude' : 'Boolean' }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button><div v-if="!historySteps.length" class="history-empty">暂无建模步骤</div></div></NPopover></div>
+                <div class="view-options"><span v-if="sectionActive" class="mode-badge">剖视图</span><span v-if="isolateActive" class="mode-badge">隔离</span></div>
                 <div class="viewport-caption"><span class="axis-dot"></span>毫米 (mm)</div>
 
                 <section v-if="contextVisible" class="context-panel">
+                    <button class="parameter-close" title="收起参数卡，不退出工具" @click="parameterCardOpen = false"><NIcon><ChevronDownOutline /></NIcon></button>
                     <template v-if="operation?.type === 'extrude' && extrudeBody">
-                        <div class="context-title"><strong>Extrude</strong><span>{{ historyEditId ? 'History 编辑' : '拖动画布箭头或输入距离' }}</span></div>
+                        <div class="context-title"><strong>拉伸</strong><span>{{ historyEditId ? '历史记录编辑' : '拖动画布箭头或输入距离' }}</span></div>
                         <div class="context-fields operation-fields">
                             <label>距离<NInputNumber class="extrude-distance-input" :precision="4" :value="extrudeBody.depth" :min="0.1" size="small" @update:value="updateExtrude('depth', $event)" /></label>
                             <label>方向<NSelect :value="extrudeBody.direction" size="small" :options="[{ label: '正向', value: 1 }, { label: '反向', value: -1 }]" @update:value="updateExtrude('direction', $event)" /></label>
                             <label>侧面<NSelect :value="extrudeBody.sideMode" size="small" :options="[{ label: '单侧', value: 'one' }, { label: '对称', value: 'symmetric' }]" @update:value="updateExtrude('sideMode', $event)" /></label>
                             <label>拔模°<NInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="updateExtrude('draftAngle', $event)" /></label>
-                            <label>结果<NSelect :value="operation.result" size="small" :options="[{ label: 'New Body', value: 'new' }, { label: 'Union', value: 'union' }, { label: 'Subtract', value: 'subtract' }, { label: 'Intersect', value: 'intersect' }]" @update:value="updateExtrudeResult" /></label>
-                            <NSelect v-if="operation.result !== 'new'" :value="operation.targetId" :options="operationTargets" placeholder="Target Body" size="small" @update:value="operation.targetId = $event" />
-                            <NButton size="small" type="primary" @click="doneOperation">Done</NButton><NButton size="small" quaternary @click="cancelOperation">Cancel</NButton>
+                            <label>结果<NSelect :value="operation.result" size="small" :options="[{ label: '新实体', value: 'new' }, { label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="updateExtrudeResult" /></label>
+                            <NSelect v-if="operation.result !== 'new'" :value="operation.targetId" :options="operationTargets" placeholder="目标实体" size="small" @update:value="operation.targetId = $event" />
+                            <NButton size="small" type="primary" @click="doneOperation">完成</NButton><NButton size="small" quaternary @click="cancelOperation">取消</NButton>
                         </div>
                     </template>
                     <template v-else-if="operation?.type === 'boolean' && booleanDraft">
-                        <div class="context-title"><strong>Boolean</strong><span>紫色 Target / 蓝色 Tool</span></div>
+                        <div class="context-title"><strong>布尔运算</strong><span>紫色目标 / 蓝色工具</span></div>
                         <div class="context-fields operation-fields">
-                            <NSelect :value="document.entities.find(item => item.id === booleanDraft.resultId)?.operation" size="small" :options="[{ label: 'Union', value: 'union' }, { label: 'Subtract', value: 'subtract' }, { label: 'Intersect', value: 'intersect' }]" @update:value="document.entities.find(item => item.id === booleanDraft.resultId)!.operation = $event" />
-                            <NButton size="small" secondary @click="swapBooleanRoles">交换 Target / Tool</NButton>
-                            <NCheckbox v-model:checked="booleanDraft.keepTarget" size="small">保留 Target</NCheckbox>
-                            <NCheckbox v-model:checked="booleanDraft.keepTool" size="small">保留 Tool</NCheckbox>
-                            <NButton size="small" type="primary" @click="doneOperation">Done</NButton><NButton size="small" quaternary @click="cancelOperation">Cancel</NButton>
+                            <NSelect :value="document.entities.find(item => item.id === booleanDraft.resultId)?.operation" size="small" :options="[{ label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="document.entities.find(item => item.id === booleanDraft.resultId)!.operation = $event" />
+                            <NButton size="small" secondary @click="swapBooleanRoles">交换 目标 / 工具</NButton>
+                            <NCheckbox v-model:checked="booleanDraft.keepTarget" size="small">保留目标</NCheckbox>
+                            <NCheckbox v-model:checked="booleanDraft.keepTool" size="small">保留工具</NCheckbox>
+                            <NButton size="small" type="primary" @click="doneOperation">完成</NButton><NButton size="small" quaternary @click="cancelOperation">取消</NButton>
                         </div>
                     </template>
                     <template v-else-if="sketchMode">
@@ -1122,8 +1631,8 @@ onBeforeUnmount(() => {
                                 <label>X<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
                                 <label>Z<NInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
                             </template>
-                            <NButton size="small" secondary @click="viewport?.normalToSketch()">Normal to Sketch</NButton>
-                            <NButton size="small" type="primary" :disabled="!sketchClosed" @click="finishSketch">Exit Sketching</NButton>
+                            <NButton size="small" secondary @click="viewport?.normalToSketch()">正视草图</NButton>
+                            <NButton size="small" type="primary" :disabled="!sketchClosed" @click="finishSketch">退出草图</NButton>
                             <button class="context-close" @click="cancelSketch"><NIcon><CloseOutline /></NIcon></button>
                         </div>
                     </template>
@@ -1136,8 +1645,12 @@ onBeforeUnmount(() => {
                         <div v-if="activeVector" class="context-fields vector-fields">
                             <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<NInputNumber :precision="4" :value="activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
+                        <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
+                            <label>新增厚度<NInputNumber class="direct-distance-input" :precision="2" :value="selected.faceOffset?.distance || 0" :min="0" size="small" @update:value="updateFaceOffsetInput" /></label>
+                            <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
+                        </div>
                         <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">
-                            <label>距离<NInputNumber :precision="4" :value="selected.edge?.size || 0" :min="0" :max="selected ? edgeLimitFor(selected) : 0" size="small" @update:value="updateEntity('edge', { type: activeTool, size: $event || 0, segments: selected.edge?.segments || 6 })" /></label>
+                            <label>距离<NInputNumber class="direct-distance-input" :precision="4" :value="selected.edge?.size || 0" :min="0" :max="selected ? edgeLimitFor(selected) : 0" size="small" @update:value="updateEntity('edge', { type: activeTool, size: $event || 0, segments: selected.edge?.segments || 6 })" /></label>
                             <button class="text-button" @click="clearEdge">清除边处理</button>
                         </div>
                         <div v-else class="context-fields">
@@ -1159,7 +1672,7 @@ onBeforeUnmount(() => {
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBar.label }}</span></div>
                 </div>
                 <div class="gizmo-label">拖动旋转 · 点击切换视图</div>
-                <div class="viewport-status"><span :class="{ accent: spaceActive }">空格 + 拖拽平移</span><i></i><span>空白拖拽旋转</span><i></i><span>⌘ 单击多选</span><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
+                <div class="viewport-status"><span>左键选择 / 框选</span><i></i><span>右键旋转</span><i></i><span>中键平移</span><i></i><span>Shift 多选</span><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
         </div>
 
@@ -1172,6 +1685,16 @@ onBeforeUnmount(() => {
             <button @click="requestRename(contextMenu.node)"><NIcon><PencilOutline /></NIcon>重命名</button>
             <button class="danger" @click="deleteContextNodes"><NIcon><TrashOutline /></NIcon>删除</button>
         </div>
+        <div v-if="viewportMenu" class="entity-context-menu viewport-context-menu" :style="{ left: `${viewportMenu.x}px`, top: `${viewportMenu.y}px` }" @click.stop>
+            <button :disabled="!selectedIds.length" @click="toggleIsolate(); viewportMenu = null"><NIcon><EyeOutline /></NIcon>{{ isolateActive ? '退出隔离' : '隔离所选对象' }}</button>
+            <button :disabled="!selectedIds.length" @click="zoomToSelection"><NIcon><ScanOutline /></NIcon>缩放至所选对象</button>
+            <button v-if="selectionKind === 'face'" @click="beginSketch(); viewportMenu = null"><SvgIcon name="pencil" />在此面上绘制</button>
+            <button v-if="selectionKind === 'sketch'" class="danger" @click="deleteViewportSketch"><NIcon><TrashOutline /></NIcon>删除草图</button>
+        </div>
+        <div v-if="sketchContextMenu" class="entity-context-menu" :style="{ left: `${sketchContextMenu.x}px`, top: `${sketchContextMenu.y}px` }" @click.stop>
+            <button class="danger" @click="deleteSketchFromContext"><NIcon><TrashOutline /></NIcon>删除草图</button>
+            <button @click="clearSketchSelection"><NIcon><CloseOutline /></NIcon>取消选择</button>
+        </div>
         <NModal v-model:show="showRename" preset="card" title="重命名" style="width: 380px" :bordered="false">
             <NInput v-model:value="renameValue" autofocus @keyup.enter="applyRename" />
             <div class="modal-actions"><NButton @click="showRename = false">取消</NButton><NButton type="primary" @click="applyRename">确定</NButton></div>
@@ -1179,10 +1702,10 @@ onBeforeUnmount(() => {
 
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">
-                <section><strong>画布与坐标球</strong><p>空白拖拽旋转，空格拖拽平移。拖动右下角坐标球可旋转视角，点击 X / Y / Z 轴端点切换正交方向视图。</p></section>
-                <section><strong>草图与精准点编辑</strong><p>先添加 XZ / XY / YZ 平面，再在平面局部坐标中逐点绘制。顶点可拖动或输入数值，厚度可随时调整；已有拉伸实体可重新进入编辑。</p></section>
-                <section><strong>面推拉与边处理</strong><p>推拉工具按住模型面上下拖动即可改变尺寸。圆角或倒角工具在模型上拖动调整距离，也可在顶部输入精确数值。</p></section>
-                <section><strong>测量与实体树</strong><p>尺子工具依次点击两个面，显示总距离和 XYZ 分量，第三次点击退出。实体树支持多选、嵌套拖拽、文件夹和右键重命名/删除。</p></section>
+                <section><strong>选择与画布导航</strong><p>左键单击选择面或边，双击选择整个实体；Shift 累加选择。左键空白拖动框选，右键拖动旋转，中键拖动平移，滚轮缩放。悬停实体平面按空格可直接建立草图。</p></section>
+                <section><strong>草图与 约束</strong><p>草图 中选择基准面、构造平面或实体平面。完成图形后仍可连续绘制，退出草图 才退出草图。右侧约束区支持线段方向、平行、垂直、等长和点锁定。</p></section>
+                <section><strong>自适应建模</strong><p>选择面时推荐偏移面，选择边时推荐倒角或圆角，选择实体时推荐移动/旋转。再次点击当前工具只收起参数卡，不会退出工具；拖动手柄或输入尺寸才修改几何。</p></section>
+                <section><strong>检查与历史</strong><p>隔离、剖视图 和 显示模式 用于检查模型；测量 只读数。历史记录 可回改 草图、拉伸、布尔运算 和已有边处理参数。</p></section>
             </div>
         </NModal>
         <input ref="importInput" type="file" accept=".json,.model.json" hidden @change="onImportFile" />

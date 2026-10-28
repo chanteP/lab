@@ -1,5 +1,6 @@
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
+export type LengthUnit = 'mm' | 'cm' | 'm';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
 export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments: number };
@@ -39,6 +40,8 @@ export interface ModelEntity {
     points?: Point2[];
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc';
     curves?: Record<number, { c1: Point2; c2: Point2 }>;
+    lockedPoints?: number[];
+    sectorAngle?: number;
     sides?: number;
     profileId?: string;
     planeId?: string;
@@ -48,11 +51,13 @@ export interface ModelEntity {
     operation?: BooleanOperation;
     operands?: [string, string];
     edge?: EdgeTreatment | null;
+    faceOffset?: { normal: Vec3; distance: number } | null;
 }
 
 export interface ModelDocument {
     version: 1;
     unit: 'mm';
+    lengthUnit: LengthUnit;
     entities: ModelEntity[];
     folders: ModelFolder[];
     planes: SketchPlane[];
@@ -77,8 +82,8 @@ export const ENTITY_NAMES: Record<EntityKind, string> = {
     boolean: '布尔实体',
 };
 
-export function createDocument(): ModelDocument {
-    return { version: 1, unit: 'mm', entities: [], folders: [], planes: [] };
+export function createDocument(lengthUnit: LengthUnit = 'mm'): ModelDocument {
+    return { version: 1, unit: 'mm', lengthUnit, entities: [], folders: [], planes: [] };
 }
 
 export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): ModelEntity {
@@ -105,6 +110,7 @@ export function cloneDocument(document: ModelDocument): ModelDocument {
 }
 
 export function normalizeDocument(document: ModelDocument): ModelDocument {
+    document.lengthUnit = document.lengthUnit || 'mm';
     document.folders = Array.isArray(document.folders) ? document.folders : [];
     document.planes = Array.isArray(document.planes) ? document.planes : [];
     document.entities.forEach((entity) => entity.parentId = entity.parentId || null);

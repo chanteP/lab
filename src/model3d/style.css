@@ -198,3 +198,102 @@ button { color: inherit; }
 .drawing-active .viewport-utilities { right: 18px; }
 .drawing-active .viewport-status { background: rgba(239,247,243,.9); }
 .svg-icon { width: 21px; height: 21px; display: block; flex: 0 0 auto; }
+
+/* Modeling space: primary tools, adaptive tools and parameter cards are separate layers. */
+.primary-tools { gap: 4px !important; }
+.vertical-toolbar .primary-tools button { height: 34px; }
+.tool-panel, .constraints-panel { position: absolute; z-index: 7; top: 12px; width: 210px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; background: rgba(250,252,250,.97); border: 1px solid #d4dfd8; border-radius: 10px; box-shadow: 0 6px 20px #2c433616; backdrop-filter: blur(12px); }
+.tool-panel { left: 68px; }
+.tool-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid #e3e9e5; }
+.tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
+.tool-panel-title small { color: #87938c; font-size: 8px; letter-spacing: 1.1px; }
+.tool-panel-title strong { color: #314139; font-size: 12px; font-weight: 650; }
+.tool-panel-title > button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7a8780; cursor: pointer; }
+.tool-panel-title > button:hover { background: #edf2ef; }
+.menu-command { width: 100%; min-height: 45px; display: flex; align-items: center; gap: 10px; margin: 3px 0; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #56675d; text-align: left; cursor: pointer; }
+.menu-command > .n-icon, .menu-command > .svg-icon { flex: 0 0 20px; color: #668078; font-size: 19px; }
+.menu-command > span { display: flex; flex-direction: column; gap: 3px; }
+.menu-command strong { font-size: 11px; font-weight: 600; }
+.menu-command small { color: #89958e; font-size: 9px; line-height: 1.4; }
+.menu-command:hover { background: #edf3ef; border-color: #e0e9e4; }
+.menu-command.active { color: #147d70; background: #e4f1ec; border-color: #d1e7df; }
+.menu-command:disabled { opacity: .32; cursor: default; }
+.panel-section-label { margin: 15px 5px 6px; color: #89958e; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+.panel-note, .sketch-plane-picker > p, .constraints-panel > p { margin: 4px 3px 12px; color: #7e8b83; font-size: 10px; line-height: 1.65; }
+.command-results { margin-top: 9px; }
+.command-results > button { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; border: 0; border-bottom: 1px solid #edf1ee; background: transparent; color: #42554b; text-align: left; cursor: pointer; }
+.command-results > button:hover { background: #edf3ef; }
+.command-results strong { font-size: 11px; }
+.command-results span { color: #87938c; font-size: 9px; line-height: 1.45; }
+.inline-command-row { display: flex; gap: 5px; }
+.inline-command-row > button, .display-mode-grid > button { flex: 1; min-height: 30px; padding: 4px 6px; border: 1px solid #dce4df; border-radius: 5px; background: #fff; color: #5a6c61; font-size: 9px; cursor: pointer; }
+.inline-command-row > button:hover, .display-mode-grid > button:hover, .display-mode-grid > button.active { color: #147d70; border-color: #9cc8bb; background: #eaf4f0; }
+.inline-command-row > button:disabled { opacity: .3; cursor: default; }
+.inline-command-row.vertical { flex-direction: column; }
+.display-mode-grid { display: flex; gap: 5px; margin-bottom: 14px; }
+.tool-panel > .n-checkbox { display: flex; margin: 11px 3px; }
+.more-tools { width: 100%; display: flex; justify-content: space-between; margin-top: 9px; padding: 9px 6px 2px; border: 0; border-top: 1px solid #e4eae6; background: transparent; color: #147d70; font-size: 10px; cursor: pointer; }
+.tool-panel ~ .context-panel { left: 292px; max-width: calc(100% - 450px); }
+.context-panel { padding-right: 30px; }
+.parameter-close { position: absolute; top: 4px; right: 4px; width: 21px; height: 21px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #829088; cursor: pointer; }
+.parameter-close:hover { background: #edf2ef; }
+.mode-badge { padding: 2px 6px; color: #147d70; background: #e5f1ed; border-radius: 4px; font-size: 9px; }
+.sketch-plane-picker .inline-command-row { margin-bottom: 12px; }
+.sketch-plane-picker .menu-command { min-height: 36px; }
+.constraints-panel { right: 12px; width: 174px; }
+.constraints-panel > button, .constraint-pair > button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 1px solid #dce4df; border-radius: 5px; background: #fff; color: #56675d; font-size: 10px; cursor: pointer; }
+.constraints-panel > button:hover, .constraint-pair > button:hover { color: #147d70; border-color: #a9c9c2; }
+.constraints-panel button:disabled { opacity: .3; cursor: default; }
+.constraint-pair { display: flex; gap: 5px; }
+.constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e4eae6; color: #8a968f; font-size: 9px; line-height: 1.5; }
+.constraint-state i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #599fd0; }
+.constraint-state i.locked { background: #54a184; }
+.drawing-active .context-panel { left: 196px; max-width: calc(100% - 400px); }
+.selection-rectangle { position: absolute; z-index: 3; border: 1px solid #147d70; background: #147d7018; pointer-events: none; }
+.selection-rectangle.intersect { border-style: dashed; border-color: #4d86b8; background: #4d86b818; }
+.viewport-context-menu { width: 180px; }
+.viewport-context-menu .svg-icon { width: 16px; height: 16px; }
+.entity-context-menu button:disabled { opacity: .3; cursor: default; }
+@media (max-width: 1100px) {
+    .tool-panel ~ .context-panel { left: 292px; max-width: calc(100% - 315px); }
+    .tool-panel ~ .context-panel .context-title span { display: none; }
+    .drawing-active .context-panel { left: 196px; max-width: calc(100% - 220px); }
+    .drawing-active .context-panel { top: auto; bottom: 42px; }
+    .viewport-status > span:nth-of-type(3), .viewport-status > i:nth-of-type(3) { display: none; }
+}
+.drawing-active .context-panel { flex-wrap: wrap; row-gap: 6px; }
+.drawing-active .context-fields { flex-wrap: wrap; }
+/* Compact outliner: disclosure and type icon stay left; visibility stays on the trailing edge. */
+.tree-children { margin-left: 8px; padding-left: 2px; }
+.object-row { gap: 5px; padding-left: 4px; }
+.object-row > span { flex: 0 1 auto; }
+.object-row > span:not(.tree-disclosure-spacer) { flex: 1 1 auto; min-width: 0; }
+.tree-disclosure, .tree-disclosure-spacer { width: 12px; flex: 0 0 12px; }
+.object-row .visibility { margin-left: auto; flex: 0 0 25px; }
+/* Sketch length input: two-decimal value plus a persistent project display unit. */
+.sketch-length-input { display: flex; align-items: center; height: 25px; overflow: hidden; color: #76501f; background: #fffaf3; border: 1px solid #e7a45c; border-radius: 5px; box-shadow: 0 2px 7px #6243171c; pointer-events: auto; }
+.sketch-length-input input { width: 62px; height: 23px; padding: 0 3px 0 6px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sketch-length-input select, .sketch-length-input span { height: 23px; padding: 0 5px; border: 0; border-left: 1px solid #efd3b2; outline: 0; background: #fff4e5; color: #8a5c25; font-size: 9px; line-height: 23px; }
+.sketch-length-input select { width: 43px; padding: 0 2px; }
+/* Menus use icon + title/subtitle, without full-row active or hover fills. */
+.menu-command, .menu-command:hover, .menu-command.active { background: transparent; border-color: transparent; }
+.menu-command:hover > .n-icon, .menu-command:hover > .svg-icon, .menu-command.active > .n-icon, .menu-command.active > .svg-icon, .menu-command.active strong { color: #147d70; }
+.command-results > button:hover { background: transparent; }
+.command-results > button:hover strong { color: #147d70; }
+.sketch-tool-list > button, .sketch-polygon-tool > button, .sketch-tool-list button.active, .sketch-polygon-tool.active > button { background: transparent; }
+.sketch-tool-list button.active, .sketch-polygon-tool.active > button { color: #147d70; }
+.sketch-tool-list button.active .sketch-tool-icon, .sketch-polygon-tool.active .sketch-tool-icon { color: #147d70; border-color: #8fc4b7; }
+.tool-panel .inline-command-row > button, .tool-panel .display-mode-grid > button,
+.constraints-panel > button, .constraint-pair > button { background: transparent; border-color: transparent; }
+.tool-panel .inline-command-row > button:hover, .tool-panel .display-mode-grid > button:hover,
+.tool-panel .display-mode-grid > button.active, .constraints-panel > button:hover, .constraint-pair > button:hover { color: #147d70; background: transparent; border-color: transparent; }
+/* Chrome-free tool menus: icon, label and subtitle sit directly over the workspace. */
+.vertical-toolbar, .tool-panel, .sketch-toolbar, .constraints-panel { background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+.tool-panel-title { border-bottom-color: #d4dfd888; }
+.menu-command, .command-results > button, .constraints-panel, .sketch-tool-list { text-shadow: 0 1px 2px #f4f7f4; }
+.project-saving { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: 0 0 18px; }
+.project-saving i { width: 13px; height: 13px; border: 2px solid #b8c6bf; border-top-color: #147d70; border-radius: 50%; animation: project-save-spin .7s linear infinite; }
+@keyframes project-save-spin { to { transform: rotate(360deg); } }
+.viewport-status, .drawing-active .viewport-status { position: fixed; z-index: 30; left: 50%; right: auto; bottom: 12px; width: auto; height: auto; min-height: 28px; padding: 6px 12px; transform: translateX(-50%); color: #f4f7f5cc; background: #18201dcc; border: 0; border-radius: 15px; box-shadow: 0 3px 12px #00000018; backdrop-filter: blur(8px); white-space: nowrap; }
+.viewport-status > i { background: #ffffff38; }
+.viewport-status > div { color: #ffffffa8; }
