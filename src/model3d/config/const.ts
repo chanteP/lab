@@ -11,12 +11,14 @@ export const INTERACTION = {
     sketchSelectionGuardMs: 300,
     cameraTransitionMs: 600,
     clickTolerancePx: 5,
+    sectorQuarterSnapThresholdDeg: 4,
 } as const;
 
-/** Screen-space sketch appearance, independent of camera zoom. */
+/** Plane-space sketch appearance; hatch coordinates do not follow the camera. */
 export const SKETCH_STYLE = {
-    hatchLineWidthPx: 1,
-    hatchSpacingPx: 14,
+    hatchLineWidth: 0.55,
+    hatchSpacing: 7,
+    hatchOpacity: 0.84,
     defaultPolygonSides: 3,
     defaultDepthMm: 10,
 } as const;

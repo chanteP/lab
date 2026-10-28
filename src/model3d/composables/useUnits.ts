@@ -3,12 +3,13 @@ import { LENGTH_UNITS } from '../config/configs';
 import { STORAGE_KEYS } from '../config/const';
 import type { LengthUnit, ModelDocument } from '../types';
 
+export function storedLengthUnit(): LengthUnit {
+    const value = localStorage.getItem(STORAGE_KEYS.lengthUnit);
+    return value === 'cm' || value === 'm' ? value : 'mm';
+}
+
 /** Single global display-unit ref; model geometry always remains millimetres. */
 export function useUnits(document: Ref<ModelDocument>, onChange: () => void) {
-    function storedLengthUnit(): LengthUnit {
-        const value = localStorage.getItem(STORAGE_KEYS.lengthUnit);
-        return value === 'cm' || value === 'm' ? value : 'mm';
-    }
     const lengthUnit = ref<LengthUnit>(storedLengthUnit());
     const unitFactor = computed(() => LENGTH_UNITS.find((item) => item.value === lengthUnit.value)?.factor || 1);
     const scaleBar = ref({ width: 76, value: 50 });

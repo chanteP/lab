@@ -9,7 +9,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { OrientationGizmo } from './OrientationGizmo';
 import { buildScene } from './geometry';
 import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipsePoint, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
-import { SKETCH_COLORS } from '../config/colors';
+import { GIZMO_COLORS, SKETCH_COLORS, VIEWPORT_COLORS } from '../config/colors';
 import { INTERACTION, SKETCH_STYLE } from '../config/const';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
@@ -33,6 +33,7 @@ interface ViewportCallbacks {
     onSketchPointMove: (index: number, point: Point2, phase: EditPhase) => void;
     onSketchSegment: (index: number, additive: boolean) => void;
     onSketchHandleMove: (segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) => void;
+    onSketchHandleReset: (segment: number, handle: 1 | 2) => void;
     onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
     onSketchSelect: (index: number) => void;
     onSketchComplete: () => void;
@@ -132,7 +133,7 @@ export class Viewport {
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
     private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromQuaternion: THREE.Quaternion; toQuaternion: THREE.Quaternion; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
     private beforeSketchView: { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; projection: 'perspective' | 'orthographic'; orthoHeight: number; color: THREE.Color; alpha: number } | null = null;
-    private clearColor = new THREE.Color('#e7ebe8');
+    private clearColor = new THREE.Color(VIEWPORT_COLORS.background);
     private clearAlpha = 1;
     private lastScale = '';
     private spacePressed = false;
@@ -205,13 +206,13 @@ export class Viewport {
         });
         this.viewHelper = new OrientationGizmo(this.camera, this.renderer.domElement, 12);
         this.viewHelper.setLabels('X', 'Y', 'Z');
-        this.viewHelper.setLabelStyle('bold 22px Arial', '#ffffff', 15);
+        this.viewHelper.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
         this.planeGizmo = new OrientationGizmo(this.orthographicCamera, this.renderer.domElement, 12);
         this.planeGizmo.setLabels('U', 'V', 'N');
-        this.planeGizmo.setLabelStyle('bold 22px Arial', '#ffffff', 15);
+        this.planeGizmo.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
 
         this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback);
-        this.grid = new THREE.GridHelper(1000, 100, '#a6b0aa', '#cbd2cd');
+        this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
         this.grid.position.y = -0.02;
         (this.grid.material as THREE.Material).transparent = true;
         (this.grid.material as THREE.Material).opacity = 0.65;
@@ -222,15 +223,15 @@ export class Viewport {
         this.shadow.receiveShadow = true;
         this.shadow.visible = false;
         this.scene.add(this.shadow);
-        this.scene.add(new THREE.HemisphereLight('#ffffff', '#829087', 1.25));
-        this.sun = new THREE.DirectionalLight('#ffffff', 2.1);
+        this.scene.add(new THREE.HemisphereLight(VIEWPORT_COLORS.light, VIEWPORT_COLORS.lightGround, 1.25));
+        this.sun = new THREE.DirectionalLight(VIEWPORT_COLORS.light, 2.1);
         this.sun.position.set(90, 160, 100);
         this.sun.castShadow = false;
         this.sun.shadow.mapSize.set(2048, 2048);
         Object.assign(this.sun.shadow.camera, { left: -180, right: 180, top: 180, bottom: -180 });
         this.sun.shadow.bias = -0.0002;
         this.scene.add(this.sun);
-        const fill = new THREE.DirectionalLight('#d6e8ff', 0.65);
+        const fill = new THREE.DirectionalLight(VIEWPORT_COLORS.lightFill, 0.65);
         fill.position.set(-100, 60, -80);
         this.scene.add(fill);
 
@@ -564,13 +565,14 @@ export class Viewport {
         if (!this.activePlane) return;
         const target = new THREE.Vector3(...this.activePlane.origin);
         const offset = this.camera.position.clone().sub(target);
-        const spherical = new THREE.Spherical().setFromVector3(offset);
-        spherical.theta -= dx * 0.009;
-        spherical.phi = THREE.MathUtils.clamp(spherical.phi - dy * 0.009, 0.015, Math.PI - 0.015);
-        this.camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(spherical));
+        const horizontalAxis = this.camera.up.clone().normalize();
+        const verticalAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+        offset.applyAxisAngle(horizontalAxis, -dx * 0.009);
+        offset.applyAxisAngle(verticalAxis, -dy * 0.009);
+        this.camera.position.copy(target).add(offset);
         this.camera.lookAt(target);
         this.controls.target.copy(target);
-        this.snapPlaneCamera();
+        this.controls.update();
     }
     private onPointerMove(event: PointerEvent) {
         if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
@@ -593,6 +595,7 @@ export class Viewport {
             this.camera.up.applyAxisAngle(normal, angle);
             this.camera.position.copy(this.controls.target).add(offset);
             this.camera.lookAt(this.controls.target);
+            this.controls.update();
             this.viewRotateDrag.x = event.clientX;
             return;
         }
@@ -960,6 +963,12 @@ export class Viewport {
         if (this.sketchMode) {
             event.preventDefault();
             this.setPointer(event as unknown as PointerEvent);
+            this.sketch.updateMatrixWorld(true);
+            const handle = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.handleSegment !== undefined), false)[0];
+            if (handle) {
+                this.callbacks.onSketchHandleReset(handle.object.userData.handleSegment, handle.object.userData.handleIndex);
+                return;
+            }
             const sector = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.sectorHandle), false)[0];
             if (sector) this.callbacks.onSketchSectorReset();
             return;
@@ -1069,7 +1078,7 @@ export class Viewport {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && entity?.kind !== 'sketch') {
-                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({ color: '#334d46', transparent: true, opacity: 0.48 }));
+                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
                 edges.userData.displayEdge = true;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.sketchMode) {
@@ -1223,9 +1232,9 @@ export class Viewport {
             const material = mesh.material as THREE.MeshStandardMaterial;
             const active = this.selected.includes(mesh.userData.entityId) && !['offsetFace', 'fillet', 'chamfer'].includes(this.tool);
             if (material.emissive) {
-                const role = this.booleanRoles?.target === mesh.userData.entityId ? '#6d35a8' : this.booleanRoles?.tool === mesh.userData.entityId ? '#175fc2' : active ? '#164b45' : '#000000';
+                const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);
-                material.emissiveIntensity = role === '#000000' ? 0 : 0.35;
+                material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;
             } else if (material.color) {
                 material.color.set(active ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.line);
             }
@@ -1380,9 +1389,9 @@ export class Viewport {
     }
     private sketchHatchMaterial() {
         return new THREE.ShaderMaterial({
-            uniforms: { uColor: { value: new THREE.Color('#147d70') } },
-            vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-            fragmentShader: `uniform vec3 uColor; void main() { float stripe = mod(gl_FragCoord.x + gl_FragCoord.y, ${SKETCH_STYLE.hatchSpacingPx}.0); if (stripe > ${SKETCH_STYLE.hatchLineWidthPx}.0) discard; gl_FragColor = vec4(uColor, 0.72); }`,
+            uniforms: { uColor: { value: new THREE.Color(SKETCH_COLORS.line) } },
+            vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+            fragmentShader: `uniform vec3 uColor; varying vec2 vUv; void main() { float stripe = mod(vUv.x + vUv.y, ${SKETCH_STYLE.hatchSpacing.toFixed(3)}); if (stripe > ${SKETCH_STYLE.hatchLineWidth.toFixed(3)}) discard; gl_FragColor = vec4(uColor, ${SKETCH_STYLE.hatchOpacity.toFixed(3)}); }`,
             transparent: true,
             depthWrite: false,
             side: THREE.DoubleSide,
@@ -1524,15 +1533,15 @@ export class Viewport {
         if (['circle', 'ellipse', 'regular'].includes(profileType) && points.length >= 2) {
             const [center, edge] = points;
             const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
-            const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+            const start = startAngle ?? (profileType === 'ellipse' ? 0 : Math.atan2(edge[1] - center[1], edge[0] - center[0]));
             const full = !open && (sectorAngle >= 359.999 || profileType === 'regular');
             if (full) this.addSketchGuide(center, edge);
             if (this.editingSketchId) {
                 const kind = profileType === 'regular' ? 'regularRadius' : profileType === 'circle' ? 'radius' : 'radiusX';
-                this.addSketchDimension(midpoint(center, edge), { kind }, profileType === 'ellipse' ? Math.abs(edge[0] - center[0]) : radius, unit);
+                this.addSketchDimension(midpoint(center, edge), { kind }, radius, unit);
                 if (profileType === 'ellipse' && points[2]) {
                     if (full) this.addSketchGuide(center, points[2]);
-                    this.addSketchDimension(midpoint(center, points[2]), { kind: 'radiusY' }, Math.abs(points[2][1] - center[1]), unit);
+                    this.addSketchDimension(midpoint(center, points[2]), { kind: 'radiusY' }, Math.hypot(points[2][0] - center[0], points[2][1] - center[1]), unit);
                 }
             }
             if (profileType !== 'regular' && this.editingSketchId) {
@@ -1675,7 +1684,7 @@ export class Viewport {
         const distance = this.camera.position.distanceTo(target);
         const up = new THREE.Vector3(...this.activePlane.v).normalize();
         const position = target.clone().add(direction.multiplyScalar(distance));
-        this.startCameraTransition(position, target, up, 'orthographic', '#dcebe6', 0.32);
+        this.startCameraTransition(position, target, up, 'orthographic', VIEWPORT_COLORS.sketchBackground, 0.32);
     }
 
     // Measurement mode: first two clicks retain world points; a third click clears annotations and exits.
@@ -1704,13 +1713,13 @@ export class Viewport {
         points.forEach((point) => point.add(normal));
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         geometry.setIndex([0, 1, 2]);
-        this.hoverFace = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: this.measurePoints.length ? '#e2a34d' : '#26a88f', transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false }));
+        this.hoverFace = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: this.measurePoints.length ? VIEWPORT_COLORS.measureFaceActive : VIEWPORT_COLORS.measureFace, transparent: true, opacity: 0.48, side: THREE.DoubleSide, depthWrite: false }));
         this.hoverFace.renderOrder = 8;
         this.measurements.add(this.hoverFace);
     }
     private addMeasurePoint(point: THREE.Vector3) {
         this.measurePoints.push(point.clone());
-        const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: this.measurePoints.length === 1 ? '#147d70' : '#d88d32', depthTest: false }));
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: this.measurePoints.length === 1 ? VIEWPORT_COLORS.measureStart : VIEWPORT_COLORS.measureEnd, depthTest: false }));
         marker.position.copy(point);
         marker.renderOrder = 9;
         this.measurements.add(marker);
@@ -1745,11 +1754,11 @@ export class Viewport {
     }
     private drawMeasurement() {
         const [a, b] = this.measurePoints;
-        this.doubleArrow(a, b, '#147d70', this.formatLength(a.distanceTo(b)), 'measure-total');
+        this.doubleArrow(a, b, VIEWPORT_COLORS.measureStart, this.formatLength(a.distanceTo(b)), 'measure-total');
         const x = new THREE.Vector3(b.x, a.y, a.z), y = new THREE.Vector3(b.x, b.y, a.z);
-        if (Math.abs(b.x - a.x) > 0.0001) this.doubleArrow(a, x, '#ef5261', this.formatLength(Math.abs(b.x - a.x)), 'axis-x');
-        if (Math.abs(b.y - a.y) > 0.0001) this.doubleArrow(x, y, '#63ad45', this.formatLength(Math.abs(b.y - a.y)), 'axis-y');
-        if (Math.abs(b.z - a.z) > 0.0001) this.doubleArrow(y, b, '#4c86e8', this.formatLength(Math.abs(b.z - a.z)), 'axis-z');
+        if (Math.abs(b.x - a.x) > 0.0001) this.doubleArrow(a, x, VIEWPORT_COLORS.measureX, this.formatLength(Math.abs(b.x - a.x)), 'axis-x');
+        if (Math.abs(b.y - a.y) > 0.0001) this.doubleArrow(x, y, VIEWPORT_COLORS.measureY, this.formatLength(Math.abs(b.y - a.y)), 'axis-y');
+        if (Math.abs(b.z - a.z) > 0.0001) this.doubleArrow(y, b, VIEWPORT_COLORS.measureZ, this.formatLength(Math.abs(b.z - a.z)), 'axis-z');
     }
     private clearMeasurement() {
         this.clearHoverFace();

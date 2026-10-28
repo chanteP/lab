@@ -1,3 +1,5 @@
+import { ENTITY_COLORS } from '../config/colors';
+
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
 export type LengthUnit = 'mm' | 'cm' | 'm';
@@ -94,7 +96,7 @@ export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): 
         parentId: null,
         kind,
         name: ENTITY_NAMES[kind],
-        color: '#789e9b',
+        color: ENTITY_COLORS.primitive,
         visible: true,
         position: [0, 20, 0],
         rotation: [0, 0, 0],

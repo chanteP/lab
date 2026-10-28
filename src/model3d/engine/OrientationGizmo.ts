@@ -16,6 +16,7 @@ import {
 	Vector3,
 	Vector4
 } from 'three';
+import { GIZMO_COLORS } from '../config/colors';
 
 export class OrientationGizmo extends Object3D {
 
@@ -30,10 +31,10 @@ export class OrientationGizmo extends Object3D {
 		this.animating = false;
 		this.center = new Vector3();
 
-		const color1 = new Color( '#ff4466' );
-		const color2 = new Color( '#88ff44' );
-		const color3 = new Color( '#4488ff' );
-		const color4 = new Color( '#000000' );
+		const color1 = new Color( GIZMO_COLORS.x );
+		const color2 = new Color( GIZMO_COLORS.y );
+		const color3 = new Color( GIZMO_COLORS.z );
+		const color4 = new Color( GIZMO_COLORS.negative );
 
 		const options = {};
 
@@ -303,7 +304,7 @@ export class OrientationGizmo extends Object3D {
 
 		function getSpriteMaterial( color, text ) {
 
-			const { font = '24px Arial', color: labelColor = '#000000', radius = 14 } = options;
+			const { font = '24px Arial', color: labelColor = GIZMO_COLORS.negative, radius = 14 } = options;
 
 			const canvas = document.createElement( 'canvas' );
 			canvas.width = 64;

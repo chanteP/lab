@@ -22,16 +22,16 @@ const emit = defineEmits<{ constraint: [type: 'auto' | 'horizontal' | 'vertical'
 
 <style lang="scss" scoped>
 .constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 174px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; }
-.tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid #e3e9e5; }
+.tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
-.tool-panel-title small { color: #87938c; font-size: 8px; }
+.tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }
 .tool-panel-title strong { font-size: 12px; }
-p { color: #7e8b83; font-size: 10px; line-height: 1.6; }
-button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 0; background: transparent; color: #56675d; font-size: 10px; cursor: pointer; }
-button:hover { color: #147d70; }
+p { color: var(--model3d-ui-7e8b83); font-size: 10px; line-height: 1.6; }
+button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 0; background: transparent; color: var(--model3d-ui-56675d); font-size: 10px; cursor: pointer; }
+button:hover { color: var(--model3d-ui-147d70); }
 button:disabled { opacity: .3; cursor: default; }
 .constraint-pair { display: flex; gap: 5px; }
-.constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e4eae6; color: #8a968f; font-size: 9px; }
-.constraint-state i { width: 6px; height: 6px; border-radius: 50%; background: #599fd0; }
-.constraint-state i.locked { background: #54a184; }
+.constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-8a968f); font-size: 9px; }
+.constraint-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--model3d-ui-599fd0); }
+.constraint-state i.locked { background: var(--model3d-ui-54a184); }
 </style>

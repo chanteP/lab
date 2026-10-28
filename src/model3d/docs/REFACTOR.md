@@ -27,4 +27,5 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 
 ## Changelog
 
+- 2026-10-29：修复 composable 拆分后的初始化顺序；草图拖动改为结束时同步场景，统一椭圆参数角和双半径方向，支持圆/椭圆裁边重闭合、扇形磁吸与双击复位、直线/贝塞尔复位；填充改为平面 UV，场景与界面颜色集中到 colors.ts。
 - 2026-10-28：建立 engine/types/stores/config/utils 分层；抽出 useUnits、useUndoHistory；新增 ToolButton、MenuCommand、AppTopBar、EntitySidebar、ModelingToolbar、SketchToolbar、SketchConstraints；拉伸完成后隐藏原草图平面；退出草图仅图标使用红色背景。

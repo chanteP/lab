@@ -22,7 +22,7 @@ const emit = defineEmits<{ click: [] }>();
     gap: 10px;
     margin: 2px 0;
     padding: 4px 6px;
-    color: #56675d;
+    color: var(--model3d-ui-56675d);
     background: transparent;
     border: 0;
     text-align: left;
@@ -34,7 +34,7 @@ const emit = defineEmits<{ click: [] }>();
         display: grid;
         place-items: center;
         flex: 0 0 24px;
-        color: #668078;
+        color: var(--model3d-ui-668078);
         font-size: 19px;
         transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), color .15s ease;
     }
@@ -50,12 +50,12 @@ const emit = defineEmits<{ click: [] }>();
     }
 
     strong { font-size: 11px; font-weight: 600; }
-    small { color: #89958e; font-size: 9px; }
-    &:hover &__icon { color: #147d70; transform: scale(1.16); }
+    small { color: var(--model3d-ui-89958e); font-size: 9px; }
+    &:hover &__icon { color: var(--model3d-ui-147d70); transform: scale(1.16); }
     &:hover &__text { transform: scale(1.045); }
     &:active &__icon { transform: scale(.9); }
-    &.active { color: #147d70; background: transparent; }
+    &.active { color: var(--model3d-ui-147d70); background: transparent; }
     &:disabled { opacity: .3; cursor: default; }
-    &:focus-visible { outline: 2px solid #147d70; outline-offset: 1px; }
+    &:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 1px; }
 }
 </style>

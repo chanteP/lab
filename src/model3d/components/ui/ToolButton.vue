@@ -18,9 +18,9 @@ const emit = defineEmits<{ click: [] }>();
     place-items: center;
     margin: 1px 0;
     padding: 0;
-    color: #63716a;
-    background: #fff;
-    border: 1px solid #d4dfd8;
+    color: var(--model3d-ui-63716a);
+    background: var(--model3d-ui-fff);
+    border: 1px solid var(--model3d-ui-d4dfd8);
     border-radius: 50%;
     cursor: pointer;
     transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), color .15s ease, border-color .15s ease;
@@ -31,7 +31,7 @@ const emit = defineEmits<{ click: [] }>();
         left: calc(100% + 8px);
         top: 50%;
         padding: 4px 2px;
-        color: #56675d;
+        color: var(--model3d-ui-56675d);
         background: transparent;
         font-size: 10px;
         white-space: nowrap;
@@ -43,14 +43,14 @@ const emit = defineEmits<{ click: [] }>();
 
     &:hover,
     &.active {
-        color: #147d70;
-        border-color: #7eb8aa;
+        color: var(--model3d-ui-147d70);
+        border-color: var(--model3d-ui-7eb8aa);
     }
 
     &:hover { transform: scale(1.12); }
     &:hover::after { opacity: 1; transform: translate(0, -50%); }
     &:active { transform: scale(.92); }
     &:disabled { opacity: .28; cursor: default; }
-    &:focus-visible { outline: 2px solid #147d70; outline-offset: 2px; }
+    &:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
 }
 </style>

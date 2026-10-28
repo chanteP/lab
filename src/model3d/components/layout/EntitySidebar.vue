@@ -45,19 +45,19 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
 </template>
 
 <style lang="scss" scoped>
-.panel { background: #fafbfa; }
-.left-panel { width: 218px; flex: 0 0 218px; display: flex; flex-direction: column; border-right: 1px solid #dfe5e1; z-index: 5; }
+.panel { background: var(--model3d-ui-fafbfa); }
+.left-panel { width: 218px; flex: 0 0 218px; display: flex; flex-direction: column; border-right: 1px solid var(--model3d-ui-dfe5e1); z-index: 5; }
 .objects-section { display: flex; flex-direction: column; flex: 1; min-height: 160px; padding: 18px 10px 10px; }
-.section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 6px; color: #707d76; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; }
+.section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 6px; color: var(--model3d-ui-707d76); font-size: 10px; font-weight: 700; letter-spacing: 1.2px; }
 .section-actions { display: flex; align-items: center; gap: 7px; }
-.section-actions button { display: flex; align-items: center; gap: 2px; padding: 2px 5px; border: 1px solid #dce4df; border-radius: 4px; background: #fff; color: #527067; font-size: 9px; cursor: pointer; }
-.section-actions i { min-width: 18px; padding: 1px 5px; text-align: center; background: #e9edea; border-radius: 8px; font-size: 9px; font-style: normal; }
+.section-actions button { display: flex; align-items: center; gap: 2px; padding: 2px 5px; border: 1px solid var(--model3d-ui-dce4df); border-radius: 4px; background: var(--model3d-ui-fff); color: var(--model3d-ui-527067); font-size: 9px; cursor: pointer; }
+.section-actions i { min-width: 18px; padding: 1px 5px; text-align: center; background: var(--model3d-ui-e9edea); border-radius: 8px; font-size: 9px; font-style: normal; }
 .object-list { flex: 1; overflow-y: auto; }
-.empty-objects { padding: 28px 10px; color: #8c9891; text-align: center; font-size: 11px; line-height: 1.7; }
-.project-section { padding: 16px; border-top: 1px solid #e4e8e5; }
+.empty-objects { padding: 28px 10px; color: var(--model3d-ui-8c9891); text-align: center; font-size: 11px; line-height: 1.7; }
+.project-section { padding: 16px; border-top: 1px solid var(--model3d-ui-e4e8e5); }
 .project-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
-.project-actions button { height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid #e1e6e3; background: white; border-radius: 5px; cursor: pointer; color: #64716a; font-size: 9px; }
-.project-actions button:hover { color: #147d70; border-color: #a9c9c2; }
-.project-actions .danger-hover:hover { color: #c45757; border-color: #e2bcbc; }
+.project-actions button { height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid var(--model3d-ui-e1e6e3); background: var(--model3d-ui-white); border-radius: 5px; cursor: pointer; color: var(--model3d-ui-64716a); font-size: 9px; }
+.project-actions button:hover { color: var(--model3d-ui-147d70); border-color: var(--model3d-ui-a9c9c2); }
+.project-actions .danger-hover:hover { color: var(--model3d-ui-c45757); border-color: var(--model3d-ui-e2bcbc); }
 @media (max-width: 1050px) { .left-panel { width: 194px; flex-basis: 194px; } }
 </style>

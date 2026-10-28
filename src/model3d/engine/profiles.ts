@@ -25,11 +25,21 @@ export function profileEllipsePoint(center: Point2, edge: Point2, vertical: Poin
     const rx = Math.hypot(dx, dy) * scale;
     const ry = Math.hypot(vertical[0] - center[0], vertical[1] - center[1]) * scale;
     const rotation = Math.atan2(dy, dx);
+    const orientation = Math.sign(dx * (vertical[1] - center[1]) - dy * (vertical[0] - center[0])) || 1;
     const cos = Math.cos(angle), sin = Math.sin(angle);
     return [
-        center[0] + rx * cos * Math.cos(rotation) - ry * sin * Math.sin(rotation),
-        center[1] + rx * cos * Math.sin(rotation) + ry * sin * Math.cos(rotation),
+        center[0] + rx * cos * Math.cos(rotation) - orientation * ry * sin * Math.sin(rotation),
+        center[1] + rx * cos * Math.sin(rotation) + orientation * ry * sin * Math.cos(rotation),
     ];
+}
+
+// Sector handles use the ellipse's parameter angle, not the pointer's world-plane angle.
+export function profileEllipseAngle(center: Point2, edge: Point2, vertical: Point2, point: Point2) {
+    const rotation = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+    const dx = point[0] - center[0], dy = point[1] - center[1];
+    const cos = Math.cos(rotation), sin = Math.sin(rotation);
+    const orientation = Math.sign((edge[0] - center[0]) * (vertical[1] - center[1]) - (edge[1] - center[1]) * (vertical[0] - center[0])) || 1;
+    return Math.atan2(orientation * (-sin * dx + cos * dy), cos * dx + sin * dy);
 }
 
 export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number): Point2[] {
@@ -56,7 +66,7 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
             });
         }
         const vertical = source[2] || [center[0], center[1] + Math.abs(edge[1] - center[1])];
-        const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        const start = startAngle ?? 0;
         const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
         const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
             const angle = start + index / segments * travel;

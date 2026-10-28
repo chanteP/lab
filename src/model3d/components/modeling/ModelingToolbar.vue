@@ -68,14 +68,14 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 <style lang="scss" scoped>
 .vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 48px; display: flex; flex-direction: column; padding: 4px; overflow: visible; transition: transform .24s ease, opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
-.menu-state { padding: 5px 2px 7px; color: #738079; font-size: 8px; text-align: center; }
+.menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
 .tool-group { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
-.transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid #e3e8e5; border-bottom: 1px solid #e3e8e5; }
+.transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .toolbar-spacer { flex: 1; min-height: 2px; }
 .history-panel { width: 220px; max-height: 340px; overflow-y: auto; }
 .history-panel > strong { display: block; margin-bottom: 8px; font-size: 12px; }
-.history-panel > button { width: 100%; display: flex; align-items: center; gap: 7px; padding: 8px 4px; border: 0; border-bottom: 1px solid #edf0ee; background: transparent; color: #4e5e54; font-size: 10px; text-align: left; cursor: pointer; }
-.history-panel > button span { padding: 2px 4px; color: #187566; background: #e8f3ef; border-radius: 3px; font-size: 8px; }
+.history-panel > button { width: 100%; display: flex; align-items: center; gap: 7px; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--model3d-ui-edf0ee); background: transparent; color: var(--model3d-ui-4e5e54); font-size: 10px; text-align: left; cursor: pointer; }
+.history-panel > button span { padding: 2px 4px; color: var(--model3d-ui-187566); background: var(--model3d-ui-e8f3ef); border-radius: 3px; font-size: 8px; }
 .history-panel > button .n-icon { margin-left: auto; }
-.history-empty { padding: 18px; color: #8b9690; font-size: 10px; text-align: center; }
+.history-empty { padding: 18px; color: var(--model3d-ui-8b9690); font-size: 10px; text-align: center; }
 </style>

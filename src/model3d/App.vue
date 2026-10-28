@@ -13,13 +13,13 @@ import {
 import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './engine/Viewport';
 import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
 import SvgIcon from './components/ui/SvgIcon.vue';
-import { entityProfileClosed, profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './engine/profiles';
+import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipseAngle, type ProfileType, type ProfileCurves } from './engine/profiles';
 import { borderSegments, sliceBorder, splitCubic } from './engine/sketchBorders';
 import { buildEntityMesh } from './engine/geometry';
 import { exportGLB, exportProject, exportSTL } from './engine/exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './stores/store';
 import { useUndoHistory } from './composables/useUndoHistory';
-import { useUnits } from './composables/useUnits';
+import { storedLengthUnit, useUnits } from './composables/useUnits';
 import { uid } from './utils/id';
 import AppTopBar from './components/layout/AppTopBar.vue';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
@@ -27,6 +27,7 @@ import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
 import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
+import { INTERACTION } from './config/const';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
     type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
@@ -109,7 +110,7 @@ const selectedEntities = computed(() => selectedIds.value.map((id) => document.v
 const selectedSketches = computed(() => selectedEntities.value.filter((item) => item.kind === 'sketch'));
 const selected = computed(() => selectedEntities.value.length === 1 ? selectedEntities.value[0] : null);
 const { canUndo, canRedo, pushHistory, popHistory, undo, redo, clearHistory } = useUndoHistory(document, selectedIds);
-const { lengthUnit, scaleBar, scaleBarLabel, storedLengthUnit, setLengthUnit, displayLength, inputLength, formatLength } = useUnits(document, () => { viewport?.setLengthUnit(lengthUnit.value); refreshSketch(); });
+const { lengthUnit, scaleBar, scaleBarLabel, setLengthUnit, displayLength, inputLength, formatLength } = useUnits(document, () => { viewport?.setLengthUnit(lengthUnit.value); refreshSketch(); });
 const canBoolean = computed(() => selectedEntities.value.length === 2);
 const sketchClosed = computed(() => ['circle', 'regular'].includes(sketchType.value) ? sketchPoints.value.length >= 2 : sketchPoints.value.length >= 3);
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
@@ -421,6 +422,8 @@ function removeSelected() {
 function deleteNodeIds(ids: string[]) {
     const planeSketchIds = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId && ids.includes(item.planeId)).map((item) => item.id);
     const allIds = [...new Set([...ids, ...planeSketchIds])];
+    const remainingSelectedIds = selectedIds.value.filter((id) => !allIds.includes(id));
+    const removedEditedSketch = !!editingSketchId.value && allIds.includes(editingSketchId.value);
     const referenced = document.value.entities.find((item) => !allIds.includes(item.id) && ((item.kind === 'boolean' && item.operands?.some((id) => allIds.includes(id))) || (item.profileId && allIds.includes(item.profileId))));
     if (referenced) return message.warning(`请先删除依赖它的「${referenced.name}」`);
     pushHistory();
@@ -441,8 +444,9 @@ function deleteNodeIds(ids: string[]) {
         activePlaneId.value = document.value.planes[0]?.id || null;
         viewport?.setActivePlane(activePlane.value);
     }
-    selectedIds.value = [];
-    selectionKind.value = null;
+    if (removedEditedSketch) clearSketchSelection();
+    selectedIds.value = remainingSelectedIds;
+    selectionKind.value = remainingSelectedIds.length ? selectionKind.value : null;
 }
 function duplicateSelected() {
     const item = selected.value;
@@ -870,6 +874,7 @@ function activateSketchSelectionTool() {
     viewport?.setSketchSelectionTool(true);
 }
 function clearSketchSelection() {
+    finishSketchHandleDrag();
     editingSketchId.value = null;
     sketchPoints.value = [];
     sketchCurves.value = {};
@@ -962,12 +967,20 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         return;
     }
     if (phase === 'start') {
-        if (editingSketchId.value) pushHistory();
+        beginSketchHandleDrag();
         return;
     }
     if (!sketchPoints.value[index]) return;
     const previous = sketchPoints.value[index];
     const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
+    const straightCurveSegments = new Set<number>();
+    Object.entries(sketchCurves.value).forEach(([key, curve]) => {
+        const segment = Number(key);
+        const a = sketchPoints.value[segment], b = sketchPoints.value[(segment + 1) % sketchPoints.value.length];
+        if (!a || !b) return;
+        const straight = [curve.c1, curve.c2].every((control) => Math.abs((b[0] - a[0]) * (control[1] - a[1]) - (b[1] - a[1]) * (control[0] - a[0])) < 0.0001);
+        if (straight) straightCurveSegments.add(segment);
+    });
     if (sketchType.value === 'ellipse' && (index === 1 || index === 2)) {
         const center = sketchPoints.value[0], first = sketchPoints.value[1], second = sketchPoints.value[2];
         const sign = Math.sign((first[0] - center[0]) * (second[1] - center[1]) - (first[1] - center[1]) * (second[0] - center[0])) || 1;
@@ -975,9 +988,10 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         const otherLength = Math.hypot(other[0] - center[0], other[1] - center[1]);
         const previousAngle = Math.atan2(previous[1] - center[1], previous[0] - center[0]);
         const angle = Math.atan2(point[1] - center[1], point[0] - center[0]);
-        if (sketchProfileStartAngle.value !== undefined) sketchProfileStartAngle.value += angle - previousAngle;
+        const rotationDelta = Math.atan2(Math.sin(angle - previousAngle), Math.cos(angle - previousAngle));
+        if (sketchProfileStartAngle.value !== undefined) sketchProfileStartAngle.value += rotationDelta;
         sketchPoints.value[index] = point;
-        const otherAngle = index === 1 ? angle + sign * Math.PI / 2 : angle - sign * Math.PI / 2;
+        const otherAngle = (index === 1 ? angle + sign * Math.PI / 2 : angle - sign * Math.PI / 2);
         const otherIndex = index === 1 ? 2 : 1;
         sketchPoints.value[otherIndex] = [center[0] + Math.cos(otherAngle) * otherLength, center[1] + Math.sin(otherAngle) * otherLength];
     } else if (sketchType.value === 'rectangle' && sketchPoints.value.length === 4) {
@@ -989,18 +1003,36 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     } else if (index === 0 && ['circle', 'ellipse', 'regular'].includes(sketchType.value)) {
         sketchPoints.value = sketchPoints.value.map((source) => [source[0] + delta[0], source[1] + delta[1]]);
     } else sketchPoints.value[index] = point;
+    const previousSegment = index === 0 && profileClosed(sketchType.value) && !sketchOpen.value ? sketchPoints.value.length - 1 : index - 1;
     Object.entries(sketchCurves.value).forEach(([key, curve]) => {
         const segment = Number(key);
         if (segment === index) curve.c1 = [curve.c1[0] + delta[0], curve.c1[1] + delta[1]];
-        if (segment === index - 1) curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
+        if (segment === previousSegment) curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
+    });
+    [index, previousSegment].forEach((segment) => {
+        if (!straightCurveSegments.has(segment)) return;
+        const a = sketchPoints.value[segment], b = sketchPoints.value[(segment + 1) % sketchPoints.value.length];
+        const curve = sketchCurves.value[segment];
+        curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+        curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
     });
     syncEditingSketch();
     if (sketchPoints.value.length >= 3) persistSketchProgress(false);
     refreshSketch();
+    if (phase === 'end') finishSketchHandleDrag();
+}
+function beginSketchHandleDrag() {
+    if (!editingSketchId.value) return;
+    pushHistory();
+    transforming = true;
+}
+function finishSketchHandleDrag() {
+    if (!transforming) return;
+    transforming = false;
 }
 function moveSketchCenter(point: Point2, phase: EditPhase) {
     if (phase === 'start') {
-        if (editingSketchId.value) pushHistory();
+        beginSketchHandleDrag();
         sketchCenterDrag = { start: [...point], points: sketchPoints.value.map((source) => [...source]), curves: JSON.parse(JSON.stringify(sketchCurves.value)) };
         return;
     }
@@ -1016,7 +1048,10 @@ function moveSketchCenter(point: Point2, phase: EditPhase) {
     syncEditingSketch();
     if (sketchPoints.value.length >= 3) persistSketchProgress(false);
     refreshSketch();
-    if (phase === 'end') sketchCenterDrag = null;
+    if (phase === 'end') {
+        sketchCenterDrag = null;
+        finishSketchHandleDrag();
+    }
 }
 function deleteSketchPoint(index: number) {
     if (sketchType.value !== 'polygon' || !sketchPoints.value[index]) return;
@@ -1049,12 +1084,13 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
         if (start <= 0 && end >= 1) document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
         else {
             const center = entity.points![0], edge = entity.points![1];
-            const startAngle = entity.profileStartAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+            const startAngle = entity.profileStartAngle ?? (type === 'ellipse' ? 0 : Math.atan2(edge[1] - center[1], edge[0] - center[0]));
             const travel = (entity.sectorAngle ?? 360) * Math.PI / 180;
             entity.profileStartAngle = startAngle + end * travel;
             entity.sectorAngle = Math.max(0.01, (1 - (end - start)) * (entity.sectorAngle ?? 360));
             entity.open = true;
         }
+        if (entity.planeId) recloseProfiles(entity.planeId);
         clearSketchSelection();
         return;
     }
@@ -1099,10 +1135,15 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
     clearSketchSelection();
 }
 function recloseProfiles(planeId: string) {
-    type Edge = { a: Point2; b: Point2; c1?: Point2; c2?: Point2; used?: boolean };
-    const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId && ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'));
+    type Edge = { a: Point2; b: Point2; points: Point2[]; c1?: Point2; c2?: Point2 };
+    const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId
+        && (item.open || ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'))
+        && !document.value.entities.some((entity) => entity.profileId === item.id));
     if (!candidates.length) return;
-    const edges: Edge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({ a: segment.points[0], b: segment.points[segment.points.length - 1], c1: entity.curves?.[segment.index]?.c1, c2: entity.curves?.[segment.index]?.c2 })));
+    const edges: Edge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({
+        a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points.map((point) => [...point] as Point2),
+        c1: entity.curves?.[segment.index]?.c1, c2: entity.curves?.[segment.index]?.c2,
+    })));
     const key = (point: Point2) => `${Math.round(point[0] * 100)},${Math.round(point[1] * 100)}`;
     const components: Edge[][] = [];
     const visited = new Set<Edge>();
@@ -1148,9 +1189,13 @@ function recloseProfiles(planeId: string) {
                 unused.delete(next);
             }
             ordered.forEach(({ edge, forward }) => {
-                const a = forward ? edge.a : edge.b;
-                entity.points!.push([...a]);
-                if (edge.c1 && edge.c2) entity.curves![entity.points!.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
+                if (edge.c1 && edge.c2) {
+                    entity.points!.push([...(forward ? edge.a : edge.b)]);
+                    entity.curves![entity.points!.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
+                } else {
+                    const samples = forward ? edge.points : [...edge.points].reverse();
+                    samples.slice(0, -1).forEach((point) => entity.points!.push([...point]));
+                }
                 current = forward ? edge.b : edge.a;
             });
             delete entity.depth;
@@ -1162,7 +1207,7 @@ function recloseProfiles(planeId: string) {
             entity.position = [0, 0, 0];
             entity.profileType = 'polygon';
             entity.open = true;
-            entity.points = [[...edge.a], [...edge.b]];
+            entity.points = edge.c1 && edge.c2 ? [[...edge.a], [...edge.b]] : edge.points.map((point) => [...point]);
             if (edge.c1 && edge.c2) entity.curves = { 0: { c1: [...edge.c1], c2: [...edge.c2] } };
             delete entity.depth;
             rebuilt.push(entity);
@@ -1171,7 +1216,7 @@ function recloseProfiles(planeId: string) {
     components.forEach((component) => {
         const degree = new Map<string, number>();
         component.forEach((edge) => { degree.set(key(edge.a), (degree.get(key(edge.a)) || 0) + 1); degree.set(key(edge.b), (degree.get(key(edge.b)) || 0) + 1); });
-        make(component, component.length >= 3 && [...degree.values()].every((value) => value === 2));
+        make(component, component.length >= 2 && [...degree.values()].every((value) => value === 2));
     });
     document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
     document.value.entities.push(...rebuilt);
@@ -1195,11 +1240,26 @@ function selectSketchSegment(index: number, additive = false) {
     refreshSketch();
 }
 function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) {
-    if (phase === 'start') return;
+    if (phase === 'start') {
+        beginSketchHandleDrag();
+        return;
+    }
     ensureSketchSegment(segment);
     sketchCurves.value[segment][handle === 1 ? 'c1' : 'c2'] = point;
     persistSketchProgress(false);
     syncEditingSketch();
+    refreshSketch();
+    if (phase === 'end') finishSketchHandleDrag();
+}
+function resetSketchHandle(segment: number, handle: 1 | 2) {
+    const a = sketchPoints.value[segment], b = sketchPoints.value[(segment + 1) % sketchPoints.value.length];
+    if (!a || !b) return;
+    if (editingSketchId.value) pushHistory();
+    ensureSketchSegment(segment);
+    const fraction = handle === 1 ? 1 / 3 : 2 / 3;
+    sketchCurves.value[segment][handle === 1 ? 'c1' : 'c2'] = [a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction];
+    syncEditingSketch();
+    persistSketchProgress(false);
     refreshSketch();
 }
 function selectSketchPoint(index: number) {
@@ -1285,16 +1345,21 @@ function updateSketchDepth(value: number | null) {
 }
 function onSketchSectorMove(point: Point2, phase: EditPhase) {
     if (phase === 'start') {
-        if (editingSketchId.value) pushHistory();
+        beginSketchHandleDrag();
         return;
     }
     const center = sketchPoints.value[0], radiusPoint = sketchPoints.value[1];
     if (!center || !radiusPoint) return;
-    const start = sketchProfileStartAngle.value ?? Math.atan2(radiusPoint[1] - center[1], radiusPoint[0] - center[0]);
-    const current = Math.atan2(point[1] - center[1], point[0] - center[0]);
-    sketchSectorAngle.value = Math.max(0.01, ((current - start) * 180 / Math.PI + 360) % 360);
+    const start = sketchProfileStartAngle.value ?? (sketchType.value === 'ellipse' ? 0 : Math.atan2(radiusPoint[1] - center[1], radiusPoint[0] - center[0]));
+    const current = sketchType.value === 'ellipse' && sketchPoints.value[2] ? profileEllipseAngle(center, radiusPoint, sketchPoints.value[2], point) : Math.atan2(point[1] - center[1], point[0] - center[0]);
+    const degrees = ((current - start) * 180 / Math.PI + 360) % 360;
+    const quarter = Math.round(degrees / 90) * 90;
+    const quarterDistance = Math.min(Math.abs(degrees - quarter), 360 - Math.abs(degrees - quarter));
+    const snapped = quarterDistance <= INTERACTION.sectorQuarterSnapThresholdDeg ? quarter : Math.round(degrees);
+    sketchSectorAngle.value = snapped % 360 === 0 ? 360 : Math.max(1, snapped);
     syncEditingSketch();
     refreshSketch();
+    if (phase === 'end') finishSketchHandleDrag();
 }
 function resetSketchSector() {
     if (editingSketchId.value) pushHistory();
@@ -1380,6 +1445,7 @@ function closeSketch() {
     sketchClosed.value ? finishSketch() : cancelSketch();
 }
 function cancelSketch() {
+    finishSketchHandleDrag();
     sketchMode.value = false;
     sketchContextMenu.value = null;
     viewport?.setSketchEditing(null);
@@ -1637,6 +1703,7 @@ onMounted(async () => {
         onSketchPointMove: moveSketchPoint,
         onSketchSegment: selectSketchSegment,
         onSketchHandleMove: moveSketchHandle,
+        onSketchHandleReset: resetSketchHandle,
         onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
         onSketchComplete: finishSketch,
@@ -1659,7 +1726,13 @@ onMounted(async () => {
         onMarqueeSelect,
         onHoverSketch,
         onViewportContext: openViewportMenu,
-        onSpaceChange: (active) => spaceActive.value = active,
+        onSpaceChange: (active) => {
+            spaceActive.value = active;
+            if (active && transforming) {
+                finishSketchHandleDrag();
+                viewport?.sync(document.value);
+            }
+        },
         onMeasureChange: (active) => measureMode.value = active,
         onScale: (value) => scaleBar.value = value,
         onStats: (value) => stats.value = value,
