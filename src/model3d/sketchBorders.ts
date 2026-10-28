@@ -39,7 +39,8 @@ function intersectLines(a: Point2, b: Point2, c: Point2, d: Point2) {
     const delta = sub(c, a);
     const t = cross(delta, s) / denominator;
     const u = cross(delta, r) / denominator;
-    return t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6 ? t : null;
+    const epsilon = 1e-6;
+    return t > epsilon && t < 1 - epsilon && u >= -epsilon && u <= 1 + epsilon ? t : null;
 }
 
 function pointAt(segment: BorderSegment, t: number): Point2 {

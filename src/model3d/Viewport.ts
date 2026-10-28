@@ -8,7 +8,7 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { OrientationGizmo } from './OrientationGizmo';
 import { buildScene } from './geometry';
-import { entityProfileClosed, profileArcCenter, profileClosed, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
+import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipsePoint, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
 import { SKETCH_COLORS } from './colors';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from './types';
@@ -1347,14 +1347,14 @@ export class Viewport {
     }
     private addSketchMarker(point: Point2, index: number, color: string, center = false, locked = false) {
         const selected = index >= 0 && index === this.selectedSketchPoint;
-        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.75 : 1.4, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false }));
+        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.75 : 1.4, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
         outer.position.copy(this.sketchWorld(point));
         outer.userData = { pointIndex: index, pointBorder: true, centerHandle: center, locked };
-        outer.renderOrder = 6;
-        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.3 : 1, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        outer.renderOrder = 1001;
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.3 : 1, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
         inner.position.copy(this.sketchWorld(point, 0.14));
         inner.userData = { pointIndex: index, centerHandle: center, locked };
-        inner.renderOrder = 7;
+        inner.renderOrder = 1002;
         this.sketch.add(outer, inner);
     }
     private addSketchDimension(position: Point2, target: SketchDimension, value: number, unit: LengthUnit) {
@@ -1397,7 +1397,7 @@ export class Viewport {
         const material = dashed ? new THREE.LineDashedMaterial({ color, dashSize: 2, gapSize: 1.5, depthTest: false }) : new THREE.LineBasicMaterial({ color, depthTest: false });
         const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([this.sketchWorld(a), this.sketchWorld(b)]), material);
         if (dashed) line.computeLineDistances();
-        line.renderOrder = 4;
+        line.renderOrder = 900;
         this.sketch.add(line);
     }
     updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number) {
@@ -1450,17 +1450,16 @@ export class Viewport {
             }
             if (profileType !== 'regular' && this.editingSketchId) {
                 const angle = start + sectorAngle * Math.PI / 180;
-                const rx = profileType === 'circle' ? radius : Math.abs(edge[0] - center[0]);
-                const ry = profileType === 'circle' ? radius : Math.abs((points[2]?.[1] ?? center[1]) - center[1]);
-                const sectorPoint: Point2 = [center[0] + Math.cos(angle) * rx * 0.82, center[1] + Math.sin(angle) * ry * 0.82];
-                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false }));
+                const sectorPoint = profileType === 'circle' ? [center[0] + Math.cos(angle) * radius * 0.82, center[1] + Math.sin(angle) * radius * 0.82] as Point2 : profileEllipsePoint(center, edge, points[2], angle, 0.82);
+                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(sectorPoint));
                 handle.userData.sectorHandle = true;
-                handle.renderOrder = 8;
+                handle.renderOrder = 1003;
                 this.sketch.add(handle);
                 if (!full) {
                     const middle = start + sectorAngle * Math.PI / 360;
-                    this.addSketchDimension([center[0] + Math.cos(middle) * rx * 0.42, center[1] + Math.sin(middle) * ry * 0.42], { kind: 'angle' }, sectorAngle, unit);
+                    const anglePosition = profileType === 'circle' ? [center[0] + Math.cos(middle) * radius * 0.42, center[1] + Math.sin(middle) * radius * 0.42] as Point2 : profileEllipsePoint(center, edge, points[2], middle, 0.42);
+                    this.addSketchDimension(anglePosition, { kind: 'angle' }, sectorAngle, unit);
                 }
             }
         }
@@ -1479,11 +1478,11 @@ export class Viewport {
                 if (this.editingSketchId) this.addSketchDimension(midpoint(from, to), { kind: 'control', index: selectedSegment, handle: handleIndex + 1 as 1 | 2 }, Math.hypot(to[0] - from[0], to[1] - from[1]), unit);
             });
             [curve.c1, curve.c2].forEach((point, handleIndex) => {
-                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false }));
+                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(point));
                 handle.userData.handleSegment = selectedSegment;
                 handle.userData.handleIndex = handleIndex + 1;
-                handle.renderOrder = 7;
+                handle.renderOrder = 1003;
                 this.sketch.add(handle);
             });
         }

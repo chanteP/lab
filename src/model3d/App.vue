@@ -981,7 +981,19 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (!sketchPoints.value[index]) return;
     const previous = sketchPoints.value[index];
     const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
-    if (sketchType.value === 'rectangle' && sketchPoints.value.length === 4) {
+    if (sketchType.value === 'ellipse' && (index === 1 || index === 2)) {
+        const center = sketchPoints.value[0], first = sketchPoints.value[1], second = sketchPoints.value[2];
+        const sign = Math.sign((first[0] - center[0]) * (second[1] - center[1]) - (first[1] - center[1]) * (second[0] - center[0])) || 1;
+        const other = index === 1 ? second : first;
+        const otherLength = Math.hypot(other[0] - center[0], other[1] - center[1]);
+        const previousAngle = Math.atan2(previous[1] - center[1], previous[0] - center[0]);
+        const angle = Math.atan2(point[1] - center[1], point[0] - center[0]);
+        if (sketchProfileStartAngle.value !== undefined) sketchProfileStartAngle.value += angle - previousAngle;
+        sketchPoints.value[index] = point;
+        const otherAngle = index === 1 ? angle + sign * Math.PI / 2 : angle - sign * Math.PI / 2;
+        const otherIndex = index === 1 ? 2 : 1;
+        sketchPoints.value[otherIndex] = [center[0] + Math.cos(otherAngle) * otherLength, center[1] + Math.sin(otherAngle) * otherLength];
+    } else if (sketchType.value === 'rectangle' && sketchPoints.value.length === 4) {
         const opposite = sketchPoints.value[(index + 2) % 4];
         sketchPoints.value = [point, [opposite[0], point[1]], opposite, [point[0], opposite[1]]];
         if (index === 1) sketchPoints.value = [[opposite[0], point[1]], point, [point[0], opposite[1]], opposite];
@@ -1243,8 +1255,8 @@ function onSketchDimension(target: SketchDimension, value: number) {
         points.forEach((point) => point[axis] = center + (point[axis] < center ? -value / 2 : value / 2));
     } else if (target.kind === 'radius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
     else if (target.kind === 'regularRadius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
-    else if (target.kind === 'radiusX' && points[0] && points[1]) points[1][0] = points[0][0] + (points[1][0] < points[0][0] ? -value : value);
-    else if (target.kind === 'radiusY' && points[0] && points[2]) points[2][1] = points[0][1] + (points[2][1] < points[0][1] ? -value : value);
+    else if (target.kind === 'radiusX' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
+    else if (target.kind === 'radiusY' && points[0] && points[2]) points[2] = setRadius(points[0], points[2], value);
     else if (target.kind === 'control' && target.index !== undefined && target.handle) {
         const curve = sketchCurves.value[target.index];
         const anchor = target.handle === 1 ? points[target.index] : points[(target.index + 1) % points.length];

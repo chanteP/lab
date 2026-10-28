@@ -20,6 +20,18 @@ export function profileArcCenter(source: Point2[]): Point2 | null {
     ];
 }
 
+export function profileEllipsePoint(center: Point2, edge: Point2, vertical: Point2, angle: number, scale = 1): Point2 {
+    const dx = edge[0] - center[0], dy = edge[1] - center[1];
+    const rx = Math.hypot(dx, dy) * scale;
+    const ry = Math.hypot(vertical[0] - center[0], vertical[1] - center[1]) * scale;
+    const rotation = Math.atan2(dy, dx);
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    return [
+        center[0] + rx * cos * Math.cos(rotation) - ry * sin * Math.sin(rotation),
+        center[1] + rx * cos * Math.sin(rotation) + ry * sin * Math.cos(rotation),
+    ];
+}
+
 export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number): Point2[] {
     if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides, sectorAngle, open, startAngle).getPoints(segments).map((point) => [point.x, point.y]);
     if (type === 'circle' && source.length >= 2) {
@@ -44,13 +56,11 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
             });
         }
         const vertical = source[2] || [center[0], center[1] + Math.abs(edge[1] - center[1])];
-        const rx = Math.abs(edge[0] - center[0]);
-        const ry = Math.abs(vertical[1] - center[1]);
         const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
         const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
         const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
             const angle = start + index / segments * travel;
-            return [center[0] + Math.cos(angle) * rx, center[1] + Math.sin(angle) * ry];
+            return profileEllipsePoint(center, edge, vertical, angle);
         });
         return sectorAngle < 360 ? (open ? points : [[...center] as Point2, ...points]) : points.slice(0, -1);
     }
