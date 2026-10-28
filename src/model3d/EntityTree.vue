@@ -48,7 +48,7 @@ function drop(event: DragEvent, targetId: string | null) {
 <template>
     <div class="tree-level" @dragover.prevent @drop="drop($event, null)">
         <div v-for="node in nodes" :key="node.id" class="tree-node">
-            <div class="object-row" :class="{ selected: selectedIds.includes(node.id), muted: node.visible === false, 'drop-target': dropTarget === node.id }"
+            <div class="object-row" :data-node-id="node.id" :class="{ selected: selectedIds.includes(node.id), muted: node.visible === false, 'drop-target': dropTarget === node.id }"
                 draggable="true" @click="emit('select', node.id, $event.metaKey || $event.ctrlKey || $event.shiftKey)"
                 @contextmenu.prevent.stop="emit('context', node, $event)" @dblclick.stop="emit('activate', node.id)" @dragstart="dragStart(node, $event)"
                 @dragover.prevent.stop="dropTarget = node.id" @dragleave="dropTarget = null" @drop.stop="drop($event, node.id)">

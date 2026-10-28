@@ -173,7 +173,12 @@ const treeNodes = computed(() => {
             } as OutlinerNode];
         });
     };
-    const planeNodes = document.value.planes.map((plane) => ({ id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible, children: [] } as OutlinerNode));
+    const planeNodes = document.value.planes.map((plane) => ({
+        id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible,
+        children: sketchMode.value && plane.id === activePlaneId.value
+            ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, children: [] } as OutlinerNode))
+            : [],
+    } as OutlinerNode));
     return [...planeNodes, ...build(null)];
 });
 
@@ -665,6 +670,7 @@ function editHistory(id: string) {
 }
 function selectFromItems(id: string, additive: boolean) {
     if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
+    if (sketchMode.value && document.value.entities.some((item) => item.id === id && item.kind === 'sketch')) { selectSketchEntity(id); return; }
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : 'body';
     activePanel.value = null;
@@ -1523,6 +1529,14 @@ watch(() => project.value.name, scheduleSave);
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
+watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
+    if (!active) return;
+    nextTick(() => {
+        const list = window.document.querySelector<HTMLElement>('.object-list');
+        const row = activePlaneId.value ? list?.querySelector<HTMLElement>(`[data-node-id="${activePlaneId.value}"]`) : null;
+        if (list && row) list.scrollTo({ top: Math.max(0, row.offsetTop - list.offsetTop), behavior: 'smooth' });
+    });
+}, { flush: 'post' });
 
 onMounted(async () => {
     viewport = new Viewport(viewportElement.value!, {

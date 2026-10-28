@@ -1054,11 +1054,14 @@ export class Viewport {
         });
         let vertices = 0, triangles = 0;
         this.model.children.forEach((object) => {
+            const entity = document.entities.find((item) => item.id === object.userData.entityId);
+            if (!entity || entity.kind === 'sketch') return;
             const geometry = (object as THREE.Mesh).geometry;
             vertices += geometry.attributes.position?.count || 0;
             triangles += (geometry.index?.count || geometry.attributes.position?.count || 0) / 3;
         });
-        this.callbacks.onStats({ vertices, triangles: Math.round(triangles), objects: this.model.children.length });
+        const objects = this.model.children.filter((object) => document.entities.find((item) => item.id === object.userData.entityId)?.kind !== 'sketch').length;
+        this.callbacks.onStats({ vertices, triangles: Math.round(triangles), objects });
         this.clearGroup(this.planes);
         document.planes.filter((plane) => plane.visible).forEach((plane) => this.addPlaneHelper(plane));
         this.applyIsolation();
