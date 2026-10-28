@@ -28,6 +28,7 @@ import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
 import { INTERACTION } from './config/const';
+import { solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
     type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
@@ -128,6 +129,13 @@ const planeOptions = computed(() => document.value.planes.map((plane) => ({ labe
 const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
+const constraintSegmentCount = computed(() => selectedSketchSegments.value.filter((index) => straightConstraintSegment(sketchPoints.value, sketchCurves.value, index)).length);
+const selectionLocked = computed(() => {
+    if (selectedSketchPoint.value >= 0) return selectedPointLocked.value;
+    if (!selectedSketchSegments.value.length) return false;
+    const indices = new Set(selectedSketchSegments.value.flatMap((index) => [index, (index + 1) % sketchPoints.value.length]));
+    return [...indices].every((index) => sketchLockedPoints.value.includes(index));
+});
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
@@ -1032,6 +1040,11 @@ function finishSketchHandleDrag() {
 }
 function moveSketchCenter(point: Point2, phase: EditPhase) {
     if (phase === 'start') {
+        if (sketchLockedPoints.value.length) {
+            sketchCenterDrag = null;
+            message.info('形状包含固定点，请先取消固定再整体移动');
+            return;
+        }
         beginSketchHandleDrag();
         sketchCenterDrag = { start: [...point], points: sketchPoints.value.map((source) => [...source]), curves: JSON.parse(JSON.stringify(sketchCurves.value)) };
         return;
@@ -1264,8 +1277,8 @@ function resetSketchHandle(segment: number, handle: 1 | 2) {
 }
 function selectSketchPoint(index: number) {
     selectedSketchPoint.value = index;
-    if (index > 0 && sketchType.value === 'polygon') ensureSketchSegment(index - 1);
-    else selectedSketchSegment.value = -1;
+    selectedSketchSegment.value = -1;
+    selectedSketchSegments.value = [];
     viewport?.setSketchSelection(index);
     refreshSketch();
 }
@@ -1298,40 +1311,27 @@ function syncEditingSketch() {
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
     if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
 }
-function applySketchConstraint(type: 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal') {
-    const segments = selectedSketchSegments.value.filter((index) => sketchPoints.value[index] && sketchPoints.value[(index + 1) % sketchPoints.value.length]);
-    if (!segments.length) return;
+function applySketchConstraint(type: SketchConstraintType) {
+    const result = solveSketchConstraints(sketchPoints.value, sketchCurves.value, selectedSketchSegments.value, sketchLockedPoints.value, type, profileClosed(sketchType.value) && !sketchOpen.value);
+    if (!result) return message.warning('当前点或边无法同时满足该约束，草图未修改');
+    if (!result.changed) return;
     if (editingSketchId.value) pushHistory();
-    const reference = sketchPoints.value[segments[0]];
-    const referenceEnd = sketchPoints.value[(segments[0] + 1) % sketchPoints.value.length];
-    const referenceAngle = Math.atan2(referenceEnd[1] - reference[1], referenceEnd[0] - reference[0]);
-    const referenceLength = Math.hypot(referenceEnd[0] - reference[0], referenceEnd[1] - reference[1]);
-    segments.forEach((index, order) => {
-        const endIndex = (index + 1) % sketchPoints.value.length;
-        if (sketchLockedPoints.value.includes(endIndex)) return;
-        const a = sketchPoints.value[index];
-        const b = sketchPoints.value[endIndex];
-        const resolved = type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : type;
-        if (resolved === 'horizontal') b[1] = a[1];
-        else if (resolved === 'vertical') b[0] = a[0];
-        else if (order > 0 && type === 'equal') {
-            const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
-            sketchPoints.value[endIndex] = [a[0] + Math.cos(angle) * referenceLength, a[1] + Math.sin(angle) * referenceLength];
-        } else if (order > 0 && (type === 'parallel' || type === 'perpendicular')) {
-            const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-            const angle = referenceAngle + (type === 'perpendicular' ? Math.PI / 2 : 0);
-            sketchPoints.value[endIndex] = [a[0] + Math.cos(angle) * length, a[1] + Math.sin(angle) * length];
-        }
-    });
+    sketchPoints.value = result.points;
+    sketchCurves.value = result.curves;
     syncEditingSketch();
     persistSketchProgress(false);
     refreshSketch();
 }
 function toggleSketchPointLock() {
-    const index = selectedSketchPoint.value;
-    if (index < 0) return;
+    const indices = selectedSketchPoint.value >= 0
+        ? [selectedSketchPoint.value]
+        : [...new Set(selectedSketchSegments.value.flatMap((index) => [index, (index + 1) % sketchPoints.value.length]))];
+    if (!indices.length) return;
     if (editingSketchId.value) pushHistory();
-    sketchLockedPoints.value = sketchLockedPoints.value.includes(index) ? sketchLockedPoints.value.filter((item) => item !== index) : [...sketchLockedPoints.value, index];
+    const locked = indices.every((index) => sketchLockedPoints.value.includes(index));
+    sketchLockedPoints.value = locked
+        ? sketchLockedPoints.value.filter((index) => !indices.includes(index))
+        : [...new Set([...sketchLockedPoints.value, ...indices])];
     syncEditingSketch();
     persistSketchProgress(false);
     refreshSketch();
@@ -1839,7 +1839,7 @@ onBeforeUnmount(() => {
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides"
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
-                <SketchConstraints v-if="sketchMode" :segment-count="selectedSketchSegments.length" :selected-point="selectedSketchPoint" :point-locked="selectedPointLocked"
+                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedSketchSegments.length > 0"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>

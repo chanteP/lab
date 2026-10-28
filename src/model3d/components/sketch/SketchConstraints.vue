@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { NIcon } from 'naive-ui';
 import { LockClosedOutline, LockOpenOutline } from '@vicons/ionicons5';
+import type { SketchConstraintType } from '../../engine/sketchConstraints';
 
-defineProps<{ segmentCount: number; selectedPoint: number; pointLocked: boolean }>();
-const emit = defineEmits<{ constraint: [type: 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal']; lock: [] }>();
+defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; edgeSelected: boolean }>();
+const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: [] }>();
 </script>
 
 <template>
     <aside class="constraints-panel" aria-label="草图约束">
         <div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div>
-        <p>先选线段或点，Shift 可多选。</p>
+        <p>{{ selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Shift 可多选边。' }}</p>
         <button :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
         <div class="constraint-pair"><button :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'perpendicular')">正交</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'equal')">等长</button>
-        <button :disabled="selectedPoint < 0" @click="emit('lock')"><NIcon><component :is="pointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ pointLocked ? '解锁' : '锁定' }}</button>
-        <div class="constraint-state"><i :class="{ locked: pointLocked }"></i>{{ pointLocked ? '所选点已固定' : '选择几何以应用约束' }}</div>
+        <button :disabled="selectedPoint < 0 && !edgeSelected" @click="emit('lock')"><NIcon><component :is="selectionLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectionLocked ? '取消固定' : '固定' }}</button>
+        <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
     </aside>
 </template>
 
