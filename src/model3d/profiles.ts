@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import type { Point2 } from './types';
+import type { ModelEntity, Point2 } from './types';
 
-export type ProfileType = 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc';
+export type ProfileType = 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
 export type ProfileCurves = Record<number, { c1: Point2; c2: Point2 }>;
 
-export function profileClosed(type: ProfileType) { return type !== 'arc'; }
+export function profileClosed(type: ProfileType) { return type !== 'arc' && type !== 'line'; }
+export function entityProfileClosed(entity: Pick<ModelEntity, 'open' | 'profileType'>) { return !entity.open && profileClosed(entity.profileType || 'polygon'); }
 
 // Source points stay semantic: circle = center + circumference, arc = start + mid + end.
 export function profileArcCenter(source: Point2[]): Point2 | null {
@@ -19,18 +20,18 @@ export function profileArcCenter(source: Point2[]): Point2 | null {
     ];
 }
 
-export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360): Point2[] {
-    if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides, sectorAngle).getPoints(segments).map((point) => [point.x, point.y]);
+export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number): Point2[] {
+    if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides, sectorAngle, open, startAngle).getPoints(segments).map((point) => [point.x, point.y]);
     if (type === 'circle' && source.length >= 2) {
         const [center, edge] = source;
         const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
-        const start = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
         const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
         const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
             const angle = start + index / segments * travel;
             return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius];
         });
-        return sectorAngle < 360 ? [[...center] as Point2, ...points] : points.slice(0, -1);
+        return sectorAngle < 360 ? (open ? points : [[...center] as Point2, ...points]) : points.slice(0, -1);
     }
     if ((type === 'ellipse' || type === 'regular') && source.length >= 2) {
         const [center, edge] = source;
@@ -45,13 +46,13 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
         const vertical = source[2] || [center[0], center[1] + Math.abs(edge[1] - center[1])];
         const rx = Math.abs(edge[0] - center[0]);
         const ry = Math.abs(vertical[1] - center[1]);
-        const start = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+        const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
         const travel = Math.min(360, Math.max(0, sectorAngle)) / 360 * Math.PI * 2;
         const points: Point2[] = Array.from({ length: segments + 1 }, (_, index): Point2 => {
             const angle = start + index / segments * travel;
             return [center[0] + Math.cos(angle) * rx, center[1] + Math.sin(angle) * ry];
         });
-        return sectorAngle < 360 ? [[...center] as Point2, ...points] : points.slice(0, -1);
+        return sectorAngle < 360 ? (open ? points : [[...center] as Point2, ...points]) : points.slice(0, -1);
     }
     if (type === 'arc' && source.length >= 3) {
         const [a, b, c] = source;
@@ -78,7 +79,7 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
     return source;
 }
 
-export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360) {
+export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number) {
     if (curves && Object.keys(curves).length && source.length > 1) {
         const shape = new THREE.Shape();
         shape.moveTo(...source[0]);
@@ -87,18 +88,18 @@ export function profileShape(type: ProfileType, source: Point2[], segments = 64,
             if (curve) shape.bezierCurveTo(curve.c1[0], curve.c1[1], curve.c2[0], curve.c2[1], source[index][0], source[index][1]);
             else shape.lineTo(...source[index]);
         }
-        if (profileClosed(type)) {
+        if (profileClosed(type) && !open) {
             const curve = curves[source.length - 1];
             if (curve) shape.bezierCurveTo(curve.c1[0], curve.c1[1], curve.c2[0], curve.c2[1], source[0][0], source[0][1]);
             shape.closePath();
         }
         return shape;
     }
-    const points = profilePoints(type, source, segments, undefined, sides, sectorAngle);
+    const points = profilePoints(type, source, segments, undefined, sides, sectorAngle, open, startAngle);
     const shape = new THREE.Shape();
     if (!points.length) return shape;
     shape.moveTo(...points[0]);
     points.slice(1).forEach((point) => shape.lineTo(...point));
-    if (profileClosed(type)) shape.closePath();
+    if (profileClosed(type) && !open) shape.closePath();
     return shape;
 }

@@ -8,8 +8,9 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { OrientationGizmo } from './OrientationGizmo';
 import { buildScene } from './geometry';
-import { profileArcCenter, profileClosed, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
+import { entityProfileClosed, profileArcCenter, profileClosed, profilePoints, type ProfileType, type ProfileCurves } from './profiles';
 import { SKETCH_COLORS } from './colors';
+import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from './types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
@@ -39,6 +40,7 @@ interface ViewportCallbacks {
     onSketchCancelSelection: () => void;
     onSketchCenterMove: (point: Point2, phase: EditPhase) => void;
     onSketchPointDelete: (index: number) => void;
+    onSketchBorderDelete: (entityId: string, index: number, start: number, end: number) => void;
     onSketchSectorMove: (point: Point2, phase: EditPhase) => void;
     onSketchSectorReset: () => void;
     onSketchDimension: (target: SketchDimension, value: number) => void;
@@ -76,6 +78,7 @@ export class Viewport {
     private measurements = new THREE.Group();
     private guides = new THREE.Group();
     private faceFeedback = new THREE.Group();
+    private trimFeedback = new THREE.Group();
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
     private shadow: THREE.Mesh;
@@ -99,6 +102,7 @@ export class Viewport {
     private spaceSketchPointerBlocked = false;
     private sketchHoverSegment = -1;
     private altDeletePoint = -1;
+    private altBorderDelete: { entityId: string; index: number; start: number; end: number } | null = null;
     private projectionMode: 'perspective' | 'orthographic' = 'perspective';
     private projectionBeforeSketch: 'perspective' | 'orthographic' = 'perspective';
     private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number } | null = null;
@@ -198,7 +202,7 @@ export class Viewport {
         this.planeGizmo.setLabels('U', 'V', 'N');
         this.planeGizmo.setLabelStyle('bold 22px Arial', '#ffffff', 15);
 
-        this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback);
+        this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback);
         this.grid = new THREE.GridHelper(1000, 100, '#a6b0aa', '#cbd2cd');
         this.grid.position.y = -0.02;
         (this.grid.material as THREE.Material).transparent = true;
@@ -461,6 +465,19 @@ export class Viewport {
                 this.capturePointer(event);
                 this.updateMarkerColors();
                 return;
+            }
+            if (event.altKey) {
+                this.updateSketchCursor(event);
+                if (this.altBorderDelete) {
+                    event.preventDefault(); event.stopImmediatePropagation();
+                    const target = this.altBorderDelete;
+                    this.sketchSelectionGuardPointerUp = true;
+                    this.sketchSelectionGuardUntil = performance.now() + 300;
+                    this.callbacks.onSketchBorderDelete(target.entityId, target.index, target.start, target.end);
+                    this.clearAltBorder();
+                    this.container.classList.remove('is-delete-point');
+                    return;
+                }
             }
             const segmentHit = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
             if (segmentHit) {
@@ -1008,6 +1025,7 @@ export class Viewport {
 
     sync(document: ModelDocument) {
         this.document = document;
+        this.clearAltBorder();
         this.surfaceCache.clear();
         this.transform.detach();
         this.clearGroup(this.model);
@@ -1020,11 +1038,17 @@ export class Viewport {
                 edges.userData.displayEdge = true;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.sketchMode) {
+                const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
+                if (material) { material.transparent = true; material.opacity = 0; }
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-                const points = profilePoints(entity.profileType || 'polygon', entity.points || [], 64, entity.curves, entity.sides, entity.sectorAngle)
-                    .map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
-                child.add(this.createFatLine(points, profileClosed(entity.profileType || 'polygon')));
+                borderSegments(entity).forEach((segment) => {
+                    const points = segment.points.map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
+                    const border = this.createFatLine(points, segment.closed);
+                    border.userData.borderEntityId = entity.id;
+                    border.userData.borderSegmentIndex = segment.index;
+                    child.add(border);
+                });
             }
             this.applyObjectDisplay(child);
         });
@@ -1080,7 +1104,11 @@ export class Viewport {
         this.model.children.forEach((child) => this.applyObjectDisplay(child));
     }
     private applyIsolation() {
-        this.model.children.forEach((child) => child.visible = child.userData.entityId !== this.editingSketchId && (!this.isolateIds || this.isolateIds.has(child.userData.entityId)));
+        this.model.children.forEach((child) => {
+            const entity = this.document?.entities.find((item) => item.id === child.userData.entityId);
+            const inSketch = !this.sketchMode || (entity?.kind === 'sketch' && entity.planeId === this.activePlane?.id);
+            child.visible = inSketch && child.userData.entityId !== this.editingSketchId && (!this.isolateIds || this.isolateIds.has(child.userData.entityId));
+        });
         this.planes.children.forEach((child) => child.visible = !this.isolateIds || this.isolateIds.has(child.userData.planeId));
     }
     setIsolate(ids: string[] | null) {
@@ -1145,6 +1173,7 @@ export class Viewport {
             const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal));
             this.planeGizmo.setOrientation(new THREE.Quaternion().setFromRotationMatrix(basis));
         }
+        this.applyIsolation();
         this.updatePlaneAppearance();
     }
     setSelected(ids: string[]) { this.selected = ids; this.applySelection(); if (this.document) this.updateExtrudeGuide(this.document); }
@@ -1240,6 +1269,41 @@ export class Viewport {
             ((object as THREE.Line).material as THREE.LineBasicMaterial).color.set(SKETCH_COLORS.edge);
         });
     }
+    private borderTargets() {
+        const targets: THREE.Object3D[] = [];
+        this.model.traverse((object) => { if (object.userData.borderEntityId) targets.push(object); });
+        this.sketch.children.forEach((object) => { if (object.userData.borderEntityId) targets.push(object); });
+        return targets;
+    }
+    private clearAltBorder() {
+        this.altBorderDelete = null;
+        this.clearGroup(this.trimFeedback);
+        const targets = this.borderTargets();
+        targets.forEach((object) => (((object as THREE.Line).material as THREE.Material & { color: THREE.Color }).color.set(SKETCH_COLORS.edge)));
+    }
+    private updateAltBorder(event: PointerEvent) {
+        this.clearAltBorder();
+        if (!this.document || !this.activePlane) return;
+        this.setPointer(event);
+        const hit = this.raycaster.intersectObjects(this.borderTargets(), false)[0];
+        const point = this.sketchPoint(event);
+        if (!hit || !point) return;
+        const entityId = hit.object.userData.borderEntityId;
+        const index = hit.object.userData.borderSegmentIndex;
+        const entity = this.document.entities.find((item) => item.id === entityId);
+        const segment = entity && borderSegments(entity).find((item) => item.index === index);
+        if (!segment) return;
+        const all = this.document.entities.filter((item) => item.kind === 'sketch' && item.planeId === this.activePlane!.id).flatMap((item) => borderSegments(item));
+        const interval = borderInterval(segment, all, point);
+        this.altBorderDelete = { entityId, index, ...interval };
+        if (interval.start <= 0 && interval.end >= 1) ((hit.object as THREE.Line).material as THREE.Material & { color: THREE.Color }).color.set(SKETCH_COLORS.deletePoint);
+        else {
+            const border = this.createFatLine(sliceBorder(segment, interval.start, interval.end).map((value) => this.sketchWorld(value)));
+            ((border.material as LineMaterial).color).set(SKETCH_COLORS.deletePoint);
+            this.trimFeedback.add(border);
+        }
+        this.container.classList.add('is-delete-point');
+    }
     private createFatLine(points: THREE.Vector3[], closed = false, segmentIndex?: number) {
         const vertices = closed && points.length > 1 ? [...points, points[0].clone()] : points;
         const geometry = new LineGeometry();
@@ -1257,7 +1321,10 @@ export class Viewport {
         const marker = this.raycaster.intersectObjects(this.sketchMarkers(), false)[0];
         const pointIndex = marker?.object.userData.pointIndex;
         this.altDeletePoint = event.altKey && this.sketchProfileType === 'polygon' && pointIndex >= 0 && !marker?.object.userData.centerHandle ? pointIndex : -1;
-        this.container.classList.toggle('is-delete-point', this.altDeletePoint >= 0);
+        if (this.altDeletePoint >= 0) this.clearAltBorder();
+        else if (event.altKey) this.updateAltBorder(event);
+        else this.clearAltBorder();
+        this.container.classList.toggle('is-delete-point', this.altDeletePoint >= 0 || !!this.altBorderDelete);
         this.container.classList.toggle('is-handle-hover', !!marker && this.altDeletePoint < 0);
         const segment = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
         this.sketchHoverSegment = segment ? segment.object.userData.segmentIndex : -1;
@@ -1333,24 +1400,15 @@ export class Viewport {
         line.renderOrder = 4;
         this.sketch.add(line);
     }
-    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm') {
+    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number) {
+        this.clearAltBorder();
         this.clearGroup(this.sketch);
         this.selectedSketchPoint = selectedIndex;
         this.activeSketchSegment = selectedSegment;
         this.sketchProfileType = profileType;
         if (!this.sketchMode || !points.length) return;
-        const displayPoints = profilePoints(profileType, points, 64, curves, sides, sectorAngle);
+        const displayPoints = profilePoints(profileType, points, 64, curves, sides, sectorAngle, open, startAngle);
         const vertices = displayPoints.map((point) => this.sketchWorld(point));
-        if (profileClosed(profileType) && displayPoints.length >= 3) {
-            const shape = new THREE.Shape();
-            shape.moveTo(...displayPoints[0]);
-            displayPoints.slice(1).forEach((point) => shape.lineTo(...point));
-            shape.closePath();
-            const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: this.editingSketchId ? SKETCH_COLORS.hoverFill : SKETCH_COLORS.fill, transparent: true, opacity: this.editingSketchId ? 0.28 : 0.15, side: THREE.DoubleSide, depthWrite: false }));
-            fill.applyMatrix4(this.activePlane ? this.planeMatrix(this.activePlane) : new THREE.Matrix4());
-            fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.06) : new THREE.Vector3(0, 0.06, 0));
-            this.sketch.add(fill);
-        }
         const midpoint = (a: Point2, b: Point2): Point2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
         if (profileType === 'polygon') {
             for (let index = 0; index < points.length; index++) {
@@ -1358,12 +1416,16 @@ export class Viewport {
                 const curve = curves[index];
                 const segmentPoints = curve ? new THREE.CubicBezierCurve(new THREE.Vector2(...a), new THREE.Vector2(...curve.c1), new THREE.Vector2(...curve.c2), new THREE.Vector2(...b)).getPoints(24) : [new THREE.Vector2(...a), new THREE.Vector2(...b)];
                 const line = this.createFatLine(segmentPoints.map((point) => this.sketchWorld([point.x, point.y])), false, index);
+                line.userData.borderEntityId = this.editingSketchId;
+                line.userData.borderSegmentIndex = index;
                 this.sketch.add(line);
                 if (this.editingSketchId) this.addSketchDimension(midpoint(a, b), { kind: 'segment', index }, Math.hypot(b[0] - a[0], b[1] - a[1]), unit);
                 if (curve) this.addSketchGuide(a, b);
             }
         } else {
-            const line = this.createFatLine(vertices, profileClosed(profileType));
+            const line = this.createFatLine(vertices, !open && profileClosed(profileType));
+            line.userData.borderEntityId = this.editingSketchId;
+            line.userData.borderSegmentIndex = 0;
             this.sketch.add(line);
         }
         if (profileType === 'rectangle' && points.length === 4 && this.editingSketchId) {
@@ -1371,11 +1433,12 @@ export class Viewport {
             this.addSketchDimension(midpoint(points[1], points[2]), { kind: 'height' }, Math.abs(points[2][1] - points[1][1]), unit);
             this.addSketchMarker(midpoint(points[0], points[2]), -1, SKETCH_COLORS.pointActive, true);
         }
+        if (profileType === 'line' && points.length >= 2 && this.editingSketchId) this.addSketchDimension(midpoint(points[0], points[1]), { kind: 'segment', index: 0 }, Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]), unit);
         if (['circle', 'ellipse', 'regular'].includes(profileType) && points.length >= 2) {
             const [center, edge] = points;
             const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
-            const start = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
-            const full = sectorAngle >= 359.999 || profileType === 'regular';
+            const start = startAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+            const full = !open && (sectorAngle >= 359.999 || profileType === 'regular');
             if (full) this.addSketchGuide(center, edge);
             if (this.editingSketchId) {
                 const kind = profileType === 'regular' ? 'regularRadius' : profileType === 'circle' ? 'radius' : 'radiusX';
@@ -1457,7 +1520,7 @@ export class Viewport {
         this.refreshFaceFeedback();
         if (this.sketchMode) return;
         if (this.tool === 'select') {
-            const profiles = this.selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch' && profileClosed(item.profileType || 'polygon'))).filter(Boolean) as ModelDocument['entities'];
+            const profiles = this.selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch' && entityProfileClosed(item))).filter(Boolean) as ModelDocument['entities'];
             if (!profiles.length) return;
             const box = new THREE.Box3();
             profiles.forEach((profile) => {
@@ -1664,7 +1727,7 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
-        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback].forEach((group) => this.clearGroup(group));
+        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();
         this.labelRenderer.domElement.remove();

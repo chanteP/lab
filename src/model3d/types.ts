@@ -38,7 +38,9 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
-    profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc';
+    profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
+    open?: boolean;
+    profileStartAngle?: number;
     curves?: Record<number, { c1: Point2; c2: Point2 }>;
     lockedPoints?: number[];
     sectorAngle?: number;

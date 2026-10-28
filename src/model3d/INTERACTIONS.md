@@ -152,6 +152,8 @@
 - 300ms 保护在 pointerup 也消费本次指针释放，修复其他形状切到 Line 时第一次点击追加点的问题。
 - 空白左键拖拽继续绘制形状；右键或平面坐标球旋转视图，空格拖拽仅平移且不产生草图编辑。
 - 草图边使用 Line2 黑色粗线，已保存但未选中的轮廓也在场景同步时添加同样的边线。
+- 粗边只在草图模式生成；编辑时隐藏其他 Body、其他平面草图和区域填充，避免拾取被非草图模型干扰。
+- Alt/Option + hover border 使用 `sketchBorders.ts` 计算交点区间并标红，点击删除该区间；普通段转开放 Line，Bezier 段保留分割后的控制点，圆/椭圆保留参数化圆弧。
 - 非 Line 形状的中心点平移整个形状；Line 点使用 Alt/Option + 点击删除，并同步重排 curves 与 lockedPoints。
 - 选中形状与 hover 统一使用 active 色；操作点有描边，hover/拖拽显示抓手，Alt 删点显示透明红色与删除光标。边框 hover/选中使用更深的 active 色。
 - 长度输入 blur 后延迟写回，避免 CSS2D 标注在 blur 中同步重建导致节点 remove 异常。

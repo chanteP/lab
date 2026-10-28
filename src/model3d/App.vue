@@ -13,7 +13,8 @@ import {
 import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './Viewport';
 import EntityTree, { type OutlinerNode } from './EntityTree.vue';
 import SvgIcon from './SvgIcon.vue';
-import { profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './profiles';
+import { entityProfileClosed, profileArcCenter, profileClosed, type ProfileType, type ProfileCurves } from './profiles';
+import { borderSegments, sliceBorder, splitCubic } from './sketchBorders';
 import { buildEntityMesh } from './geometry';
 import { exportGLB, exportProject, exportSTL } from './exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from './store';
@@ -93,6 +94,8 @@ const showEdges = ref(true);
 const selectedSketchSegments = ref<number[]>([]);
 const sketchLockedPoints = ref<number[]>([]);
 const sketchSectorAngle = ref(360);
+const sketchOpen = ref(false);
+const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
 const lengthUnit = ref<LengthUnit>(storedLengthUnit());
 
@@ -506,8 +509,8 @@ function applyBoolean(type: BooleanOperation) {
 function startExtrude(profileId: string, existingBody?: ModelEntity, keepView = false) {
     if (operation.value) return;
     const primary = document.value.entities.find((item) => item.id === profileId && item.kind === 'sketch');
-    if (!primary || !profileClosed(primary.profileType || 'polygon')) return;
-    const profiles = existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && profileClosed(item.profileType || 'polygon'))];
+    if (!primary || !entityProfileClosed(primary)) return;
+    const profiles = existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && entityProfileClosed(item))];
     const before = cloneDocument(document.value);
     pushHistory();
     const bodies: ModelEntity[] = [];
@@ -643,7 +646,11 @@ function editHistory(id: string) {
     }
     const entity = document.value.entities.find((item) => item.id === id);
     if (!entity) return;
-    if (entity.kind === 'sketch') return startExtrude(id);
+    if (entity.kind === 'sketch') {
+        if (entityProfileClosed(entity)) return startExtrude(id);
+        selectedIds.value = [id];
+        return startSketch(true);
+    }
     if (entity.kind === 'extrude' && entity.profileId) return startExtrude(entity.profileId, entity);
     if (entity.kind === 'boolean' && entity.operands) {
         const before = cloneDocument(document.value);
@@ -682,7 +689,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     if (additive) { setTool('select'); return; }
     const entity = picked;
     if (entity?.kind === 'sketch') {
-        if (!profileClosed(entity.profileType || 'polygon')) startSketch(true);
+        if (!entityProfileClosed(entity)) startSketch(true);
         else setTool('select');
     } else if (type === 'edge') setTool('fillet');
     else setTool('offsetFace');
@@ -806,6 +813,8 @@ function startSketch(editProfile = false) {
     sketchCurves.value = editing?.curves ? JSON.parse(JSON.stringify(editing.curves)) : {};
     sketchSides.value = editing?.sides || 3;
     sketchSectorAngle.value = editing?.sectorAngle || 360;
+    sketchOpen.value = !!editing?.open;
+    sketchProfileStartAngle.value = editing?.profileStartAngle;
     sketchAppendMode.value = !editing || editing.profileType === 'polygon';
     selectedSketchSegment.value = -1;
     selectedSketchSegments.value = [];
@@ -842,6 +851,8 @@ function persistSketchProgress(resetAfter: boolean) {
         entity.lockedPoints = [...sketchLockedPoints.value];
         entity.sides = sketchSides.value;
         entity.sectorAngle = sketchSectorAngle.value;
+        entity.open = sketchOpen.value;
+        entity.profileStartAngle = sketchProfileStartAngle.value;
         entity.visible = true;
     }
     if (resetAfter) {
@@ -853,7 +864,7 @@ function persistSketchProgress(resetAfter: boolean) {
 }
 function refreshSketch() {
     viewport?.setSketchEditing(editingSketchId.value);
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value);
+    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value);
 }
 function setSketchType(type: ProfileType) {
     sketchType.value = type;
@@ -863,6 +874,8 @@ function setSketchType(type: ProfileType) {
     sketchCurves.value = {};
     sketchLockedPoints.value = [];
     sketchSectorAngle.value = 360;
+    sketchOpen.value = false;
+    sketchProfileStartAngle.value = undefined;
     sketchAppendMode.value = true;
     viewport?.setSketchEditing(null);
     selectedSketchSegments.value = [];
@@ -876,6 +889,8 @@ function clearSketchSelection() {
     sketchCurves.value = {};
     sketchLockedPoints.value = [];
     sketchSectorAngle.value = 360;
+    sketchOpen.value = false;
+    sketchProfileStartAngle.value = undefined;
     sketchAppendMode.value = false;
     selectedSketchPoint.value = -1;
     selectedSketchSegment.value = -1;
@@ -898,6 +913,8 @@ function selectSketchEntity(id: string) {
     sketchCurves.value = JSON.parse(JSON.stringify(entity.curves || {}));
     sketchSides.value = entity.sides || 3;
     sketchSectorAngle.value = entity.sectorAngle || 360;
+    sketchOpen.value = !!entity.open;
+    sketchProfileStartAngle.value = entity.profileStartAngle;
     sketchLockedPoints.value = [...(entity.lockedPoints || [])];
     sketchAppendMode.value = sketchType.value === 'polygon';
     selectedSketchPoint.value = -1;
@@ -1022,6 +1039,65 @@ function deleteSketchPoint(index: number) {
     if (sketchPoints.value.length >= 3) persistSketchProgress(false);
     refreshSketch();
 }
+function deleteSketchBorder(entityId: string, index: number, start: number, end: number) {
+    const entity = document.value.entities.find((item) => item.id === entityId && item.kind === 'sketch');
+    if (!entity) return;
+    const dependent = document.value.entities.find((item) => item.profileId === entityId);
+    if (dependent) return message.warning(`请先删除引用此草图的「${dependent.name}」`);
+    const type = entity.profileType || 'polygon';
+    pushHistory();
+    if (type === 'circle' || type === 'ellipse') {
+        if (start <= 0 && end >= 1) document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
+        else {
+            const center = entity.points![0], edge = entity.points![1];
+            const startAngle = entity.profileStartAngle ?? Math.atan2(edge[1] - center[1], edge[0] - center[0]);
+            const travel = (entity.sectorAngle ?? 360) * Math.PI / 180;
+            entity.profileStartAngle = startAngle + end * travel;
+            entity.sectorAngle = Math.max(0.01, (1 - (end - start)) * (entity.sectorAngle ?? 360));
+            entity.open = true;
+        }
+        clearSketchSelection();
+        return;
+    }
+    const remaining: ModelEntity[] = [];
+    const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false) => {
+        if (points.length < 2) return;
+        const next = createEntity('sketch', uid());
+        next.name = `${ENTITY_NAMES.sketch} ${document.value.entities.filter((item) => item.kind === 'sketch').length + remaining.length + 1}`;
+        next.parentId = entity.parentId;
+        next.planeId = entity.planeId;
+        next.position = [0, 0, 0];
+        next.open = true;
+        next.profileType = arc ? 'arc' : 'polygon';
+        next.points = points.map((point) => [...point]);
+        next.curves = curve ? { 0: curve } : {};
+        delete next.depth;
+        remaining.push(next);
+    };
+    borderSegments(entity).forEach((segment) => {
+        const ranges = segment.index === index ? [[0, start], [end, 1]] : [[0, 1]];
+        ranges.forEach(([from, to]) => {
+            if (to - from < 0.00001) return;
+            const samples = sliceBorder(segment, from, to);
+            if (type === 'arc') return makeOpen([samples[0], samples[Math.floor(samples.length / 2)], samples[samples.length - 1]], undefined, true);
+            const source = entity.points || [];
+            const a = source[segment.index], b = source[(segment.index + 1) % source.length];
+            const curve = entity.curves?.[segment.index];
+            if (!a || !b) return makeOpen(samples);
+            if (!curve) return makeOpen([samples[0], samples[samples.length - 1]]);
+            if (from === 0 && to === 1) return makeOpen([a, b], { c1: [...curve.c1], c2: [...curve.c2] });
+            if (from === 0) {
+                const part = splitCubic(a, curve.c1, curve.c2, b, to).left;
+                return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 });
+            }
+            const part = splitCubic(a, curve.c1, curve.c2, b, from).right;
+            return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 });
+        });
+    });
+    document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
+    document.value.entities.push(...remaining);
+    clearSketchSelection();
+}
 function ensureSketchSegment(index: number) {
     if (index < 0 || index >= sketchPoints.value.length) return;
     selectedSketchSegment.value = index;
@@ -1081,7 +1157,7 @@ function updateSketchCoordinate(axis: 0 | 1, value: number | null) {
 function syncEditingSketch() {
     if (!editingSketchId.value) return;
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
-    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; }
+    if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
 }
 function applySketchConstraint(type: 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal') {
     const segments = selectedSketchSegments.value.filter((index) => sketchPoints.value[index] && sketchPoints.value[(index + 1) % sketchPoints.value.length]);
@@ -1135,7 +1211,7 @@ function onSketchSectorMove(point: Point2, phase: EditPhase) {
     }
     const center = sketchPoints.value[0], radiusPoint = sketchPoints.value[1];
     if (!center || !radiusPoint) return;
-    const start = Math.atan2(radiusPoint[1] - center[1], radiusPoint[0] - center[0]);
+    const start = sketchProfileStartAngle.value ?? Math.atan2(radiusPoint[1] - center[1], radiusPoint[0] - center[0]);
     const current = Math.atan2(point[1] - center[1], point[0] - center[0]);
     sketchSectorAngle.value = Math.max(0.01, ((current - start) * 180 / Math.PI + 360) % 360);
     syncEditingSketch();
@@ -1144,6 +1220,8 @@ function onSketchSectorMove(point: Point2, phase: EditPhase) {
 function resetSketchSector() {
     if (editingSketchId.value) pushHistory();
     sketchSectorAngle.value = 360;
+    sketchOpen.value = false;
+    sketchProfileStartAngle.value = undefined;
     syncEditingSketch();
     refreshSketch();
 }
@@ -1193,6 +1271,8 @@ function finishSketch() {
         existing.profileType = sketchType.value;
         existing.lockedPoints = [...sketchLockedPoints.value];
         existing.sectorAngle = sketchSectorAngle.value;
+        existing.open = sketchOpen.value;
+        existing.profileStartAngle = sketchProfileStartAngle.value;
         if (existing.kind === 'extrude') existing.depth = sketchDepth.value;
     } else {
         pushHistory();
@@ -1203,6 +1283,8 @@ function finishSketch() {
         entity.sides = sketchSides.value;
         entity.lockedPoints = [...sketchLockedPoints.value];
         entity.sectorAngle = sketchSectorAngle.value;
+        entity.open = sketchOpen.value;
+        entity.profileStartAngle = sketchProfileStartAngle.value;
         entity.planeId = activePlaneId.value!;
         entity.position = [0, 0, 0];
         delete entity.depth;
@@ -1471,6 +1553,7 @@ onMounted(async () => {
         onSketchCancelSelection: clearSketchSelection,
         onSketchCenterMove: moveSketchCenter,
         onSketchPointDelete: deleteSketchPoint,
+        onSketchBorderDelete: deleteSketchBorder,
         onSketchSectorMove,
         onSketchSectorReset: resetSketchSector,
         onSketchDimension,
@@ -1646,7 +1729,7 @@ onBeforeUnmount(() => {
                     <button class="sketch-close" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
                     <div v-if="!sketchMode" class="sketch-plane-picker"><p>选择一个绘制平面。视角将转为垂直于该平面的正交视图。</p><div class="inline-command-row"><button @click="createPlane('XZ'); beginSketch(activePlaneId!)">XZ</button><button @click="createPlane('XY'); beginSketch(activePlaneId!)">XY</button><button @click="createPlane('YZ'); beginSketch(activePlaneId!)">YZ</button></div><button v-for="plane in document.planes" :key="plane.id" class="menu-command" @click="beginSketch(plane.id)"><NIcon><GridOutline /></NIcon><span><strong>{{ plane.name }}</strong></span></button><button v-if="selectionKind === 'face'" class="menu-command" @click="beginSketch()"><NIcon><CubeOutline /></NIcon><span><strong>所选实体平面</strong></span></button></div>
                     <div v-else class="sketch-tool-list">
-                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 圆弧</span></button>
+                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 曲线</span></button>
                         <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
                         <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
                         <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
