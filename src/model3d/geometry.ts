@@ -67,6 +67,25 @@ function subtractGeometry(base: THREE.BufferGeometry, cutter: THREE.BufferGeomet
     return geometry;
 }
 
+function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: number) {
+    base.computeBoundingBox();
+    const box = base.boundingBox!;
+    const direction = new THREE.Vector3(...normal).normalize();
+    const axis = Math.abs(direction.x) > 0.5 ? 0 : Math.abs(direction.y) > 0.5 ? 1 : 2;
+    const sign = Math.sign(direction.getComponent(axis)) || 1;
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const shrink = distance < 0;
+    const depth = Math.abs(distance);
+    const dimensions = size.toArray();
+    dimensions[axis] = shrink ? depth + 2 : depth;
+    const boundary = sign > 0 ? box.max.getComponent(axis) : box.min.getComponent(axis);
+    center.setComponent(axis, shrink ? boundary - sign * (depth / 2 - 1) : boundary + sign * depth / 2);
+    const extension = new THREE.BoxGeometry(...dimensions as Vec3);
+    extension.translate(...center.toArray());
+    return shrink ? subtractGeometry(base, extension) : mergeGeometries([base, extension]) || base;
+}
+
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
     const q = qualityValues(quality);
     const edge = entity.edge;
@@ -222,6 +241,7 @@ export function buildEntityMesh(
         evaluator.useGroups = false;
         const operation = entity.operation === 'union' ? ADDITION : entity.operation === 'intersect' ? INTERSECTION : SUBTRACTION;
         mesh = evaluator.evaluate(brushA, brushB, operation);
+        if (entity.faceOffset?.distance) mesh.geometry = offsetBoundedFace(mesh.geometry, entity.faceOffset.normal, entity.faceOffset.distance);
         mesh.material = createMaterial(entity.color);
         brushA.geometry.dispose();
         brushB.geometry.dispose();

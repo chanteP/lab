@@ -102,7 +102,7 @@ export class Viewport {
     private projectionMode: 'perspective' | 'orthographic' = 'perspective';
     private projectionBeforeSketch: 'perspective' | 'orthographic' = 'perspective';
     private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number } | null = null;
-    private extrudeArrowDrag: { profileId: string; direction: 1 | -1; y: number } | null = null;
+    private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
     private activeArrowKey: string | null = null;
     private hoverArrowKey: string | null = null;
     private editingSketchId: string | null = null;
@@ -415,7 +415,10 @@ export class Viewport {
             const arrow = this.hitExtrudeArrow(event);
             if (arrow) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                this.extrudeArrowDrag = { profileId: arrow.profileId, direction: arrow.direction, y: event.clientY };
+                const profile = this.document?.entities.find((item) => item.id === arrow.profileId);
+                const plane = this.document?.planes.find((item) => item.id === profile?.planeId);
+                const worldNormal = plane ? new THREE.Vector3(...plane.normal).multiplyScalar(arrow.direction).toArray() as Vec3 : [0, arrow.direction, 0] as Vec3;
+                this.extrudeArrowDrag = { profileId: arrow.profileId, direction: arrow.direction, worldNormal, x: event.clientX, y: event.clientY };
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
@@ -595,8 +598,15 @@ export class Viewport {
         if (this.extrudeArrowDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             const scale = Math.max(0.025, this.camera.position.distanceTo(this.controls.target) * 0.002);
-            const delta = (this.extrudeArrowDrag.y - event.clientY) * scale * this.extrudeArrowDrag.direction;
-            if (Math.abs(event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, Math.max(0.1, delta), 'move');
+            const profileObject = this.model.children.find((item) => item.userData.entityId === this.extrudeArrowDrag!.profileId);
+            const origin = profileObject ? new THREE.Box3().setFromObject(profileObject).getCenter(new THREE.Vector3()) : this.controls.target.clone();
+            const from = origin.clone().project(this.camera);
+            const to = origin.clone().add(new THREE.Vector3(...this.extrudeArrowDrag.worldNormal)).project(this.camera);
+            const direction = new THREE.Vector2(to.x - from.x, -(to.y - from.y));
+            if (direction.lengthSq() < 0.000001) direction.set(0, -1);
+            direction.normalize();
+            const delta = ((event.clientX - this.extrudeArrowDrag.x) * direction.x + (event.clientY - this.extrudeArrowDrag.y) * direction.y) * scale;
+            if (Math.hypot(event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, Math.max(0.1, delta), 'move');
             return;
         }
         if (this.shapeDrag && this.sketchMode) {

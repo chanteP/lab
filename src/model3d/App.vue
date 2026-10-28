@@ -728,6 +728,12 @@ function faceOffsetMinimum(item: ModelEntity, normal: Vec3) {
     }
     if (item.kind === 'cylinder') return -item.height! + 0.1;
     if (item.kind === 'extrude') return -item.depth! + 0.1;
+    if (item.kind === 'boolean') {
+        const geometry = buildEntityMesh(item, document.value).geometry;
+        geometry.computeBoundingBox();
+        const axis = Math.abs(normal[0]) > 0.5 ? 0 : Math.abs(normal[1]) > 0.5 ? 1 : 2;
+        return -geometry.boundingBox!.getSize(new THREE.Vector3()).getComponent(axis) + 0.1;
+    }
     return 0;
 }
 
@@ -746,7 +752,7 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
     const edgeTool = activeTool.value === 'fillet' || activeTool.value === 'chamfer';
     if (phase ==='start') {
         if (edgeTool && !['box', 'cylinder', 'extrude'].includes(item.kind)) return message.warning('该实体暂不支持边处理');
-        if (!edgeTool && !['box', 'cylinder', 'extrude'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
+        if (!edgeTool && !['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
         if (!edgeTool && item.kind === 'cylinder' && Math.abs(normal[1]) < 0.5) return message.warning('圆柱侧面暂不支持向外拉伸');
         if (!edgeTool && item.kind === 'extrude') {
             const plane = document.value.planes.find((entry) => entry.id === item.planeId);
