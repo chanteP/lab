@@ -97,6 +97,7 @@ const sketchSectorAngle = ref(360);
 const sketchOpen = ref(false);
 const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
+const sketchSelectionTool = ref(false);
 const lengthUnit = ref<LengthUnit>(storedLengthUnit());
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
@@ -822,6 +823,7 @@ function startSketch(editProfile = false) {
     sketchOpen.value = !!editing?.open;
     sketchProfileStartAngle.value = editing?.profileStartAngle;
     sketchAppendMode.value = !editing || editing.profileType === 'polygon';
+    sketchSelectionTool.value = document.value.entities.some((item) => item.kind === 'sketch' && item.planeId === activePlaneId.value);
     selectedSketchSegment.value = -1;
     selectedSketchSegments.value = [];
     selectedSketchPoint.value = -1;
@@ -831,6 +833,7 @@ function startSketch(editProfile = false) {
     sketchMode.value = true;
     viewport?.setSketchEditing(editing?.id || null);
     viewport?.setSketchMode(true, sketchPoints.value);
+    viewport?.setSketchSelectionTool(sketchSelectionTool.value);
     refreshSketch();
     viewport?.normalToSketch();
 }
@@ -873,6 +876,8 @@ function refreshSketch() {
     viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value);
 }
 function setSketchType(type: ProfileType) {
+    sketchSelectionTool.value = false;
+    viewport?.setSketchSelectionTool(false);
     sketchType.value = type;
     editingSketchId.value = null;
     if (activePlaneId.value) selectedIds.value = [activePlaneId.value];
@@ -888,6 +893,11 @@ function setSketchType(type: ProfileType) {
     selectedSketchPoint.value = -1;
     selectedSketchSegment.value = -1;
     refreshSketch();
+}
+function activateSketchSelectionTool() {
+    sketchSelectionTool.value = true;
+    sketchAppendMode.value = false;
+    viewport?.setSketchSelectionTool(true);
 }
 function clearSketchSelection() {
     editingSketchId.value = null;
@@ -957,6 +967,7 @@ function deleteViewportSketch() {
     deleteSketchFromContext();
 }
 function addSketchPoint(point: Point2) {
+    if (sketchSelectionTool.value) return;
     if (sketchType.value === 'polygon' && !sketchAppendMode.value) return;
     if (editingSketchId.value && !['polygon', 'arc'].includes(sketchType.value)) return;
     if (sketchType.value === 'circle' && sketchPoints.value.length >= 2) return;
@@ -1114,7 +1125,86 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
     });
     document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
     document.value.entities.push(...remaining);
+    if (entity.planeId) recloseProfiles(entity.planeId);
     clearSketchSelection();
+}
+function recloseProfiles(planeId: string) {
+    type Edge = { a: Point2; b: Point2; c1?: Point2; c2?: Point2; used?: boolean };
+    const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId && ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'));
+    if (!candidates.length) return;
+    const edges: Edge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({ a: segment.points[0], b: segment.points[segment.points.length - 1], c1: entity.curves?.[segment.index]?.c1, c2: entity.curves?.[segment.index]?.c2 })));
+    const key = (point: Point2) => `${Math.round(point[0] * 100)},${Math.round(point[1] * 100)}`;
+    const components: Edge[][] = [];
+    const visited = new Set<Edge>();
+    edges.forEach((edge) => {
+        if (visited.has(edge)) return;
+        const component: Edge[] = [];
+        const queue = [edge];
+        visited.add(edge);
+        for (let cursor = 0; cursor < queue.length; cursor++) {
+            const current = queue[cursor];
+            component.push(current);
+            edges.forEach((other) => {
+                if (visited.has(other)) return;
+                const connected = [key(current.a), key(current.b)].some((node) => node === key(other.a) || node === key(other.b));
+                if (connected) { visited.add(other); queue.push(other); }
+            });
+        }
+        components.push(component);
+    });
+    const rebuilt: ModelEntity[] = [];
+    const make = (edges: Edge[], closed: boolean) => {
+        if (closed) {
+            const entity = createEntity('sketch', uid());
+            entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + rebuilt.length + 1}`;
+            entity.planeId = planeId;
+            entity.position = [0, 0, 0];
+            entity.profileType = 'polygon';
+            entity.open = false;
+            entity.points = [];
+            entity.curves = {};
+            const unused = new Set(edges);
+            const ordered: { edge: Edge; forward: boolean }[] = [];
+            const first = edges[0];
+            let current = first.b;
+            ordered.push({ edge: first, forward: true });
+            unused.delete(first);
+            while (unused.size) {
+                const next = [...unused].find((edge) => key(edge.a) === key(current) || key(edge.b) === key(current));
+                if (!next) break;
+                const forward = key(next.a) === key(current);
+                ordered.push({ edge: next, forward });
+                current = forward ? next.b : next.a;
+                unused.delete(next);
+            }
+            ordered.forEach(({ edge, forward }) => {
+                const a = forward ? edge.a : edge.b;
+                entity.points!.push([...a]);
+                if (edge.c1 && edge.c2) entity.curves![entity.points!.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
+                current = forward ? edge.b : edge.a;
+            });
+            delete entity.depth;
+            rebuilt.push(entity);
+        } else edges.forEach((edge) => {
+            const entity = createEntity('sketch', uid());
+            entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + rebuilt.length + 1}`;
+            entity.planeId = planeId;
+            entity.position = [0, 0, 0];
+            entity.profileType = 'polygon';
+            entity.open = true;
+            entity.points = [[...edge.a], [...edge.b]];
+            if (edge.c1 && edge.c2) entity.curves = { 0: { c1: [...edge.c1], c2: [...edge.c2] } };
+            delete entity.depth;
+            rebuilt.push(entity);
+        });
+    };
+    components.forEach((component) => {
+        const degree = new Map<string, number>();
+        component.forEach((edge) => { degree.set(key(edge.a), (degree.get(key(edge.a)) || 0) + 1); degree.set(key(edge.b), (degree.get(key(edge.b)) || 0) + 1); });
+        make(component, component.length >= 3 && [...degree.values()].every((value) => value === 2));
+    });
+    document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
+    document.value.entities.push(...rebuilt);
 }
 function ensureSketchSegment(index: number) {
     if (index < 0 || index >= sketchPoints.value.length) return;
@@ -1150,6 +1240,7 @@ function selectSketchPoint(index: number) {
     refreshSketch();
 }
 function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
+    if (sketchSelectionTool.value) return;
     if (editingSketchId.value) return;
     if (phase === 'start') return;
     if (sketchType.value === 'rectangle') sketchPoints.value = [start, [point[0], start[1]], point, [start[0], point[1]]];
@@ -1755,11 +1846,12 @@ onBeforeUnmount(() => {
                     <button class="sketch-close" @click="sketchMode ? closeSketch() : activePanel = null"><span class="sketch-tool-icon"><NIcon><CloseOutline /></NIcon></span><strong>{{ sketchMode ? '退出草图' : '草图' }}</strong></button>
                     <div v-if="!sketchMode" class="sketch-plane-picker"><p>选择一个绘制平面。视角将转为垂直于该平面的正交视图。</p><div class="inline-command-row"><button @click="createPlane('XZ'); beginSketch(activePlaneId!)">XZ</button><button @click="createPlane('XY'); beginSketch(activePlaneId!)">XY</button><button @click="createPlane('YZ'); beginSketch(activePlaneId!)">YZ</button></div><button v-for="plane in document.planes" :key="plane.id" class="menu-command" @click="beginSketch(plane.id)"><NIcon><GridOutline /></NIcon><span><strong>{{ plane.name }}</strong></span></button><button v-if="selectionKind === 'face'" class="menu-command" @click="beginSketch()"><NIcon><CubeOutline /></NIcon><span><strong>所选实体平面</strong></span></button></div>
                     <div v-else class="sketch-tool-list">
-                        <button :class="{ active: sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 曲线</span></button>
-                        <button :class="{ active: sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
-                        <button :class="{ active: sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
-                        <button :class="{ active: sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
-                        <div class="sketch-polygon-tool" :class="{ active: sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
+                        <button :class="{ active: sketchSelectionTool }" @click="activateSketchSelectionTool"><span class="sketch-tool-icon"><NIcon><NavigateOutline /></NIcon></span><span>选择</span></button>
+                        <button :class="{ active: !sketchSelectionTool && sketchType === 'polygon' }" @click="setSketchType('polygon')"><span class="sketch-tool-icon"><NIcon><CreateOutline /></NIcon></span><span>线条 / 曲线</span></button>
+                        <button :class="{ active: !sketchSelectionTool && sketchType === 'rectangle' }" @click="setSketchType('rectangle')"><span class="sketch-tool-icon"><NIcon><GridOutline /></NIcon></span><span>矩形</span></button>
+                        <button :class="{ active: !sketchSelectionTool && sketchType === 'circle' }" @click="setSketchType('circle')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>圆形</span></button>
+                        <button :class="{ active: !sketchSelectionTool && sketchType === 'ellipse' }" @click="setSketchType('ellipse')"><span class="sketch-tool-icon"><NIcon><EllipseOutline /></NIcon></span><span>椭圆</span></button>
+                        <div class="sketch-polygon-tool" :class="{ active: !sketchSelectionTool && sketchType === 'regular' }"><button @click="setSketchType('regular')"><span class="sketch-tool-icon"><NIcon><ShapesOutline /></NIcon></span><span><strong>正多边形</strong></span></button><NSelect size="small" :value="sketchSides" :options="[3,4,5,6,7,8].map(n => ({ label: `${n} 边`, value: n }))" @update:value="setSketchSides" /></div>
                     </div>
                 </nav>
                 <aside v-if="sketchMode" class="constraints-panel"><div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div><p>先选线段或点，再应用约束。Shift 单击可多选线段。</p><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('auto')">水平 / 垂直</button><div class="constraint-pair"><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('horizontal')">H</button><button :disabled="!selectedSketchSegments.length" @click="applySketchConstraint('vertical')">V</button></div><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('parallel')">平行</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('perpendicular')">正交</button><button :disabled="selectedSketchSegments.length < 2" @click="applySketchConstraint('equal')">等长</button><button :disabled="selectedSketchPoint < 0" @click="toggleSketchPointLock"><NIcon><component :is="selectedPointLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectedPointLocked ? '解锁' : '锁定' }}</button><div class="constraint-state"><i :class="{ locked: selectedPointLocked }"></i>{{ selectedPointLocked ? '所选点已固定' : '选择几何以查看可用约束' }}</div></aside>

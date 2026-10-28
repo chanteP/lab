@@ -79,6 +79,7 @@ export class Viewport {
     private guides = new THREE.Group();
     private faceFeedback = new THREE.Group();
     private trimFeedback = new THREE.Group();
+    private hatchTexture: THREE.CanvasTexture | null = null;
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
     private shadow: THREE.Mesh;
@@ -97,6 +98,7 @@ export class Viewport {
     private viewRotateDrag: { x: number; startX: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
     private sketchProfileType: ProfileType = 'polygon';
+    private sketchSelectionTool = false;
     private sketchSelectionGuardUntil = 0;
     private sketchSelectionGuardPointerUp = false;
     private spaceSketchPointerBlocked = false;
@@ -127,6 +129,10 @@ export class Viewport {
     private hoverFaceAnchor: GeometryAnchor | null = null;
     private surfaceCache = new Map<string, { vertices: Vec3[]; indices: number[]; point: Vec3 }>();
     private fitAnimation: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } = null;
+    private cameraTransition: null | { started: number; fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; fromUp: THREE.Vector3; toUp: THREE.Vector3; fromColor: THREE.Color; toColor: THREE.Color; fromAlpha: number; toAlpha: number } = null;
+    private beforeSketchView: { position: THREE.Vector3; target: THREE.Vector3; up: THREE.Vector3; projection: 'perspective' | 'orthographic'; orthoHeight: number; color: THREE.Color; alpha: number } | null = null;
+    private clearColor = new THREE.Color('#e7ebe8');
+    private clearAlpha = 1;
     private lastScale = '';
     private spacePressed = false;
     private spaceDragMoved = false;
@@ -138,8 +144,9 @@ export class Viewport {
     constructor(container: HTMLElement, callbacks: ViewportCallbacks) {
         this.container = container;
         this.callbacks = callbacks;
-        this.scene.background = new THREE.Color('#e7ebe8');
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        this.scene.background = null;
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer.setClearColor(this.clearColor, this.clearAlpha);
         this.renderer.localClippingEnabled = true;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = false;
@@ -397,6 +404,8 @@ export class Viewport {
 
     private onPointerDown(event: PointerEvent) {
         this.fitAnimation = null;
+        this.cameraTransition = null;
+        this.controls.enabled = true;
         this.pointerStart.set(event.clientX, event.clientY);
         this.raycaster.params.Line.threshold = 1.5;
         if (event.button === 2 && !this.sketchMode) this.controls.mouseButtons.RIGHT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
@@ -486,7 +495,7 @@ export class Viewport {
                 this.callbacks.onSketchSegment(segmentHit.object.userData.segmentIndex, event.shiftKey || event.metaKey || event.ctrlKey);
                 return;
             }
-            const sketchEntity = this.hitSketchEntity(event);
+            const sketchEntity = this.sketchSelectionTool ? this.hitSketchEntity(event) : null;
             if (sketchEntity) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 this.sketchSelectionGuardUntil = performance.now() + 300;
@@ -977,6 +986,19 @@ export class Viewport {
     private animate() {
         this.frame = requestAnimationFrame(() => this.animate());
         const delta = this.clock.getDelta();
+        if (this.cameraTransition) {
+            const transition = this.cameraTransition;
+            const t = Math.min(1, (performance.now() - transition.started) / 600);
+            const eased = t * t * (3 - 2 * t);
+            this.camera.position.lerpVectors(transition.fromPosition, transition.toPosition, eased);
+            this.controls.target.lerpVectors(transition.fromTarget, transition.toTarget, eased);
+            this.camera.up.lerpVectors(transition.fromUp, transition.toUp, eased).normalize();
+            this.camera.lookAt(this.controls.target);
+            this.clearColor.lerpColors(transition.fromColor, transition.toColor, eased);
+            this.clearAlpha = THREE.MathUtils.lerp(transition.fromAlpha, transition.toAlpha, eased);
+            this.renderer.setClearColor(this.clearColor, this.clearAlpha);
+            if (t === 1) { this.cameraTransition = null; this.controls.enabled = true; this.updateOrbitRotation(); }
+        }
         if (this.fitAnimation) {
             const t = Math.min(1, (performance.now() - this.fitAnimation.started) / 420);
             const eased = 1 - Math.pow(1 - t, 3);
@@ -1040,6 +1062,7 @@ export class Viewport {
             } else if (entity?.kind === 'sketch' && this.sketchMode) {
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
                 if (material) { material.transparent = true; material.opacity = 0; }
+                if (entityProfileClosed(entity)) child.add(new THREE.Mesh((child as THREE.Mesh).geometry, this.sketchHatchMaterial()));
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
                 borderSegments(entity).forEach((segment) => {
@@ -1233,7 +1256,20 @@ export class Viewport {
         if (!this.sketchMode) this.setProjection(this.projectionMode === 'perspective' ? 'orthographic' : 'perspective');
         return this.projectionMode;
     }
+    private startCameraTransition(position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3, projection: 'perspective' | 'orthographic', color: string, alpha: number, orthoHeight?: number) {
+        this.setProjection(projection);
+        if (orthoHeight !== undefined) { this.orthoHeight = orthoHeight; this.resize(); }
+        this.fitAnimation = null;
+        this.cameraTransition = {
+            started: performance.now(), fromPosition: this.camera.position.clone(), toPosition: position,
+            fromTarget: this.controls.target.clone(), toTarget: target, fromUp: this.camera.up.clone(), toUp: up,
+            fromColor: this.clearColor.clone(), toColor: new THREE.Color(color), fromAlpha: this.clearAlpha, toAlpha: alpha,
+        };
+        this.controls.enabled = false;
+    }
     setSketchMode(active: boolean, points: Point2[] = [], selectedIndex = -1) {
+        const wasSketch = this.sketchMode;
+        if (active && !wasSketch) this.beforeSketchView = { position: this.camera.position.clone(), target: this.controls.target.clone(), up: this.camera.up.clone(), projection: this.projectionMode, orthoHeight: this.orthoHeight, color: this.clearColor.clone(), alpha: this.clearAlpha };
         if (active) this.projectionBeforeSketch = this.projectionMode;
         this.sketchMode = active;
         this.selectedSketchPoint = selectedIndex;
@@ -1244,25 +1280,28 @@ export class Viewport {
         this.container.classList.toggle('is-sketching', active);
         this.setProjection(active ? 'orthographic' : this.projectionBeforeSketch);
         if (active) {
-            this.scene.background = new THREE.Color('#dcebe6');
             this.planes.visible = false;
             if (this.activePlane) {
                 this.grid.position.copy(new THREE.Vector3(...this.activePlane.origin));
                 this.grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...this.activePlane.normal).normalize());
             }
         } else {
-            this.scene.background = new THREE.Color('#e7ebe8');
             this.planes.visible = true;
             this.grid.position.set(0, -0.02, 0);
             this.grid.quaternion.identity();
         }
         this.updateOrbitRotation();
         this.controls.update();
+        if (!active && wasSketch && this.beforeSketchView) {
+            const view = this.beforeSketchView;
+            this.startCameraTransition(view.position, view.target, view.up, view.projection, `#${view.color.getHexString()}`, view.alpha, view.orthoHeight);
+        }
         if (this.document) this.sync(this.document);
         this.updateSketch(points, selectedIndex);
         if (this.document) this.updateExtrudeGuide(this.document);
     }
     setSketchSelection(index: number) { this.selectedSketchPoint = index; this.updateMarkerColors(); }
+    setSketchSelectionTool(active: boolean) { this.sketchSelectionTool = active; }
     private sketchMarkers() {
         return this.sketch.children.filter((item) => item.userData.pointIndex !== undefined || item.userData.handleSegment !== undefined || item.userData.sectorHandle || item.userData.centerHandle);
     }
@@ -1318,6 +1357,26 @@ export class Viewport {
         if (segmentIndex !== undefined) line.userData.segmentIndex = segmentIndex;
         line.renderOrder = 5;
         return line;
+    }
+    private sketchHatchMaterial() {
+        if (!this.hatchTexture) {
+            const canvas = window.document.createElement('canvas');
+            canvas.width = canvas.height = 64;
+            const context = canvas.getContext('2d')!;
+            context.clearRect(0, 0, 64, 64);
+            context.strokeStyle = '#26302c55';
+            context.lineWidth = 3;
+            for (let offset = -64; offset <= 64; offset += 16) {
+                context.beginPath();
+                context.moveTo(offset, 64);
+                context.lineTo(offset + 64, 0);
+                context.stroke();
+            }
+            this.hatchTexture = new THREE.CanvasTexture(canvas);
+            this.hatchTexture.wrapS = this.hatchTexture.wrapT = THREE.RepeatWrapping;
+            this.hatchTexture.repeat.set(0.08, 0.08);
+        }
+        return new THREE.MeshBasicMaterial({ map: this.hatchTexture, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false });
     }
     private updateSketchCursor(event: PointerEvent) {
         this.setPointer(event);
@@ -1412,6 +1471,16 @@ export class Viewport {
         if (!this.sketchMode || !points.length) return;
         const displayPoints = profilePoints(profileType, points, 64, curves, sides, sectorAngle, open, startAngle);
         const vertices = displayPoints.map((point) => this.sketchWorld(point));
+        if (!open && profileClosed(profileType) && displayPoints.length >= 3) {
+            const shape = new THREE.Shape();
+            shape.moveTo(...displayPoints[0]);
+            displayPoints.slice(1).forEach((point) => shape.lineTo(...point));
+            shape.closePath();
+            const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), this.sketchHatchMaterial());
+            fill.applyMatrix4(this.activePlane ? this.planeMatrix(this.activePlane) : new THREE.Matrix4());
+            fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.04) : new THREE.Vector3(0, 0.04, 0));
+            this.sketch.add(fill);
+        }
         const midpoint = (a: Point2, b: Point2): Point2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
         if (profileType === 'polygon') {
             for (let index = 0; index < points.length; index++) {
@@ -1589,11 +1658,9 @@ export class Viewport {
         const target = new THREE.Vector3(...this.activePlane.origin);
         const direction = new THREE.Vector3(...this.activePlane.normal);
         const distance = this.camera.position.distanceTo(target);
-        this.controls.target.copy(target);
-        this.camera.up.copy(new THREE.Vector3(...this.activePlane.v).normalize());
-        this.camera.position.copy(target).add(direction.multiplyScalar(distance));
-        this.camera.lookAt(target);
-        this.controls.update();
+        const up = new THREE.Vector3(...this.activePlane.v).normalize();
+        const position = target.clone().add(direction.multiplyScalar(distance));
+        this.startCameraTransition(position, target, up, 'orthographic', '#dcebe6', 0.32);
     }
 
     // Measurement mode: first two clicks retain world points; a third click clears annotations and exits.
@@ -1729,6 +1796,7 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
+        this.hatchTexture?.dispose();
         [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();
