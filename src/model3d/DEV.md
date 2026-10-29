@@ -2,6 +2,8 @@
 
 本文件记录 model3d 的通用交互与交付约定。新增或调整功能时同步更新本文件和 `INTERACTIONS.md`，并遵守仓库根目录的 `AGENTS.md`。
 
+草图编辑的独立交互契约维护在 `docs/SKETCH_EDITING.md`；修改草图行为时必须同时更新该文档。
+
 ## 交付
 
 - 只修改 `src/model3d/` 与构建生成的 `docs/model3d/`，不带入其他页面或无关文件。

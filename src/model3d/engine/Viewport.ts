@@ -670,7 +670,7 @@ export class Viewport {
         if (Math.hypot(previousX, previousY) < 16 || Math.hypot(currentX, currentY) < 16) return;
         const angle = Math.atan2(previousX * currentY - previousY * currentX, previousX * currentX + previousY * currentY);
         const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
-        this.camera.up.applyAxisAngle(normal, -angle);
+        this.camera.up.applyAxisAngle(normal, angle);
         this.camera.lookAt(this.controls.target);
     }
     private onPointerMove(event: PointerEvent) {
