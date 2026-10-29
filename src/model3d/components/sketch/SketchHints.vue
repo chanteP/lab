@@ -1,11 +1,36 @@
 <script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ProfileType } from '../../engine/profiles';
 
-defineProps<{ profileType: ProfileType; selectionTool: boolean }>();
+const props = defineProps<{ profileType: ProfileType; selectionTool: boolean }>();
+const panel = ref<HTMLElement>();
+const top = ref(12);
+let observer: ResizeObserver;
+
+function updatePosition() {
+    const parent = panel.value?.parentElement;
+    if (!parent || !panel.value) return;
+    const constraint = parent.querySelector<HTMLElement>('.constraints-panel');
+    const centered = (parent.clientHeight - panel.value.offsetHeight) / 2;
+    const belowConstraints = constraint ? constraint.offsetTop + constraint.offsetHeight + 12 : 12;
+    top.value = Math.max(12, centered, belowConstraints);
+}
+
+onMounted(() => {
+    const parent = panel.value?.parentElement;
+    observer = new ResizeObserver(updatePosition);
+    if (parent) observer.observe(parent);
+    if (panel.value) observer.observe(panel.value);
+    const constraint = parent?.querySelector<HTMLElement>('.constraints-panel');
+    if (constraint) observer.observe(constraint);
+    updatePosition();
+});
+watch(() => [props.profileType, props.selectionTool], () => nextTick(updatePosition));
+onBeforeUnmount(() => observer?.disconnect());
 </script>
 
 <template>
-    <aside class="hints-panel tool-panel" aria-label="草图操作提示">
+    <aside ref="panel" class="hints-panel tool-panel" aria-label="草图操作提示" :style="{ top: `${top}px` }">
         <div class="tool-panel-title"><div><small>草图</small><strong>操作提示</strong></div></div>
         <p>普通点击选择形状，Ctrl/Command 多选。</p>
         <p v-if="selectionTool">点、边、形状不混选，后选类型优先。</p>
@@ -19,7 +44,7 @@ defineProps<{ profileType: ProfileType; selectionTool: boolean }>();
 </template>
 
 <style lang="scss" scoped>
-.hints-panel { position: absolute; z-index: 7; top: 330px; right: 12px; width: 174px; padding: 12px; }
+.hints-panel { position: absolute; z-index: 7; right: 12px; width: 174px; padding: 12px; }
 .tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }
