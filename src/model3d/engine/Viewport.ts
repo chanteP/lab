@@ -100,7 +100,7 @@ export class Viewport {
     private activeSketchSegment = -1;
     private sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean } | null = null;
     private shapeDrag: { start: Point2; moved: boolean } | null = null;
-    private viewRotateDrag: { x: number; startX: number; moved: boolean } | null = null;
+    private viewRotateDrag: { x: number; y: number; startX: number; startY: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
     private sketchProfileType: ProfileType = 'polygon';
     private currentSketchPoints: Point2[] = [];
@@ -120,7 +120,7 @@ export class Viewport {
     private hoverArrowKey: string | null = null;
     private editingSketchId: string | null = null;
     private sketchHoverId: string | null = null;
-    private gizmoDrag: { x: number; y: number; moved: boolean } | null = null;
+    private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private measureMode = false;
     private measurePoints: THREE.Vector3[] = [];
     private hoverFace: THREE.Mesh | null = null;
@@ -498,7 +498,8 @@ export class Viewport {
             event.preventDefault(); event.stopImmediatePropagation();
             this.controls.enableDamping = false;
             this.controls.update();
-            this.viewRotateDrag = { x: event.clientX, startX: event.clientX, moved: false };
+            const center = this.planeScreenCenter();
+            this.viewRotateDrag = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, centerX: center.x, centerY: center.y, moved: false };
             this.controls.enabled = false;
             this.capturePointer(event);
             return;
@@ -508,7 +509,8 @@ export class Viewport {
             this.clearSketchReferences();
             if (!this.sketchMode) this.camera.up.set(0, 1, 0);
             event.preventDefault(); event.stopImmediatePropagation();
-            this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: false };
+            const rect = this.renderer.domElement.getBoundingClientRect();
+            this.gizmoDrag = { x: event.clientX, y: event.clientY, centerX: rect.right - 64, centerY: rect.bottom - 76, moved: false };
             this.capturePointer(event);
             this.controls.enabled = false;
             return;
@@ -647,12 +649,20 @@ export class Viewport {
         this.controls.target.copy(target);
         this.controls.update();
     }
-    private rotatePlaneView(dx: number, dy: number) {
+    private planeScreenCenter() {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const center = this.sketchWorld([0, 0]).project(this.camera);
+        return { x: rect.left + (center.x + 1) * rect.width / 2, y: rect.top + (1 - center.y) * rect.height / 2 };
+    }
+    private rotatePlaneView(event: PointerEvent, drag: { x: number; y: number; centerX: number; centerY: number }) {
         if (!this.activePlane) return;
+        const previousX = drag.x - drag.centerX, previousY = drag.y - drag.centerY;
+        const currentX = event.clientX - drag.centerX, currentY = event.clientY - drag.centerY;
+        if (Math.hypot(previousX, previousY) < 16 || Math.hypot(currentX, currentY) < 16) return;
+        const angle = Math.atan2(previousX * currentY - previousY * currentX, previousX * currentX + previousY * currentY);
         const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
-        this.camera.up.applyAxisAngle(normal, (dx + dy) * 0.009);
+        this.camera.up.applyAxisAngle(normal, -angle);
         this.camera.lookAt(this.controls.target);
-        this.controls.update();
     }
     private onPointerMove(event: PointerEvent) {
         if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
@@ -668,13 +678,10 @@ export class Viewport {
         }
         if (this.viewRotateDrag && this.activePlane) {
             event.preventDefault(); event.stopImmediatePropagation();
-            const angle = (event.clientX - this.viewRotateDrag.x) * 0.006;
-            this.viewRotateDrag.moved ||= Math.abs(event.clientX - this.viewRotateDrag.startX) > 4;
-            const normal = new THREE.Vector3(...this.activePlane.normal).normalize();
-            this.camera.up.applyAxisAngle(normal, angle);
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
+            this.rotatePlaneView(event, this.viewRotateDrag);
+            this.viewRotateDrag.moved ||= Math.hypot(event.clientX - this.viewRotateDrag.startX, event.clientY - this.viewRotateDrag.startY) > 4;
             this.viewRotateDrag.x = event.clientX;
+            this.viewRotateDrag.y = event.clientY;
             return;
         }
         if (this.gizmoDrag) {
@@ -683,8 +690,9 @@ export class Viewport {
             const dy = event.clientY - this.gizmoDrag.y;
             if (Math.abs(dx) + Math.abs(dy) > 2) this.gizmoDrag.moved = true;
             if (this.sketchMode) {
-                this.rotatePlaneView(dx, dy);
-                this.gizmoDrag = { x: event.clientX, y: event.clientY, moved: true };
+                this.rotatePlaneView(event, this.gizmoDrag);
+                this.gizmoDrag.x = event.clientX;
+                this.gizmoDrag.y = event.clientY;
                 return;
             }
             const offset = this.camera.position.clone().sub(this.controls.target);
