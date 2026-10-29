@@ -17,7 +17,7 @@ export const INTERACTION = {
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */
 export const SKETCH_STYLE = {
-    borderWidthPx: 6.4,
+    borderWidthPx: 4.48,
     markerOuterRadius: 0.84,
     markerOuterSelectedRadius: 1.05,
     markerInnerRadius: 0.6,
