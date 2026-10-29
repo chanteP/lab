@@ -52,6 +52,11 @@ function straightSegments(entity: ModelEntity) {
         curve: entity.curves?.[index],
     })).filter(({ a, b, curve }) => {
         if (!a || !b || length(subtract(b, a)) < 0.0001) return false;
+        if (entity.controlPoints) {
+            const index = points.indexOf(a);
+            const next = (index + 1) % points.length;
+            if (!entity.controlPoints.includes(index) || !entity.controlPoints.includes(next)) return false;
+        }
         if (!curve) return true;
         const direction = subtract(b, a);
         return [curve.c1, curve.c2].every((control) => Math.abs(direction[0] * (control[1] - a[1]) - direction[1] * (control[0] - a[0])) < 0.0001);
@@ -64,8 +69,10 @@ function references(entities: ModelEntity[], excludeEntityId?: string | null, ex
     const lines: Extract<SketchGuideReference, { kind: 'line' }>[] = [];
     entities.forEach((entity) => {
         if (entity.id === excludeEntityId) return;
-        (entity.points || []).forEach((point, index) => {
-            if (excludePoint?.entityId !== entity.id || excludePoint.index !== index) points.push({ kind: 'point', entityId: entity.id, index, point });
+        const controls = entity.controlPoints || (entity.points || []).map((_, index) => index);
+        controls.forEach((index) => {
+            const point = entity.points?.[index];
+            if (point && (excludePoint?.entityId !== entity.id || excludePoint.index !== index)) points.push({ kind: 'point', entityId: entity.id, index, point });
         });
         if ((entity.profileType || 'polygon') === 'rectangle' && (entity.points?.length || 0) === 4) {
             const [a, , c] = entity.points!;

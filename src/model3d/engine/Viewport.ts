@@ -1601,7 +1601,7 @@ export class Viewport {
         line.renderOrder = 900;
         this.sketch.add(line);
     }
-    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number) {
+    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number, controlPoints?: number[]) {
         this.clearAltBorder();
         this.clearGroup(this.sketch);
         this.currentSketchPoints = points.map((point) => [...point]);
@@ -1627,18 +1627,21 @@ export class Viewport {
             this.sketch.add(fill, hatch);
         }
         const midpoint = (a: Point2, b: Point2): Point2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const controls = new Set(controlPoints || points.map((_, index) => index));
         if (profileType === 'polygon') {
-            for (let index = 0; index < points.length; index++) {
-                const a = points[index], b = points[(index + 1) % points.length];
-                const curve = curves[index];
-                const segmentPoints = curve ? new THREE.CubicBezierCurve(new THREE.Vector2(...a), new THREE.Vector2(...curve.c1), new THREE.Vector2(...curve.c2), new THREE.Vector2(...b)).getPoints(24) : [new THREE.Vector2(...a), new THREE.Vector2(...b)];
-                const line = this.createFatLine(segmentPoints.map((point) => this.sketchWorld([point.x, point.y])), false, index);
+            const segments = borderSegments({ id: this.editingSketchId || '', kind: 'sketch', profileType: 'polygon', open, points, curves } as ModelEntity);
+            segments.forEach((segment) => {
+                const line = this.createFatLine(segment.points.map((point) => this.sketchWorld(point)), segment.closed, segment.sourceCount === 1 ? segment.index : undefined);
                 line.userData.borderEntityId = this.editingSketchId;
-                line.userData.borderSegmentIndex = index;
+                line.userData.borderSegmentIndex = segment.index;
                 this.sketch.add(line);
-                if (this.editingSketchId) this.addSketchDimension(midpoint(a, b), { kind: 'segment', index }, Math.hypot(b[0] - a[0], b[1] - a[1]), unit);
-                if (curve) this.addSketchGuide(a, b);
-            }
+                if (segment.sourceCount === 1) {
+                    const index = segment.index;
+                    const a = points[index], b = points[(index + 1) % points.length];
+                    if (this.editingSketchId && controls.has(index)) this.addSketchDimension(midpoint(a, b), { kind: 'segment', index }, Math.hypot(b[0] - a[0], b[1] - a[1]), unit);
+                    if (curves[index]) this.addSketchGuide(a, b);
+                }
+            });
         } else {
             const line = this.createFatLine(vertices, !open && profileClosed(profileType));
             line.userData.borderEntityId = this.editingSketchId;
@@ -1708,6 +1711,7 @@ export class Viewport {
             });
         }
         points.forEach((point, index) => {
+            if (!controls.has(index)) return;
             const color = index === selectedIndex ? SKETCH_COLORS.pointActive : lockedPoints.includes(index) ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point;
             const center = index === 0 && ['circle', 'ellipse', 'regular'].includes(profileType);
             this.addSketchMarker(point, index, color, center, lockedPoints.includes(index));

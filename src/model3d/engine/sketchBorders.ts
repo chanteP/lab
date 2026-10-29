@@ -77,7 +77,7 @@ function intersectLines(a: Point2, b: Point2, c: Point2, d: Point2) {
     const t = cross(delta, s) / denominator;
     const u = cross(delta, r) / denominator;
     const epsilon = 1e-6;
-    return t > epsilon && t < 1 - epsilon && u >= -epsilon && u <= 1 + epsilon ? t : null;
+    return t >= -epsilon && t <= 1 + epsilon && u >= -epsilon && u <= 1 + epsilon ? t : null;
 }
 
 function pointAt(segment: BorderSegment, t: number): Point2 {
@@ -116,6 +116,10 @@ export function borderInterval(segment: BorderSegment, all: BorderSegment[], poi
     }
     const sorted = [...ts].sort((a, b) => a - b);
     const current = nearestBorderT(segment, point);
+    if (segment.closed && sorted.length > 2) {
+        const first = sorted[1], last = sorted[sorted.length - 2];
+        if (current <= first || current >= last) return { start: last - 1, end: first, empty: true };
+    }
     const index = Math.max(0, Math.min(sorted.length - 2, sorted.findIndex((value, i) => i < sorted.length - 1 && current >= value && current <= sorted[i + 1])));
     return { start: sorted[index], end: sorted[index + 1], empty: sorted.length > 2 };
 }

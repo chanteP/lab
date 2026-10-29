@@ -40,6 +40,7 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
+    controlPoints?: number[];
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
     open?: boolean;
     profileStartAngle?: number;

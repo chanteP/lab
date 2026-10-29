@@ -871,8 +871,9 @@ function refreshSketch() {
     renderSketch();
 }
 function renderSketch() {
+    const controlPoints = document.value.entities.find((entity) => entity.id === editingSketchId.value)?.controlPoints;
     viewport?.setSketchEditing(editingSketchId.value);
-    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value);
+    viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value, controlPoints);
 }
 function setSketchType(type: ProfileType) {
     sketchSelectionTool.value = false;
@@ -982,6 +983,8 @@ function addSketchPoint(point: Point2) {
         const first = sketchPoints.value[0];
         sketchPoints.value = [first, [point[0], first[1]], point, [first[0], point[1]]];
     } else sketchPoints.value.push(point);
+    const edited = document.value.entities.find((entity) => entity.id === editingSketchId.value);
+    if (edited?.controlPoints && !edited.controlPoints.includes(sketchPoints.value.length - 1)) edited.controlPoints.push(sketchPoints.value.length - 1);
     syncEditingSketch();
     refreshSketch();
     if (sketchType.value === 'polygon' || sketchType.value === 'arc') persistSketchProgress(false);
@@ -1093,6 +1096,8 @@ function deleteSketchPoint(index: number) {
     if (sketchPoints.value.length <= 2) return message.warning('线条至少保留两个点');
     if (editingSketchId.value) pushHistory();
     sketchPoints.value.splice(index, 1);
+    const edited = document.value.entities.find((entity) => entity.id === editingSketchId.value);
+    if (edited?.controlPoints) edited.controlPoints = edited.controlPoints.filter((point) => point !== index).map((point) => point > index ? point - 1 : point);
     const curves: ProfileCurves = {};
     Object.entries(sketchCurves.value).forEach(([key, curve]) => {
         const segment = Number(key);
@@ -1145,7 +1150,7 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
         remaining.push(next);
     };
     borderSegments(entity).forEach((segment) => {
-        const ranges = segment.index === index ? [[0, start], [end, 1]] : [[0, 1]];
+        const ranges = segment.index !== index ? [[0, 1]] : segment.closed && start < 0 ? [[end, 1], [0, start + 1]] : [[0, start], [end, 1]];
         ranges.forEach(([from, to]) => {
             if (to - from < 0.00001) return;
             const samples = sliceBorder(segment, from, to);
@@ -1187,6 +1192,7 @@ function recloseProfiles(planeId: string) {
         entity.profileType = 'polygon';
         entity.open = !path.closed;
         entity.points = path.points;
+        entity.controlPoints = path.controlPoints;
         entity.curves = path.curves;
         delete entity.depth;
         return entity;

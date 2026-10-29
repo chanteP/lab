@@ -11,13 +11,14 @@ export interface RestitchEdge {
 
 export interface RestitchPath {
     points: Point2[];
+    controlPoints: number[];
     curves: ProfileCurves;
     closed: boolean;
 }
 
 type OrderedEdge = { index: number; forward: boolean };
 
-const key = (point: Point2) => `${Math.round(point[0] * 100)},${Math.round(point[1] * 100)}`;
+const key = (point: Point2) => `${Math.round(point[0] * 10)},${Math.round(point[1] * 10)}`;
 const length = (point: Point2) => Math.hypot(point[0], point[1]);
 
 /** Join degree-two nodes into continuous paths before extracting the remaining closed cycles. */
@@ -31,9 +32,11 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
 
     const assemble = (ordered: OrderedEdge[], closed: boolean): RestitchPath => {
         const points: Point2[] = [];
+        const controlPoints: number[] = [];
         const curves: ProfileCurves = {};
         ordered.forEach(({ index, forward }) => {
             const edge = edges[index];
+            controlPoints.push(points.length);
             if (edge.c1 && edge.c2) {
                 points.push([...(forward ? edge.a : edge.b)]);
                 curves[points.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
@@ -44,9 +47,10 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
         });
         if (!closed && ordered.length) {
             const last = ordered[ordered.length - 1];
+            controlPoints.push(points.length);
             points.push([...(last.forward ? edges[last.index].b : edges[last.index].a)]);
         }
-        return { points, curves, closed };
+        return { points, controlPoints: [...new Set(controlPoints)], curves, closed };
     };
 
     const trace = (first: number, start: string, stopAtJunction: boolean) => {
