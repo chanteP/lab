@@ -429,7 +429,7 @@ export class Viewport {
             border.renderOrder = 1002;
             this.sketchReferences.add(border);
         } else if (match.reference.kind === 'point') {
-            const marker = new THREE.Mesh(new THREE.SphereGeometry(1.65, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
+            const marker = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.referencePointRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
             marker.position.copy(this.sketchWorld(match.reference.point, 0.24));
             marker.renderOrder = 1004;
             this.sketchReferences.add(marker);
@@ -1464,8 +1464,15 @@ export class Viewport {
     }
     private borderTargets() {
         const targets: THREE.Object3D[] = [];
-        this.model.traverse((object) => { if (object.userData.borderEntityId) targets.push(object); });
-        this.sketch.children.forEach((object) => { if (object.userData.borderEntityId) targets.push(object); });
+        const modelEntities = new Set<string>();
+        this.model.traverse((object) => {
+            if (!object.userData.borderEntityId) return;
+            targets.push(object);
+            modelEntities.add(object.userData.borderEntityId);
+        });
+        this.sketch.children.forEach((object) => {
+            if (object.userData.borderEntityId && !modelEntities.has(object.userData.borderEntityId)) targets.push(object);
+        });
         return targets;
     }
     private clearAltBorder() {
@@ -1501,7 +1508,7 @@ export class Viewport {
         const vertices = closed && points.length > 1 ? [...points, points[0].clone()] : points;
         const geometry = new LineGeometry();
         geometry.setPositions(vertices.flatMap((point) => point.toArray()));
-        const material = new LineMaterial({ color: SKETCH_COLORS.edge, linewidth: 3.2, depthTest: false });
+        const material = new LineMaterial({ color: SKETCH_COLORS.edge, linewidth: SKETCH_STYLE.borderWidthPx, depthTest: false });
         material.resolution.set(this.renderer.domElement.clientWidth, this.renderer.domElement.clientHeight);
         const line = new Line2(geometry, material);
         line.computeLineDistances();
@@ -1544,6 +1551,15 @@ export class Viewport {
     }
     private updateSketchFaceHover(event: PointerEvent) {
         this.setPointer(event);
+        if (this.raycaster.intersectObjects(this.borderTargets(), false).length) {
+            if (this.hoverSketchFace) {
+                const material = this.hoverSketchFace.material as THREE.MeshBasicMaterial;
+                material.color.set(SKETCH_COLORS.fill);
+                material.opacity = 0.12;
+                this.hoverSketchFace = null;
+            }
+            return;
+        }
         const hit = this.raycaster.intersectObjects(this.sketchFaces.children.filter((object) => object.userData.sketchFace !== undefined), false)[0];
         const next = hit?.object as THREE.Mesh || null;
         if (next === this.hoverSketchFace) return;
@@ -1590,11 +1606,11 @@ export class Viewport {
     }
     private addSketchMarker(point: Point2, index: number, color: string, center = false, locked = false) {
         const selected = index >= 0 && index === this.selectedSketchPoint;
-        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.75 : 1.4, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
+        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? SKETCH_STYLE.markerOuterSelectedRadius : SKETCH_STYLE.markerOuterRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
         outer.position.copy(this.sketchWorld(point));
         outer.userData = { pointIndex: index, pointBorder: true, centerHandle: center, locked };
         outer.renderOrder = 1001;
-        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? 1.3 : 1, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? SKETCH_STYLE.markerInnerSelectedRadius : SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
         inner.position.copy(this.sketchWorld(point, 0.14));
         inner.userData = { pointIndex: index, centerHandle: center, locked };
         inner.renderOrder = 1002;
@@ -1715,7 +1731,7 @@ export class Viewport {
             if (profileType !== 'regular' && this.editingSketchId) {
                 const angle = start + sectorAngle * Math.PI / 180;
                 const sectorPoint = profileType === 'circle' ? [center[0] + Math.cos(angle) * radius * 0.82, center[1] + Math.sin(angle) * radius * 0.82] as Point2 : profileEllipsePoint(center, edge, points[2], angle, 0.82);
-                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false, depthWrite: false }));
+                const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.sectorHandleRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(sectorPoint));
                 handle.userData.sectorHandle = true;
                 handle.renderOrder = 1003;
@@ -1746,7 +1762,7 @@ export class Viewport {
                 if (this.editingSketchId) this.addSketchDimension(midpoint(from, to), { kind: 'control', index: selectedSegment, handle: handleIndex + 1 as 1 | 2 }, Math.hypot(to[0] - from[0], to[1] - from[1]), unit);
             });
             [curve.c1, curve.c2].forEach((point, handleIndex) => {
-                const handle = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false, depthWrite: false }));
+                const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.bezierHandleRadius, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(point));
                 handle.userData.handleSegment = selectedSegment;
                 handle.userData.handleIndex = handleIndex + 1;
