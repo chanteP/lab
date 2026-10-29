@@ -26,6 +26,7 @@ import EntitySidebar from './components/layout/EntitySidebar.vue';
 import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
 import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
+import SketchHints from './components/sketch/SketchHints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
 import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
 import { INTERACTION } from './config/const';
@@ -1432,6 +1433,14 @@ function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
     refreshSketch();
     if (phase === 'end' && sketchType.value !== 'polygon') persistSketchProgress(true);
 }
+function closeSketchPath() {
+    if (sketchType.value !== 'polygon' || sketchPoints.value.length < 3) return;
+    sketchOpen.value = false;
+    syncEditingSketch();
+    persistSketchProgress(false);
+    refreshSketch();
+    activateSketchSelectionTool();
+}
 function setSketchSides(sides: number) {
     sketchSides.value = sides;
     syncEditingSketch();
@@ -1962,6 +1971,7 @@ onMounted(async () => {
         onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
         onSketchComplete: finishSketch,
+        onSketchClosePath: closeSketchPath,
         onSketchEntitySelect: selectSketchEntity,
         onSketchBorderSelect: selectTrimmedBorder,
         onSketchContext: openSketchContext,
@@ -2099,6 +2109,7 @@ onBeforeUnmount(() => {
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" />
+                <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 

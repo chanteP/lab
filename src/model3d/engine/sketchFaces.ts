@@ -104,6 +104,17 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
     const faces: SketchFace[] = [];
     directed.forEach((_, start) => {
         if (visited.has(start)) return;
+        if (directed[start].from === directed[start].to && edges[directed[start].edge].closed) {
+            const points = directed[start].points.slice(0, -1);
+            const area = points.reduce((sum, point, index) => {
+                const next = points[(index + 1) % points.length];
+                return sum + point[0] * next[1] - next[0] * point[1];
+            }, 0) / 2;
+            if (Math.abs(area) > 0.0001) faces.push({ points });
+            visited.add(start);
+            visited.add(start ^ 1);
+            return;
+        }
         const walk: number[] = [];
         let current = start;
         while (!visited.has(current)) {

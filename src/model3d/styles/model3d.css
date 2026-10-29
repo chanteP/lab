@@ -327,6 +327,7 @@ button { color: inherit; }
 .viewport.is-panning, .viewport.is-sketching.is-panning { cursor: grab; }
 .viewport.is-panning:active, .viewport.is-sketching.is-panning:active { cursor: grabbing; }
 .viewport.is-arrow-hover { cursor: grab; }
+.viewport.is-link-cursor, .viewport.is-link-cursor.is-handle-hover { cursor: alias; }
 /* Subtitle-style polygon selector: no scale transform, white box or large title gap. */
 .sketch-polygon-tool .n-select { width: 54px; height: 14px; min-height: 14px; margin: 1px 0 0 45px; padding: 0; transform: none; font-size: 10px; }
 .sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 14px; min-height: 14px; padding: 0; color: var(--model3d-ui-89958e); background: transparent; border: 0; box-shadow: none; font-size: 10px; line-height: 14px; }

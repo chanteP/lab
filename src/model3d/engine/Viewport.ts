@@ -41,6 +41,7 @@ interface ViewportCallbacks {
     onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
     onSketchSelect: (index: number, additive: boolean) => void;
     onSketchComplete: () => void;
+    onSketchClosePath: () => void;
     onSketchEntitySelect: (id: string, additive: boolean) => void;
     onSketchBorderSelect: (entityId: string, index: number, additive: boolean) => void;
     onSketchContext: (id: string | null, x: number, y: number) => void;
@@ -874,6 +875,7 @@ export class Viewport {
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             if (!this.sketchDrag.moved) {
+                if (this.shouldCloseSketchPath(event)) this.callbacks.onSketchClosePath();
                 this.sketchDrag = null;
                 this.container.classList.remove('is-handle-dragging');
                 this.controls.enabled = true;
@@ -914,6 +916,7 @@ export class Viewport {
                 : this.drawingEdgeStart();
             const point = this.sketchOperationPoint(event, { edgeStart });
             if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
+            else if (point && this.shouldCloseSketchPath(event)) this.callbacks.onSketchClosePath();
             else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
             this.clearSketchReferences();
             this.shapeDrag = null;
@@ -934,6 +937,10 @@ export class Viewport {
         }
         if (this.sketchMode) {
             if (this.sketchSegmentHandled) { this.sketchSegmentHandled = false; return; }
+            if (this.shouldCloseSketchPath(event)) {
+                this.callbacks.onSketchClosePath();
+                return;
+            }
             const point = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
             if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
             this.clearSketchReferences();
@@ -1376,8 +1383,8 @@ export class Viewport {
             const entity = this.document!.entities.find((item) => item.id === entityId);
             const point = entity?.points?.[index];
             if (!point) return;
-            const outer = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerOuterSelectedRadius * 2, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
-            const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerSelectedRadius * 2, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.active, depthTest: false, depthWrite: false }));
+            const outer = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerOuterRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
+            const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.active, depthTest: false, depthWrite: false }));
             outer.position.copy(this.sketchWorld(point, 0.26));
             inner.position.copy(this.sketchWorld(point, 0.28));
             outer.renderOrder = inner.renderOrder = 1006;
@@ -1501,6 +1508,9 @@ export class Viewport {
     }
     setSketchSelection(index: number) { this.selectedSketchPoint = index; this.updateMarkerColors(); }
     setSketchSelectionTool(active: boolean) { this.sketchSelectionTool = active; }
+    private shouldCloseSketchPath(event: PointerEvent) {
+        return event.shiftKey && !this.sketchSelectionTool && this.sketchProfileType === 'polygon' && this.currentSketchPoints.length > 2;
+    }
     private sketchMarkers() {
         return this.sketch.children.filter((item) => item.userData.pointIndex !== undefined || item.userData.handleSegment !== undefined || item.userData.sectorHandle || item.userData.centerHandle);
     }
@@ -1629,6 +1639,7 @@ export class Viewport {
     }
     private updateSketchCursor(event: PointerEvent) {
         this.setPointer(event);
+        this.container.classList.toggle('is-link-cursor', this.shouldCloseSketchPath(event));
         const marker = this.raycaster.intersectObjects(this.sketchMarkers(), false)[0];
         const pointIndex = marker?.object.userData.pointIndex;
         this.altDeletePoint = event.altKey && this.sketchProfileType === 'polygon' && pointIndex >= 0 && !marker?.object.userData.centerHandle ? pointIndex : -1;
@@ -1657,12 +1668,11 @@ export class Viewport {
         });
     }
     private addSketchMarker(point: Point2, index: number, color: string, center = false, locked = false) {
-        const selected = index >= 0 && index === this.selectedSketchPoint;
-        const outer = new THREE.Mesh(new THREE.SphereGeometry(selected ? SKETCH_STYLE.markerOuterSelectedRadius : SKETCH_STYLE.markerOuterRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
+        const outer = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerOuterRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
         outer.position.copy(this.sketchWorld(point));
         outer.userData = { pointIndex: index, pointBorder: true, centerHandle: center, locked };
         outer.renderOrder = 1001;
-        const inner = new THREE.Mesh(new THREE.SphereGeometry(selected ? SKETCH_STYLE.markerInnerSelectedRadius : SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
         inner.position.copy(this.sketchWorld(point, 0.14));
         inner.userData = { pointIndex: index, centerHandle: center, locked };
         inner.renderOrder = 1002;
@@ -1677,7 +1687,9 @@ export class Viewport {
         const factor = 1;
         input.value = (value / factor).toFixed(2);
         input.addEventListener('pointerdown', (event) => event.stopPropagation());
+        let wheelTimer = 0;
         const commit = () => {
+            window.clearTimeout(wheelTimer);
             const next = Number(input.value);
             if (Number.isFinite(next) && next > 0) window.setTimeout(() => this.callbacks.onSketchDimension(target, target.kind === 'angle' ? next : next * factor), 0);
             else input.value = (value / factor).toFixed(2);
@@ -1685,17 +1697,21 @@ export class Viewport {
         input.addEventListener('blur', commit);
         input.addEventListener('wheel', (event) => {
             event.preventDefault();
+            event.stopImmediatePropagation();
             input.value = String(integerStep(Number(input.value), event.deltaY < 0 ? 1 : -1));
-            commit();
+            window.clearTimeout(wheelTimer);
+            wheelTimer = window.setTimeout(commit, 90);
         }, { passive: false });
         input.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
+                event.stopImmediatePropagation();
                 commit();
                 return;
             }
             if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
             event.preventDefault();
+            event.stopImmediatePropagation();
             input.value = String(integerStep(Number(input.value), event.key === 'ArrowUp' ? 1 : -1));
             commit();
         });
@@ -1844,11 +1860,17 @@ export class Viewport {
         shaft.position.y = shaftLength / 2;
         const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, headHeight, 20), material);
         head.position.y = shaftLength + headHeight / 2;
-        group.add(shaft, head);
+        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, depthTest: false, depthWrite: false, toneMapped: false });
+        const shaftOutline = new THREE.LineSegments(new THREE.EdgesGeometry(shaft.geometry), outlineMaterial);
+        const headOutline = new THREE.LineSegments(new THREE.EdgesGeometry(head.geometry), outlineMaterial);
+        shaftOutline.position.copy(shaft.position);
+        headOutline.position.copy(head.position);
+        group.add(shaft, head, shaftOutline, headOutline);
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
         group.scale.setScalar(2.5);
         group.traverse((child) => { Object.assign(child.userData, data); child.userData.arrowKey = group.userData.arrowKey; child.renderOrder = 100; });
+        shaftOutline.renderOrder = headOutline.renderOrder = 101;
         return group;
     }
     private updateExtrudeGuide(document: ModelDocument) {

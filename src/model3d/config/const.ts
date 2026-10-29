@@ -20,9 +20,7 @@ export const INTERACTION = {
 export const SKETCH_STYLE = {
     borderWidthPx: 4,
     markerOuterRadius: 0.84,
-    markerOuterSelectedRadius: 1.05,
     markerInnerRadius: 0.6,
-    markerInnerSelectedRadius: 0.78,
     sectorHandleRadius: 0.75,
     bezierHandleRadius: 0.66,
     referencePointRadius: 0.99,
