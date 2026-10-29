@@ -14,6 +14,7 @@ import { INTERACTION, SKETCH_STYLE } from '../config/const';
 import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import { matchSketchGuide, type SketchGuideMatch } from './sketchGuides';
 import { integerStep } from '../utils/number';
+import { computeSketchFaces, type SketchFace } from './sketchFaces';
 import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
@@ -41,6 +42,7 @@ interface ViewportCallbacks {
     onSketchSelect: (index: number) => void;
     onSketchComplete: () => void;
     onSketchEntitySelect: (id: string) => void;
+    onSketchBorderSelect: (entityId: string, index: number) => void;
     onSketchContext: (id: string | null, x: number, y: number) => void;
     onSketchCancelSelection: () => void;
     onSketchCenterMove: (point: Point2, phase: EditPhase) => void;
@@ -85,6 +87,8 @@ export class Viewport {
     private faceFeedback = new THREE.Group();
     private trimFeedback = new THREE.Group();
     private sketchReferences = new THREE.Group();
+    private sketchFaces = new THREE.Group();
+    private hoverSketchFace: THREE.Mesh | null = null;
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
     private shadow: THREE.Mesh;
@@ -216,7 +220,7 @@ export class Viewport {
         this.planeGizmo.setLabels('U', 'V', 'N');
         this.planeGizmo.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
 
-        this.scene.add(this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences);
+        this.scene.add(this.model, this.sketchFaces, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences);
         this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
         this.grid.position.y = -0.02;
         (this.grid.material as THREE.Material).transparent = true;
@@ -580,21 +584,26 @@ export class Viewport {
                     return;
                 }
             }
+            const borderHit = this.sketchSelectionTool ? this.raycaster.intersectObjects(this.borderTargets(), false)[0] : null;
+            if (borderHit) {
+                event.preventDefault(); event.stopImmediatePropagation();
+                const entityId = borderHit.object.userData.borderEntityId;
+                const entity = this.document?.entities.find((item) => item.id === entityId);
+                if (entity) {
+                    this.sketchSelectionGuardUntil = performance.now() + INTERACTION.sketchSelectionGuardMs;
+                    this.sketchSelectionGuardPointerUp = true;
+                    this.shapeDrag = null;
+                    this.sketchDrag = null;
+                    if (entity.trimmed) this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex);
+                    else this.callbacks.onSketchEntitySelect(entityId);
+                    return;
+                }
+            }
             const segmentHit = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
             if (segmentHit) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 this.sketchSegmentHandled = true;
                 this.callbacks.onSketchSegment(segmentHit.object.userData.segmentIndex, event.shiftKey || event.metaKey || event.ctrlKey);
-                return;
-            }
-            const sketchEntity = this.sketchSelectionTool ? this.hitSketchEntity(event) : null;
-            if (sketchEntity) {
-                event.preventDefault(); event.stopImmediatePropagation();
-                this.sketchSelectionGuardUntil = performance.now() + INTERACTION.sketchSelectionGuardMs;
-                this.sketchSelectionGuardPointerUp = true;
-                this.shapeDrag = null;
-                this.sketchDrag = null;
-                this.callbacks.onSketchEntitySelect(sketchEntity);
                 return;
             }
             const start = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
@@ -757,7 +766,8 @@ export class Viewport {
         if (this.sketchMode && !event.buttons) {
             if (this.sketchSelectionTool) this.clearSketchReferences();
             else this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
-            this.setSketchHover(this.sketchSelectionTool ? this.hitSketchEntity(event) : null);
+            this.updateSketchFaceHover(event);
+            this.setSketchHover(null);
             this.updateSketchCursor(event);
         }
         if (!event.buttons && !this.sketchMode) this.updateArrowHover(event);
@@ -1181,8 +1191,7 @@ export class Viewport {
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.sketchMode) {
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
-                if (material) { material.transparent = true; material.opacity = entityProfileClosed(entity) ? 0.12 : 0; }
-                if (entityProfileClosed(entity)) child.add(new THREE.Mesh((child as THREE.Mesh).geometry, this.sketchHatchMaterial()));
+                if (material) { material.transparent = true; material.opacity = 0; }
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
                 borderSegments(entity).forEach((segment) => {
@@ -1212,6 +1221,7 @@ export class Viewport {
         this.applySelection();
         this.updatePlaneAppearance();
         this.updateExtrudeGuide(document);
+        this.refreshSketchFaces();
     }
     private applyObjectDisplay(object: THREE.Object3D) {
         object.traverse((child) => {
@@ -1324,6 +1334,7 @@ export class Viewport {
         }
         this.applyIsolation();
         this.updatePlaneAppearance();
+        this.refreshSketchFaces();
     }
     setSelected(ids: string[]) { this.selected = ids; this.applySelection(); if (this.document) this.updateExtrudeGuide(this.document); }
     clearGeometrySelection() {
@@ -1490,7 +1501,7 @@ export class Viewport {
         const vertices = closed && points.length > 1 ? [...points, points[0].clone()] : points;
         const geometry = new LineGeometry();
         geometry.setPositions(vertices.flatMap((point) => point.toArray()));
-        const material = new LineMaterial({ color: SKETCH_COLORS.edge, linewidth: 2.4, depthTest: false });
+        const material = new LineMaterial({ color: SKETCH_COLORS.edge, linewidth: 3.2, depthTest: false });
         material.resolution.set(this.renderer.domElement.clientWidth, this.renderer.domElement.clientHeight);
         const line = new Line2(geometry, material);
         line.computeLineDistances();
@@ -1507,6 +1518,46 @@ export class Viewport {
             depthWrite: false,
             side: THREE.DoubleSide,
         });
+    }
+    refreshSketchFaces() {
+        this.clearGroup(this.sketchFaces);
+        this.hoverSketchFace = null;
+        if (!this.sketchMode || !this.document || !this.activePlane) return;
+        const faces = computeSketchFaces(this.document.entities, this.activePlane.id);
+        faces.forEach((face: SketchFace, index) => {
+            const shape = new THREE.Shape();
+            shape.moveTo(...face.points[0]);
+            face.points.slice(1).forEach((point) => shape.lineTo(...point));
+            shape.closePath();
+            const geometry = new THREE.ShapeGeometry(shape);
+            const matrix = this.planeMatrix(this.activePlane!);
+            const fill = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+            fill.geometry.applyMatrix4(matrix);
+            fill.position.add(new THREE.Vector3(...this.activePlane!.normal).multiplyScalar(0.04));
+            fill.renderOrder = 1;
+            fill.userData.sketchFace = index;
+            const hatch = new THREE.Mesh(geometry.clone(), this.sketchHatchMaterial());
+            hatch.position.copy(fill.position);
+            hatch.renderOrder = 2;
+            this.sketchFaces.add(fill, hatch);
+        });
+    }
+    private updateSketchFaceHover(event: PointerEvent) {
+        this.setPointer(event);
+        const hit = this.raycaster.intersectObjects(this.sketchFaces.children.filter((object) => object.userData.sketchFace !== undefined), false)[0];
+        const next = hit?.object as THREE.Mesh || null;
+        if (next === this.hoverSketchFace) return;
+        if (this.hoverSketchFace) {
+            const material = this.hoverSketchFace.material as THREE.MeshBasicMaterial;
+            material.color.set(SKETCH_COLORS.fill);
+            material.opacity = 0.12;
+        }
+        this.hoverSketchFace = next;
+        if (next) {
+            const material = next.material as THREE.MeshBasicMaterial;
+            material.color.set(SKETCH_COLORS.hoverFill);
+            material.opacity = 0.3;
+        }
     }
     private updateSketchCursor(event: PointerEvent) {
         this.setPointer(event);
@@ -1609,7 +1660,7 @@ export class Viewport {
         line.renderOrder = 900;
         this.sketch.add(line);
     }
-    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number, controlPoints?: number[]) {
+    updateSketch(points: Point2[], selectedIndex = this.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number, controlPoints?: number[], trimmedCurve = false) {
         this.clearAltBorder();
         this.clearGroup(this.sketch);
         this.currentSketchPoints = points.map((point) => [...point]);
@@ -1619,21 +1670,6 @@ export class Viewport {
         if (!this.sketchMode || !points.length) return;
         const displayPoints = profilePoints(profileType, points, 64, curves, sides, sectorAngle, open, startAngle);
         const vertices = displayPoints.map((point) => this.sketchWorld(point));
-        if (!open && profileClosed(profileType) && displayPoints.length >= 3) {
-            const shape = new THREE.Shape();
-            shape.moveTo(...displayPoints[0]);
-            displayPoints.slice(1).forEach((point) => shape.lineTo(...point));
-            shape.closePath();
-            const geometry = new THREE.ShapeGeometry(shape);
-            const fill = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
-            fill.applyMatrix4(this.activePlane ? this.planeMatrix(this.activePlane) : new THREE.Matrix4());
-            fill.position.add(this.activePlane ? new THREE.Vector3(...this.activePlane.normal).multiplyScalar(0.04) : new THREE.Vector3(0, 0.04, 0));
-            const hatch = new THREE.Mesh(geometry.clone(), this.sketchHatchMaterial());
-            hatch.position.copy(fill.position);
-            hatch.quaternion.copy(fill.quaternion);
-            hatch.scale.copy(fill.scale);
-            this.sketch.add(fill, hatch);
-        }
         const midpoint = (a: Point2, b: Point2): Point2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
         const controls = new Set(controlPoints || points.map((_, index) => index));
         if (profileType === 'polygon') {
@@ -1646,7 +1682,7 @@ export class Viewport {
                 if (segment.sourceCount === 1) {
                     const index = segment.index;
                     const a = points[index], b = points[(index + 1) % points.length];
-                    if (this.editingSketchId && controls.has(index)) this.addSketchDimension(midpoint(a, b), { kind: 'segment', index }, Math.hypot(b[0] - a[0], b[1] - a[1]), unit);
+                    if (this.editingSketchId && !trimmedCurve && controls.has(index)) this.addSketchDimension(midpoint(a, b), { kind: 'segment', index }, Math.hypot(b[0] - a[0], b[1] - a[1]), unit);
                     if (curves[index]) this.addSketchGuide(a, b);
                 }
             });
@@ -1957,7 +1993,7 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
-        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences].forEach((group) => this.clearGroup(group));
+        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences, this.sketchFaces].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();
         this.labelRenderer.domElement.remove();

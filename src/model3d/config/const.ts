@@ -19,7 +19,7 @@ export const INTERACTION = {
 export const SKETCH_STYLE = {
     hatchLineWidth: 0.55,
     hatchSpacing: 7,
-    hatchOpacity: 0.84,
+    hatchOpacity: 0.5,
     defaultPolygonSides: 3,
     defaultDepthMm: 10,
 } as const;
