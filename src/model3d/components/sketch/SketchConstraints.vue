@@ -10,7 +10,7 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: [] }>
 <template>
     <aside class="constraints-panel" aria-label="草图约束">
         <div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div>
-        <p>{{ selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Shift 可多选边。' }}</p>
+        <p>{{ selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Ctrl/Command 多选。' }}</p>
         <button :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
         <div class="constraint-pair"><button :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>

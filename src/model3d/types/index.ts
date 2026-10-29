@@ -2,6 +2,7 @@ import { ENTITY_COLORS } from '../config/colors';
 
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
+export type SketchElementRef = { entityId: string; index: number };
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';

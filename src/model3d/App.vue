@@ -34,7 +34,7 @@ import { restitchSketchEdges, type RestitchEdge } from './engine/sketchRestitch'
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
-    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
+    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit, type SketchElementRef,
 } from './types';
 
 const message = useMessage();
@@ -50,6 +50,7 @@ let extrudeGestureMoved = false;
 let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves } | null = null;
 let sketchRefreshFrame = 0;
 let trimmedCurveDrag: { start: Point2; points: Point2[] } | null = null;
+let multiPointDrag: { start: Point2; points: Map<string, Point2[]>; curves: Map<string, ProfileCurves> } | null = null;
 type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
 
 const projects = ref<ProjectRecord[]>([]);
@@ -106,6 +107,9 @@ const sectionActive = ref(false);
 const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
 const showEdges = ref(true);
 const selectedSketchSegments = ref<number[]>([]);
+const selectedShapes = ref<string[]>([]);
+const selectedEdges = ref<SketchElementRef[]>([]);
+const selectedPoints = ref<SketchElementRef[]>([]);
 const sketchLockedPoints = ref<number[]>([]);
 const sketchSectorAngle = ref(360);
 const sketchOpen = ref(false);
@@ -136,12 +140,24 @@ const planeOptions = computed(() => document.value.planes.map((plane) => ({ labe
 const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
-const constraintSegmentCount = computed(() => selectedSketchSegments.value.filter((index) => straightConstraintSegment(sketchPoints.value, sketchCurves.value, index)).length);
+const constraintSegmentCount = computed(() => selectedEdges.value.filter(({ entityId, index }) => {
+    const entity = document.value.entities.find((item) => item.id === entityId);
+    return entity?.points && straightConstraintSegment(entity.points, entity.curves || {}, index);
+}).length);
 const selectionLocked = computed(() => {
-    if (selectedSketchPoint.value >= 0) return selectedPointLocked.value;
-    if (!selectedSketchSegments.value.length) return false;
-    const indices = new Set(selectedSketchSegments.value.flatMap((index) => [index, (index + 1) % sketchPoints.value.length]));
-    return [...indices].every((index) => sketchLockedPoints.value.includes(index));
+    if (selectedPoints.value.length) return selectedPoints.value.every(({ entityId, index }) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        return entity?.lockedPoints?.includes(index);
+    });
+    if (selectedEdges.value.length) return selectedEdges.value.every(({ entityId, index }) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        return entity?.points && [index, (index + 1) % entity.points.length].every((point) => entity.lockedPoints?.includes(point));
+    });
+    if (selectedShapes.value.length) return selectedShapes.value.every((entityId) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        return entity?.points?.every((_, index) => entity.lockedPoints?.includes(index));
+    });
+    return false;
 });
 const commandResults = computed(() => {
     const commands = [
@@ -399,6 +415,7 @@ async function removeProject() {
 }
 
 function selectEntity(id: string | null, additive = false) {
+    if (id && sketchMode.value && document.value.entities.find((entity) => entity.id === id)?.kind === 'sketch') return selectSketchEntity(id, additive);
     if (!id) {
         if (!additive) selectedIds.value = [];
         if (!additive) selectionKind.value = null;
@@ -882,6 +899,9 @@ function renderSketch() {
     viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value, controlPoints, trimmed?.kind === 'curve');
 }
 function setSketchType(type: ProfileType) {
+    selectedShapes.value = [];
+    selectedEdges.value = [];
+    selectedPoints.value = [];
     trimmedSelection.value = null;
     sketchSelectionTool.value = false;
     viewport?.setSketchSelectionTool(false);
@@ -908,6 +928,9 @@ function activateSketchSelectionTool() {
 }
 function clearSketchSelection() {
     finishSketchHandleDrag();
+    selectedShapes.value = [];
+    selectedEdges.value = [];
+    selectedPoints.value = [];
     trimmedSelection.value = null;
     trimmedCurveDrag = null;
     editingSketchId.value = null;
@@ -927,10 +950,18 @@ function clearSketchSelection() {
     refreshSketch();
     activateSketchSelectionTool();
 }
-function selectTrimmedBorder(entityId: string, index: number) {
-    const entity = document.value.entities.find((item) => item.id === entityId && item.trimmed);
+function selectTrimmedBorder(entityId: string, index: number, additive = false) {
+    const entity = document.value.entities.find((item) => item.id === entityId);
     const segment = entity && borderSegments(entity).find((item) => item.index === index);
     if (!entity || !segment) return;
+    selectedShapes.value = [];
+    selectedPoints.value = [];
+    const item = { entityId, index };
+    const exists = selectedEdges.value.some((edge) => edge.entityId === entityId && edge.index === index);
+    selectedEdges.value = additive
+        ? exists ? selectedEdges.value.filter((edge) => !(edge.entityId === entityId && edge.index === index)) : [...selectedEdges.value, item]
+        : [item];
+    if (!selectedEdges.value.length) return clearSketchSelection();
     const a = segment.points[0], b = segment.points[segment.points.length - 1];
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const straight = segment.points.every((point) => Math.abs(dx * (point[1] - a[1]) - dy * (point[0] - a[0])) < 0.0001);
@@ -950,9 +981,15 @@ function selectTrimmedBorder(entityId: string, index: number) {
     viewport?.setSketchEditing(entityId);
     refreshSketch();
 }
-function selectSketchEntity(id: string) {
+function selectSketchEntity(id: string, additive = false) {
     const entity = document.value.entities.find((item) => item.id === id && item.kind === 'sketch');
     if (!entity) return;
+    selectedEdges.value = [];
+    selectedPoints.value = [];
+    selectedShapes.value = additive
+        ? selectedShapes.value.includes(id) ? selectedShapes.value.filter((item) => item !== id) : [...selectedShapes.value, id]
+        : [id];
+    if (!selectedShapes.value.length) return clearSketchSelection();
     if (entity.planeId && entity.planeId !== activePlaneId.value) {
         activePlaneId.value = entity.planeId;
         viewport?.setActivePlane(activePlane.value);
@@ -971,7 +1008,7 @@ function selectSketchEntity(id: string) {
     selectedSketchPoint.value = -1;
     selectedSketchSegment.value = -1;
     selectedSketchSegments.value = [];
-    selectedIds.value = [id];
+    selectedIds.value = [...selectedShapes.value];
     sketchContextMenu.value = null;
     viewport?.setSketchEditing(id);
     refreshSketch();
@@ -1026,6 +1063,10 @@ function addSketchPoint(point: Point2) {
 function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     if (trimmedSelection.value?.kind === 'curve') {
         moveTrimmedCurve(point, phase);
+        return;
+    }
+    if (selectedPoints.value.length > 1 && selectedPoints.value.some((item) => item.entityId === editingSketchId.value && item.index === index)) {
+        moveSelectedPoints(point, phase);
         return;
     }
     if (sketchLockedPoints.value.includes(index)) {
@@ -1097,6 +1138,67 @@ function beginSketchHandleDrag() {
 function finishSketchHandleDrag() {
     if (!transforming) return;
     transforming = false;
+}
+function moveSelectedPoints(point: Point2, phase: EditPhase) {
+    if (phase === 'start') {
+        if (selectedPoints.value.some(({ entityId, index }) => document.value.entities.find((entity) => entity.id === entityId)?.lockedPoints?.includes(index))) {
+            message.info('所选点包含固定点，请先取消固定');
+            return;
+        }
+        beginSketchHandleDrag();
+        const points = new Map<string, Point2[]>(), curves = new Map<string, ProfileCurves>();
+        new Set(selectedPoints.value.map((item) => item.entityId)).forEach((entityId) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            if (entity?.points) points.set(entityId, entity.points.map((source) => [...source]));
+            curves.set(entityId, JSON.parse(JSON.stringify(entity?.curves || {})));
+        });
+        multiPointDrag = { start: [...point], points, curves };
+        return;
+    }
+    if (!multiPointDrag) return;
+    const delta: Point2 = [point[0] - multiPointDrag.start[0], point[1] - multiPointDrag.start[1]];
+    const changes = new Map<string, { points: Point2[]; curves: ProfileCurves }>();
+    multiPointDrag.points.forEach((base, entityId) => {
+        const next = base.map((source) => [...source] as Point2);
+        const curves = JSON.parse(JSON.stringify(multiPointDrag!.curves.get(entityId) || {})) as ProfileCurves;
+        selectedPoints.value.filter((item) => item.entityId === entityId).forEach(({ index }) => {
+            if (!next[index]) return;
+            next[index] = [next[index][0] + delta[0], next[index][1] + delta[1]];
+            if (curves[index]) curves[index].c1 = [curves[index].c1[0] + delta[0], curves[index].c1[1] + delta[1]];
+            if (curves[index - 1]) curves[index - 1].c2 = [curves[index - 1].c2[0] + delta[0], curves[index - 1].c2[1] + delta[1]];
+        });
+        Object.entries(curves).forEach(([key, curve]) => {
+            const segment = Number(key), a = next[segment], b = next[(segment + 1) % next.length];
+            const baseA = base[segment], baseB = base[(segment + 1) % base.length];
+            const original = multiPointDrag!.curves.get(entityId)?.[segment];
+            if (!original || !a || !b || !baseA || !baseB) return;
+            const dx = baseB[0] - baseA[0], dy = baseB[1] - baseA[1];
+            const straight = [original.c1, original.c2].every((control) => Math.abs(dx * (control[1] - baseA[1]) - dy * (control[0] - baseA[0])) < 0.0001);
+            if (straight) {
+                curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+                curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
+            }
+        });
+        changes.set(entityId, { points: next, curves });
+    });
+    const current = changes.get(editingSketchId.value || '');
+    if (current) {
+        sketchPoints.value = current.points;
+        sketchCurves.value = current.curves;
+    }
+    if (phase === 'end') {
+        changes.forEach((change, entityId) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            if (entity) {
+                entity.points = change.points;
+                entity.curves = change.curves;
+            }
+        });
+        viewport?.refreshSketchFaces();
+        multiPointDrag = null;
+    }
+    refreshSketch();
+    if (phase === 'end') finishSketchHandleDrag();
 }
 function moveTrimmedCurve(point: Point2, phase: EditPhase) {
     if (phase === 'start') {
@@ -1267,13 +1369,11 @@ function ensureSketchSegment(index: number) {
     }
 }
 function selectSketchSegment(index: number, additive = false) {
+    if (!editingSketchId.value) return;
+    selectTrimmedBorder(editingSketchId.value, index, additive);
     ensureSketchSegment(index);
-    selectedSketchSegments.value = additive
-        ? selectedSketchSegments.value.includes(index) ? selectedSketchSegments.value.filter((item) => item !== index) : [...selectedSketchSegments.value, index]
-        : [index];
-    persistSketchProgress(false);
+    selectedSketchSegment.value = index;
     selectedSketchPoint.value = -1;
-    syncEditingSketch();
     refreshSketch();
 }
 function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) {
@@ -1301,7 +1401,20 @@ function resetSketchHandle(segment: number, handle: 1 | 2) {
     persistSketchProgress(false);
     refreshSketch();
 }
-function selectSketchPoint(index: number) {
+function selectSketchPoint(index: number, additive = false) {
+    const entityId = editingSketchId.value;
+    if (!entityId || index < 0) {
+        selectedSketchPoint.value = index;
+        return;
+    }
+    selectedEdges.value = [];
+    selectedShapes.value = [];
+    const item = { entityId, index };
+    const exists = selectedPoints.value.some((point) => point.entityId === entityId && point.index === index);
+    selectedPoints.value = additive
+        ? exists ? selectedPoints.value.filter((point) => !(point.entityId === entityId && point.index === index)) : [...selectedPoints.value, item]
+        : [item];
+    selectedIds.value = [entityId];
     selectedSketchPoint.value = index;
     selectedSketchSegment.value = -1;
     selectedSketchSegments.value = [];
@@ -1373,28 +1486,71 @@ function syncEditingSketch() {
     if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
 }
 function applySketchConstraint(type: SketchConstraintType) {
-    const result = solveSketchConstraints(sketchPoints.value, sketchCurves.value, selectedSketchSegments.value, sketchLockedPoints.value, type, profileClosed(sketchType.value) && !sketchOpen.value);
-    if (!result) return message.warning('当前点或边无法同时满足该约束，草图未修改');
-    if (!result.changed) return;
-    if (editingSketchId.value) pushHistory();
-    sketchPoints.value = result.points;
-    sketchCurves.value = result.curves;
-    syncEditingSketch();
-    persistSketchProgress(false);
+    const selected = selectedEdges.value;
+    if (!selected.length) return;
+    const reference = selected[0];
+    const referenceEntity = document.value.entities.find((entity) => entity.id === reference.entityId);
+    if (!referenceEntity?.points) return;
+    const grouped = new Map<string, number[]>();
+    selected.forEach(({ entityId, index }) => grouped.set(entityId, [...grouped.get(entityId) || [], index]));
+    const changes = new Map<string, { points: Point2[]; curves: ProfileCurves }>();
+
+    for (const [entityId, indices] of grouped) {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity?.points) return message.warning('当前点或边无法同时满足该约束，草图未修改');
+        if (entityId === reference.entityId && indices.length === 1 && ['parallel', 'perpendicular', 'equal'].includes(type)) continue;
+        if (entityId === reference.entityId || ['auto', 'horizontal', 'vertical'].includes(type)) {
+            const result = solveSketchConstraints(entity.points, entity.curves || {}, indices, entity.lockedPoints || [], type, entityProfileClosed(entity));
+            if (!result) return message.warning('当前点或边无法同时满足该约束，草图未修改');
+            if (result.changed) changes.set(entityId, { points: result.points, curves: result.curves });
+            continue;
+        }
+        for (const index of indices) {
+            const referencePoints = [referenceEntity.points[reference.index], referenceEntity.points[(reference.index + 1) % referenceEntity.points.length]];
+            const sourceCurves = Object.fromEntries(Object.entries(entity.curves || {}).map(([key, curve]) => [Number(key) + 2, curve]));
+            const result = solveSketchConstraints([...referencePoints, ...entity.points], sourceCurves, [0, index + 2], (entity.lockedPoints || []).map((point) => point + 2), type, false);
+            if (!result) return message.warning('当前点或边无法同时满足该约束，草图未修改');
+            if (result.changed) changes.set(entityId, { points: result.points.slice(2), curves: Object.fromEntries(Object.entries(result.curves).filter(([key]) => Number(key) >= 2).map(([key, curve]) => [Number(key) - 2, curve])) });
+        }
+    }
+    if (!changes.size) return;
+    pushHistory();
+    changes.forEach((change, entityId) => {
+        const entity = document.value.entities.find((item) => item.id === entityId)!;
+        entity.points = change.points;
+        entity.curves = change.curves;
+        if (entityId === editingSketchId.value) {
+            sketchPoints.value = change.points.map((point) => [...point]);
+            sketchCurves.value = change.curves;
+        }
+    });
+    viewport?.refreshSketchFaces();
     refreshSketch();
 }
 function toggleSketchPointLock() {
-    const indices = selectedSketchPoint.value >= 0
-        ? [selectedSketchPoint.value]
-        : [...new Set(selectedSketchSegments.value.flatMap((index) => [index, (index + 1) % sketchPoints.value.length]))];
-    if (!indices.length) return;
-    if (editingSketchId.value) pushHistory();
-    const locked = indices.every((index) => sketchLockedPoints.value.includes(index));
-    sketchLockedPoints.value = locked
-        ? sketchLockedPoints.value.filter((index) => !indices.includes(index))
-        : [...new Set([...sketchLockedPoints.value, ...indices])];
-    syncEditingSketch();
-    persistSketchProgress(false);
+    const grouped = new Map<string, number[]>();
+    const add = (entityId: string, indices: number[]) => grouped.set(entityId, [...new Set([...grouped.get(entityId) || [], ...indices])]);
+    selectedPoints.value.forEach(({ entityId, index }) => add(entityId, [index]));
+    if (!selectedPoints.value.length) selectedEdges.value.forEach(({ entityId, index }) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (entity?.points) add(entityId, [index, (index + 1) % entity.points.length]);
+    });
+    if (!selectedPoints.value.length && !selectedEdges.value.length) selectedShapes.value.forEach((entityId) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (entity?.points) add(entityId, entity.points.map((_, index) => index));
+    });
+    if (!grouped.size) return;
+    const locked = [...grouped].every(([entityId, indices]) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        return indices.every((index) => entity?.lockedPoints?.includes(index));
+    });
+    pushHistory();
+    grouped.forEach((indices, entityId) => {
+        const entity = document.value.entities.find((item) => item.id === entityId)!;
+        const current = entity.lockedPoints || [];
+        entity.lockedPoints = locked ? current.filter((index) => !indices.includes(index)) : [...new Set([...current, ...indices])];
+        if (entityId === editingSketchId.value) sketchLockedPoints.value = [...entity.lockedPoints];
+    });
     refreshSketch();
 }
 function updateSketchDepth(value: number | null) {
@@ -1513,6 +1669,9 @@ function closeSketch() {
 }
 function cancelSketch() {
     finishSketchHandleDrag();
+    selectedShapes.value = [];
+    selectedEdges.value = [];
+    selectedPoints.value = [];
     trimmedSelection.value = null;
     trimmedCurveDrag = null;
     selectedIds.value = [];
@@ -1729,7 +1888,8 @@ watch(document, () => {
     if (!transforming) viewport?.sync(document.value);
     scheduleSave();
 }, { deep: true });
-watch(selectedIds, (ids) => viewport?.setSelected(ids), { deep: true });
+watch([selectedIds, selectedShapes, sketchMode], ([ids, shapes, active]) => viewport?.setSelected(active ? shapes : ids), { deep: true });
+watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(() => project.value.name, scheduleSave);
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
@@ -1937,7 +2097,7 @@ onBeforeUnmount(() => {
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides"
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
-                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedSketchSegments.length > 0"
+                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>

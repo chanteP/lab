@@ -15,7 +15,7 @@ import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import { matchSketchGuide, type SketchGuideMatch } from './sketchGuides';
 import { integerStep } from '../utils/number';
 import { computeSketchFaces, type SketchFace } from './sketchFaces';
-import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3 } from '../types';
+import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3, SketchElementRef } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
@@ -39,10 +39,10 @@ interface ViewportCallbacks {
     onSketchHandleMove: (segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) => void;
     onSketchHandleReset: (segment: number, handle: 1 | 2) => void;
     onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
-    onSketchSelect: (index: number) => void;
+    onSketchSelect: (index: number, additive: boolean) => void;
     onSketchComplete: () => void;
-    onSketchEntitySelect: (id: string) => void;
-    onSketchBorderSelect: (entityId: string, index: number) => void;
+    onSketchEntitySelect: (id: string, additive: boolean) => void;
+    onSketchBorderSelect: (entityId: string, index: number, additive: boolean) => void;
     onSketchContext: (id: string | null, x: number, y: number) => void;
     onSketchCancelSelection: () => void;
     onSketchCenterMove: (point: Point2, phase: EditPhase) => void;
@@ -88,6 +88,9 @@ export class Viewport {
     private trimFeedback = new THREE.Group();
     private sketchReferences = new THREE.Group();
     private sketchFaces = new THREE.Group();
+    private sketchSelectionFeedback = new THREE.Group();
+    private selectedEdgeRefs: SketchElementRef[] = [];
+    private selectedPointRefs: SketchElementRef[] = [];
     private hoverSketchFace: THREE.Mesh | null = null;
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
@@ -102,7 +105,7 @@ export class Viewport {
     private activePlane: SketchPlane | null = null;
     private selectedSketchPoint = -1;
     private activeSketchSegment = -1;
-    private sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean } | null = null;
+    private sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; startX: number; startY: number; startPoint: Point2; moved: boolean } | null = null;
     private shapeDrag: { start: Point2; moved: boolean } | null = null;
     private viewRotateDrag: { x: number; y: number; startX: number; startY: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
@@ -220,7 +223,7 @@ export class Viewport {
         this.planeGizmo.setLabels('U', 'V', 'N');
         this.planeGizmo.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
 
-        this.scene.add(this.model, this.sketchFaces, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences);
+        this.scene.add(this.model, this.sketchFaces, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences, this.sketchSelectionFeedback);
         this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
         this.grid.position.y = -0.02;
         (this.grid.material as THREE.Material).transparent = true;
@@ -556,16 +559,14 @@ export class Viewport {
                     this.container.classList.remove('is-delete-point');
                     return;
                 }
-                this.sketchDrag = center ? { index, center: true } : sector ? { index, sector: true } : handle ? { index, handle: hit.object.userData.handleIndex } : { index };
+                const startPoint = this.sketchDragPoint(event)!;
+                const gesture = { startX: event.clientX, startY: event.clientY, startPoint, moved: false };
+                this.sketchDrag = center ? { index, center: true, ...gesture } : sector ? { index, sector: true, ...gesture } : handle ? { index, handle: hit.object.userData.handleIndex, ...gesture } : { index, ...gesture };
                 this.container.classList.add('is-handle-dragging');
-                const point = this.sketchDragPoint(event)!;
-                if (center) this.callbacks.onSketchCenterMove(point, 'start');
-                else if (sector) this.callbacks.onSketchSectorMove(point, 'start');
-                else if (!handle) {
+                if (!handle && !sector && !center) {
                     this.selectedSketchPoint = index;
-                    this.callbacks.onSketchSelect(index);
-                    this.callbacks.onSketchPointMove(index, point, 'start');
-                } else this.callbacks.onSketchHandleMove(index, hit.object.userData.handleIndex, point, 'start');
+                    this.callbacks.onSketchSelect(index, event.metaKey || event.ctrlKey);
+                }
                 this.controls.enabled = false;
                 this.capturePointer(event);
                 this.updateMarkerColors();
@@ -594,8 +595,9 @@ export class Viewport {
                     this.sketchSelectionGuardPointerUp = true;
                     this.shapeDrag = null;
                     this.sketchDrag = null;
-                    if (entity.trimmed) this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex);
-                    else this.callbacks.onSketchEntitySelect(entityId);
+                    const additive = event.metaKey || event.ctrlKey;
+                    if (entity.trimmed || additive) this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex, additive);
+                    else this.callbacks.onSketchEntitySelect(entityId, false);
                     return;
                 }
             }
@@ -718,6 +720,14 @@ export class Viewport {
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
+            if (!this.sketchDrag.moved) {
+                if (Math.hypot(event.clientX - this.sketchDrag.startX, event.clientY - this.sketchDrag.startY) < INTERACTION.sketchDragThresholdPx) return;
+                this.sketchDrag.moved = true;
+                if (this.sketchDrag.center) this.callbacks.onSketchCenterMove(this.sketchDrag.startPoint, 'start');
+                else if (this.sketchDrag.sector) this.callbacks.onSketchSectorMove(this.sketchDrag.startPoint, 'start');
+                else if (this.sketchDrag.handle) this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, this.sketchDrag.startPoint, 'start');
+                else this.callbacks.onSketchPointMove(this.sketchDrag.index, this.sketchDrag.startPoint, 'start');
+            }
             const point = this.sketchDragPoint(event);
             if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'move') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'move') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'move') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'move');
             return;
@@ -863,6 +873,12 @@ export class Viewport {
         }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
+            if (!this.sketchDrag.moved) {
+                this.sketchDrag = null;
+                this.container.classList.remove('is-handle-dragging');
+                this.controls.enabled = true;
+                return;
+            }
             const point = this.sketchDragPoint(event);
             if (point) this.sketchDrag.center ? this.callbacks.onSketchCenterMove(point, 'end') : this.sketchDrag.sector ? this.callbacks.onSketchSectorMove(point, 'end') : this.sketchDrag.handle ? this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, point, 'end') : this.callbacks.onSketchPointMove(this.sketchDrag.index, point, 'end');
             this.clearSketchReferences();
@@ -1337,6 +1353,37 @@ export class Viewport {
         this.refreshSketchFaces();
     }
     setSelected(ids: string[]) { this.selected = ids; this.applySelection(); if (this.document) this.updateExtrudeGuide(this.document); }
+    setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) {
+        this.selectedEdgeRefs = edges.map((item) => ({ ...item }));
+        this.selectedPointRefs = points.map((item) => ({ ...item }));
+        this.refreshSketchSelectionFeedback();
+    }
+    private refreshSketchSelectionFeedback() {
+        this.clearGroup(this.sketchSelectionFeedback);
+        if (!this.sketchMode || !this.document) return;
+        this.selectedEdgeRefs.forEach(({ entityId, index }) => {
+            const entity = this.document!.entities.find((item) => item.id === entityId);
+            const segment = entity && borderSegments(entity).find((item) => item.index === index);
+            if (!segment) return;
+            const line = this.createFatLine(segment.points.map((point) => this.sketchWorld(point, 0.25)), segment.closed);
+            const material = line.material as LineMaterial;
+            material.color.set(SKETCH_COLORS.active);
+            material.opacity = 1;
+            line.renderOrder = 1005;
+            this.sketchSelectionFeedback.add(line);
+        });
+        this.selectedPointRefs.forEach(({ entityId, index }) => {
+            const entity = this.document!.entities.find((item) => item.id === entityId);
+            const point = entity?.points?.[index];
+            if (!point) return;
+            const outer = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerOuterSelectedRadius * 2, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.border, depthTest: false, depthWrite: false }));
+            const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerSelectedRadius * 2, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.active, depthTest: false, depthWrite: false }));
+            outer.position.copy(this.sketchWorld(point, 0.26));
+            inner.position.copy(this.sketchWorld(point, 0.28));
+            outer.renderOrder = inner.renderOrder = 1006;
+            this.sketchSelectionFeedback.add(outer, inner);
+        });
+    }
     clearGeometrySelection() {
         this.geometryAnchor = null;
         this.hoverFaceAnchor = null;
@@ -1355,7 +1402,7 @@ export class Viewport {
                 material.emissive.set(role);
                 material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;
             } else if (material.color) {
-                material.color.set(active ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.line);
+                material.color.set(active ? SKETCH_COLORS.active : SKETCH_COLORS.line);
             }
         });
         const id = this.selected[this.selected.length - 1];
@@ -1363,6 +1410,7 @@ export class Viewport {
         const planeObject = this.planes.children.find((item) => item.userData.planeId === id);
         if (planeObject && ['translate', 'rotate'].includes(this.tool) && !this.sketchMode) this.transform.attach(planeObject);
         else if (object && ['translate', 'rotate', 'scale'].includes(this.tool) && !this.sketchMode) this.transform.attach(object);
+        this.refreshSketchSelectionFeedback();
     }
     setTool(tool: ViewTool) {
         this.tool = tool;
@@ -1459,7 +1507,11 @@ export class Viewport {
     private updateSketchSegmentColors() {
         this.sketch.children.forEach((object) => {
             if (object.userData.segmentIndex === undefined) return;
-            ((object as THREE.Line).material as THREE.LineBasicMaterial).color.set(SKETCH_COLORS.edge);
+            const material = (object as THREE.Line).material as THREE.LineBasicMaterial;
+            const hovered = object.userData.segmentIndex === this.sketchHoverSegment;
+            material.color.set(hovered ? SKETCH_COLORS.hover : SKETCH_COLORS.edge);
+            material.transparent = hovered;
+            material.opacity = hovered ? 0.55 : 1;
         });
     }
     private borderTargets() {
@@ -2009,7 +2061,7 @@ export class Viewport {
         this.transform.dispose();
         this.viewHelper.dispose();
         this.planeGizmo.dispose();
-        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences, this.sketchFaces].forEach((group) => this.clearGroup(group));
+        [this.model, this.sketch, this.planes, this.measurements, this.guides, this.faceFeedback, this.trimFeedback, this.sketchReferences, this.sketchFaces, this.sketchSelectionFeedback].forEach((group) => this.clearGroup(group));
         this.renderer.dispose();
         this.renderer.domElement.remove();
         this.labelRenderer.domElement.remove();
