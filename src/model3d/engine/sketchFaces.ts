@@ -62,7 +62,30 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
     const source = entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === planeId).flatMap((entity) => borderSegments(entity).map((segment) => ({
         a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points, closed: segment.closed,
     })));
-    const edges = splitEdges(source);
+    const split = splitEdges(source);
+    const nodes = new Map<string, { point: Point2; count: number }>();
+    split.forEach((edge) => {
+        [edge.a, edge.b].forEach((point) => {
+            const node = key(point), current = nodes.get(node);
+            if (current) {
+                current.point[0] += point[0];
+                current.point[1] += point[1];
+                current.count++;
+            } else nodes.set(node, { point: [...point], count: 1 });
+        });
+    });
+    const canonical = (point: Point2): Point2 => {
+        const node = nodes.get(key(point))!;
+        return [node.point[0] / node.count, node.point[1] / node.count];
+    };
+    const edges = split.map((edge) => {
+        const points: Point2[] = [];
+        edge.points.forEach((point, index) => {
+            const next = index === 0 ? canonical(edge.a) : index === edge.points.length - 1 ? canonical(edge.b) : point;
+            if (!points.length || distance(points[points.length - 1], next) > 1e-8) points.push([...next]);
+        });
+        return { a: points[0], b: points[points.length - 1], points, closed: edge.closed };
+    }).filter((edge) => edge.points.length > 1);
     const directed: Directed[] = edges.flatMap((edge, index) => [
         { edge: index, from: key(edge.a), to: key(edge.b), points: edge.points },
         { edge: index, from: key(edge.b), to: key(edge.a), points: [...edge.points].reverse() },
@@ -93,7 +116,10 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
             current = siblings[(reverse - 1 + siblings.length) % siblings.length];
         }
         if (current !== start || walk.length < 2) return;
-        const points = walk.flatMap((index) => directed[index].points.slice(0, -1));
+        const points: Point2[] = [];
+        walk.forEach((index) => directed[index].points.slice(0, -1).forEach((point) => {
+            if (!points.length || distance(points[points.length - 1], point) > 1e-8) points.push([...point]);
+        }));
         const area = points.reduce((sum, point, index) => {
             const next = points[(index + 1) % points.length];
             return sum + point[0] * next[1] - next[0] * point[1];

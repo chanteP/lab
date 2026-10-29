@@ -31,6 +31,7 @@ import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
 import { INTERACTION } from './config/const';
 import { solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from './engine/sketchRestitch';
+import { computeSketchFaces } from './engine/sketchFaces';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
     type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit,
@@ -1742,6 +1743,28 @@ watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
     });
 }, { flush: 'post' });
 
+Object.defineProperty(window, 'projectData', {
+    configurable: true,
+    enumerable: true,
+    get: () => ({
+        ...document.value,
+        activePlaneId: activePlaneId.value,
+        editingSketchId: editingSketchId.value,
+        selectedIds: selectedIds.value,
+        sketchPoints: sketchPoints.value,
+        trimmedSelection: trimmedSelection.value,
+        faces: activePlaneId.value ? computeSketchFaces(document.value.entities, activePlaneId.value) : [],
+        borders: document.value.entities.filter((entity) => entity.kind === 'sketch').map((entity) => ({
+            id: entity.id,
+            type: entity.profileType,
+            open: entity.open,
+            trimmed: !!entity.trimmed,
+            controlPoints: entity.controlPoints,
+            segments: borderSegments(entity),
+        })),
+    }),
+});
+
 onMounted(async () => {
     viewport = new Viewport(viewportElement.value!, {
         onSelect: selectEntity,
@@ -1833,6 +1856,7 @@ onMounted(async () => {
     } catch (error) { message.error(`无法打开本地项目库：${(error as Error).message}`); }
 });
 onBeforeUnmount(() => {
+    delete (window as any).projectData;
     clearTimeout(saveTimer);
     cancelAnimationFrame(sketchRefreshFrame);
     flushSave();
