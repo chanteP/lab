@@ -1693,16 +1693,31 @@ function enforceEntityConstraints(entity: ModelEntity, softAnchors: SketchElemen
         const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
         const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
         const draggedEqualTarget = trimmedSelection.value?.entityId === entity.id && constraintRules(entity.edgeConstraints?.[trimmedSelection.value.index]).some((rule) => rule.type === 'equal' && rule.reference);
-        const secondLength = draggedEqualTarget ? Math.hypot(entity.points[3][0] - entity.points[2][0], entity.points[3][1] - entity.points[2][1]) : referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
-        if (directionLength > 0.000001 && firstLength > 0.000001 && secondLength > 0.000001) {
+        if (draggedEqualTarget) {
+            const index = trimmedSelection.value!.index;
+            const targetA = entity.points[index], targetB = entity.points[(index + 1) % 4];
+            const targetDx = targetB[0] - targetA[0], targetDy = targetB[1] - targetA[1];
+            const originalA = originalPoints[index], originalB = originalPoints[(index + 1) % 4], originalNext = originalPoints[(index + 2) % 4];
+            const originalDx = originalB[0] - originalA[0], originalDy = originalB[1] - originalA[1];
+            const sign = Math.sign(-originalDy * (originalNext[0] - originalB[0]) + originalDx * (originalNext[1] - originalB[1])) || 1;
+
+            // Preserve the target edge chosen by the candidate solver and rebuild only the other two square corners.
+            if (Math.hypot(targetDx, targetDy) > SKETCH_CONSTRAINT_TOLERANCE) {
+                const offset: Point2 = [-targetDy * sign, targetDx * sign];
+                entity.points[(index + 2) % 4] = [targetB[0] + offset[0], targetB[1] + offset[1]];
+                entity.points[(index + 3) % 4] = [targetA[0] + offset[0], targetA[1] + offset[1]];
+            }
+        } else if (directionLength > 0.000001 && firstLength > 0.000001) {
+            const secondLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
             const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
             const perpendicular: Point2 = [-dy / directionLength * sign, dx / directionLength * sign];
-            const baseA: Point2 = draggedEqualTarget ? [entity.points[3][0] - perpendicular[0] * secondLength, entity.points[3][1] - perpendicular[1] * secondLength] : a;
-            const nextB: Point2 = [baseA[0] + dx / directionLength * (draggedEqualTarget ? secondLength : firstLength), baseA[1] + dy / directionLength * (draggedEqualTarget ? secondLength : firstLength)];
-            entity.points[0] = baseA;
-            entity.points[1] = nextB;
-            entity.points[2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
-            if (!draggedEqualTarget) entity.points[3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
+            if (secondLength > 0.000001) {
+                const nextB: Point2 = [a[0] + dx / directionLength * firstLength, a[1] + dy / directionLength * firstLength];
+                entity.points[0] = a;
+                entity.points[1] = nextB;
+                entity.points[2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
+                entity.points[3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
+            }
         }
     }
     if ([...anchored].some((index) => originalPoints[index] && Math.hypot(entity.points![index][0] - originalPoints[index][0], entity.points![index][1] - originalPoints[index][1]) > SKETCH_CONSTRAINT_TOLERANCE)) return false;
