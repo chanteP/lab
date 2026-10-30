@@ -805,7 +805,7 @@ function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase)
 function startSketch(editProfile = false) {
     if (sketchMode.value) return;
     if (!canDraw.value && !editProfile) return;
-    const editing = editProfile && selected.value?.kind === 'extrude' ? document.value.entities.find((item) => item.id === selected.value!.profileId) : selected.value?.kind === 'sketch' ? selected.value : document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === activePlaneId.value).at(-1);
+    const editing = editProfile && selected.value?.kind === 'extrude' ? document.value.entities.find((item) => item.id === selected.value!.profileId) : selected.value?.kind === 'sketch' ? selected.value : null;
     if (!editing && selected.value && lastFace.value?.bodyId === selected.value.id && activeTool.value === 'offsetFace') {
         const normal = new THREE.Vector3(...lastFace.value.normal).normalize();
         const reference = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
@@ -2188,7 +2188,7 @@ onBeforeUnmount(() => {
                     </div>
                     <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBarLabel }}</span></div>
                 </div>
-                <div class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
+                <div v-if="!sketchMode" class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
         </div>
 

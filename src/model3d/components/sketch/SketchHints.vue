@@ -33,6 +33,8 @@ onBeforeUnmount(() => observer?.disconnect());
     <aside ref="panel" class="hints-panel" aria-label="草图操作提示" :style="{ top: `${top}px` }">
         <div class="tool-panel-title"><div><small>草图</small><strong>操作提示</strong></div></div>
         <ul>
+            <li>Space / 空格：拖动画布。</li>
+            <li>Alt / Option：删除边。</li>
             <li>普通点击选择形状，Ctrl/Command 多选。</li>
             <li v-if="selectionTool">点、边、形状不混选，后选类型优先。</li>
             <li v-if="profileType === 'polygon'">Line：超过 2 个点时，Shift + 点击连接首尾。</li>
@@ -52,6 +54,6 @@ onBeforeUnmount(() => observer?.disconnect());
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }
 .tool-panel-title strong { font-size: 12px; }
-ul { margin: 0; padding: 0; list-style: none; }
+ul { margin: 0; padding-left: 16px; list-style: disc; }
 li { margin: 7px 0 0; color: var(--model3d-ui-7e8b83); font-size: 10px; line-height: 1.6; }
 </style>
