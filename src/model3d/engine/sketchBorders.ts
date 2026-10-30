@@ -32,7 +32,7 @@ export function borderSegments(entity: ModelEntity): BorderSegment[] {
                 const c = segment.points[0], d = segment.points[1];
                 const incoming = new THREE.Vector2(b[0] - a[0], b[1] - a[1]).normalize();
                 const outgoing = new THREE.Vector2(d[0] - c[0], d[1] - c[1]).normalize();
-                if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(7))) {
+                if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(INTERACTION.sketchCurveContinuityDeg))) {
                     previous.points.push(...segment.points.slice(1));
                     previous.sourceCount += 1;
                     return groups;
@@ -47,7 +47,7 @@ export function borderSegments(entity: ModelEntity): BorderSegment[] {
             const c = first.points[0], d = first.points[1];
             const incoming = new THREE.Vector2(b[0] - a[0], b[1] - a[1]).normalize();
             const outgoing = new THREE.Vector2(d[0] - c[0], d[1] - c[1]).normalize();
-            if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(7))) {
+            if (incoming.dot(outgoing) > Math.cos(THREE.MathUtils.degToRad(INTERACTION.sketchCurveContinuityDeg))) {
                 const merged: BorderSegment = {
                     ...last,
                     points: [...last.points, ...first.points.slice(1)],
@@ -132,7 +132,7 @@ export function borderInterval(segment: BorderSegment, all: BorderSegment[], poi
     }
     const sorted = [...ts].sort((a, b) => a - b);
     const borderLength = segment.points.reduce((sum, point, index) => index ? sum + Math.hypot(point[0] - segment.points[index - 1][0], point[1] - segment.points[index - 1][1]) : 0, 0);
-    const mergeTolerance = INTERACTION.sketchIntersectionTolerance / Math.max(borderLength, INTERACTION.sketchIntersectionTolerance);
+    const mergeTolerance = 2 * INTERACTION.sketchIntersectionTolerance / Math.max(borderLength, INTERACTION.sketchIntersectionTolerance);
     const merged: number[] = [];
     sorted.forEach((value) => {
         const previous = merged[merged.length - 1];
