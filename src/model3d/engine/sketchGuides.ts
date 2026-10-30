@@ -14,6 +14,11 @@ export interface SketchGuideMatch {
     distance: number;
 }
 
+export interface SketchGuideResult {
+    point: Point2;
+    matches: SketchGuideMatch[];
+}
+
 export interface SketchGuideRequest {
     entities: ModelEntity[];
     point: Point2;
@@ -24,7 +29,7 @@ export interface SketchGuideRequest {
     threshold: number;
 }
 
-type Candidate = SketchGuideMatch;
+type Candidate = SketchGuideMatch & { axis?: 'horizontal' | 'vertical' };
 
 const subtract = (a: Point2, b: Point2): Point2 => [a[0] - b[0], a[1] - b[1]];
 const length = (point: Point2) => Math.hypot(point[0], point[1]);
@@ -83,8 +88,8 @@ function references(entities: ModelEntity[], excludeEntityId?: string | null, ex
     return { points, lines };
 }
 
-/** Return only the nearest screen-space match, or no guide when the pointer leaves the snap threshold. */
-export function matchSketchGuide(request: SketchGuideRequest): SketchGuideMatch | null {
+/** Snap to a guide intersection when both axes are near; otherwise keep the nearest single match. */
+export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult | null {
     const { point, edgeStart, threshold, excludeEntityId, excludePoint } = request;
     const refs = references(request.entities, excludeEntityId, excludePoint);
     const candidates: Candidate[] = [];
@@ -94,9 +99,9 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideMatch 
     ];
     pointReferences.forEach((reference) => {
         const vertical: Point2 = [reference.point[0], point[1]];
-        candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]) });
+        candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]), axis: 'vertical' });
         const horizontal: Point2 = [point[0], reference.point[1]];
-        candidates.push({ point: horizontal, a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: Math.abs(point[1] - reference.point[1]) });
+        candidates.push({ point: horizontal, a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: Math.abs(point[1] - reference.point[1]), axis: 'horizontal' });
     });
     if (edgeStart) refs.lines.forEach((reference) => {
         const direction = normalize(subtract(reference.b, reference.a));
@@ -111,6 +116,15 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideMatch 
             });
         });
     });
-    const match = candidates.filter((candidate) => candidate.distance <= threshold).sort((a, b) => a.distance - b.distance)[0];
-    return match ? { ...match, point: match.point.map((value) => Math.round(value * 10) / 10) as Point2 } : null;
+    const eligible = candidates.filter((candidate) => candidate.distance <= threshold).sort((a, b) => a.distance - b.distance);
+    const vertical = eligible.find((candidate) => candidate.axis === 'vertical');
+    const horizontal = eligible.find((candidate) => candidate.axis === 'horizontal');
+    const matches = vertical && horizontal ? [vertical, horizontal] : eligible.slice(0, 1);
+    if (!matches.length) return null;
+
+    const snappedPoint = vertical && horizontal ? [vertical.point[0], horizontal.point[1]] : matches[0].point;
+    return {
+        point: snappedPoint.map((value) => Math.round(value * 10) / 10) as Point2,
+        matches: matches.map(({ axis: _axis, ...match }) => match),
+    };
 }

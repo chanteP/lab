@@ -281,6 +281,7 @@ export class Viewport {
 
     setSketchSelection(index: number) { this.sketchRenderer.setSelection(index); }
     setSketchSelectionTool(active: boolean) { this.sketchRenderer.selectionTool = active; }
+    setSketchGuideSnapEnabled(active: boolean) { this.interaction.setSketchGuideSnapEnabled(active); }
     refreshSketchFaces() { this.sketchRenderer.refreshFaces(); }
 
     updateSketch(points: Point2[], selectedIndex = this.sketchRenderer.selectedSketchPoint, profileType: ProfileType = 'polygon', curves: ProfileCurves = {}, sides = 3, selectedSegment = -1, lockedPoints: number[] = [], sectorAngle = 360, unit: LengthUnit = 'mm', open = false, startAngle?: number, controlPoints?: number[], trimmedCurve = false) {

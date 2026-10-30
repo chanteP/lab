@@ -65,6 +65,7 @@ export class InteractionController {
     private spacePressed = false;
     private spaceDragMoved = false;
     private spaceHover: { id: string; normal: Vec3; point: Vec3 } | null = null;
+    private sketchGuideSnapEnabled = true;
 
     private get renderer() { return this.engine.renderer; }
     private get camera() { return this.cameraController.camera; }
@@ -281,6 +282,8 @@ export class InteractionController {
     private clearSketchReferences() { this.sketchRenderer.clearReferences(); }
     private sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
 
+    setSketchGuideSnapEnabled(active: boolean) { this.sketchGuideSnapEnabled = active; }
+
     private sketchOperationPoint(event: PointerEvent, options: SketchGuideOptions = {}) {
         const point = this.sketchPoint(event);
         if (!point || options.disabled || !this.document || !this.activePlane) {
@@ -304,7 +307,7 @@ export class InteractionController {
         });
         if (match) this.sketchRenderer.renderReference(match);
         else this.clearSketchReferences();
-        return match?.point || point;
+        return match && this.sketchGuideSnapEnabled ? match.point : point;
     }
 
     private sketchDragPoint(event: PointerEvent) {
@@ -584,8 +587,7 @@ export class InteractionController {
             return;
         }
         if (this.sketchMode && !event.buttons) {
-            if (this.sketchSelectionTool) this.clearSketchReferences();
-            else this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
+            this.clearSketchReferences();
             this.updateSketchFaceHover(event);
             this.setSketchHover(null);
             this.updateSketchCursor(event);

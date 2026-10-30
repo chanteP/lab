@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { NIcon } from 'naive-ui';
+import { NIcon, NSwitch } from 'naive-ui';
 import { LockClosedOutline, LockOpenOutline } from '@vicons/ionicons5';
 import { computed } from 'vue';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
 import type { SketchEdgeConstraint } from '../../types';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number }>();
-const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: []; 'update:constraintLimit': [value: number] }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number; guideSnapEnabled: boolean }>();
+const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: []; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean] }>();
 const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度' })[props.constraintRule?.type || 'auto']);
 </script>
 
@@ -24,6 +24,7 @@ const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平
         <div v-if="constraintRule" class="constraint-rule"><span>当前规则：{{ ruleLabel }}</span><button @click="emit('cancelRule')">取消此规则</button></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
         <div class="constraint-limit"><label for="constraint-limit-range">关联检查 <output>{{ constraintLimit }}</output></label><input id="constraint-limit-range" type="range" min="10" max="100" step="1" :value="constraintLimit" aria-label="关联检查元素上限" @input="emit('update:constraintLimit', Number(($event.target as HTMLInputElement).value))" /></div>
+        <div class="constraint-snap"><span>磁吸</span><NSwitch size="small" :value="guideSnapEnabled" aria-label="参考线磁吸" @update:value="emit('update:guideSnapEnabled', $event)" /></div>
     </aside>
 </template>
 
@@ -47,4 +48,5 @@ button:disabled { opacity: .3; cursor: default; }
 .constraint-limit { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }
 .constraint-limit label { display: flex; justify-content: space-between; color: var(--model3d-ui-8a968f); font-size: 9px; }
 .constraint-limit input { width: 100%; margin-top: 6px; accent-color: var(--model3d-ui-147d70); }
+.constraint-snap { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--model3d-ui-8a968f); font-size: 9px; }
 </style>

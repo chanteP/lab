@@ -128,6 +128,7 @@ const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
 const sketchSelectionTool = ref(false);
 const constraintLimit = ref(readConstraintLimit());
+const sketchGuideSnapEnabled = ref(true);
 
 function readConstraintLimit() {
     const value = Number(localStorage.getItem(STORAGE_KEYS.constraintLimit));
@@ -1519,6 +1520,12 @@ function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
     if (sketchSelectionTool.value) return;
     if (editingSketchId.value) return;
     if (phase === 'start') return;
+    if (phase === 'end' && sketchType.value === 'line') {
+        // Finish a dragged Line through the same second-point path as click-click creation.
+        sketchPoints.value = [start];
+        addSketchPoint(point);
+        return;
+    }
     if (sketchType.value === 'rectangle') sketchPoints.value = [start, [point[0], start[1]], point, [start[0], point[1]]];
     else if (sketchType.value === 'ellipse') sketchPoints.value = [start, [point[0], start[1]], [start[0], point[1]]];
     else sketchPoints.value = [start, point];
@@ -2376,6 +2383,7 @@ watch([selectedIds, selectedShapes, sketchMode], ([ids, shapes, active]) => view
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(() => project.value.name, scheduleSave);
 watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
+watch(sketchGuideSnapEnabled, (value) => viewport?.setSketchGuideSnapEnabled(value));
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
@@ -2591,7 +2599,7 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" />
+                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>

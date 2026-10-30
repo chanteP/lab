@@ -3,7 +3,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { profileArcCenter, profileClosed, profileEllipsePoint, profilePoints, type ProfileType, type ProfileCurves } from '../profiles';
 import { borderInterval, borderSegments, sliceBorder } from '../sketchBorders';
 import { computeSketchFaces, type SketchFace } from '../sketchFaces';
-import type { SketchGuideMatch } from '../sketchGuides';
+import type { SketchGuideResult } from '../sketchGuides';
 import { SKETCH_COLORS } from '../../config/colors';
 import { SKETCH_STYLE } from '../../config/const';
 import type { LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, SketchEdgeConstraint, SketchPlane } from '../../types';
@@ -95,33 +95,35 @@ export class SketchRenderer {
         clearGroup(this.references);
     }
 
-    renderReference(match: SketchGuideMatch) {
+    renderReference(result: SketchGuideResult) {
         this.clearReferences();
         const span = Math.max(10, this.unitsPerPixel() * this.options.renderer.domElement.clientHeight * 1.5);
-        const direction = new THREE.Vector2(match.b[0] - match.a[0], match.b[1] - match.a[1]).normalize();
-        const a = this.world([match.a[0] - direction.x * span, match.a[1] - direction.y * span], 0.2);
-        const b = this.world([match.a[0] + direction.x * span, match.a[1] + direction.y * span], 0.2);
-        const color = match.reference.kind === 'origin' ? SKETCH_COLORS.guide : SKETCH_COLORS.reference;
-        const guide = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([a, b]),
-            new THREE.LineDashedMaterial({ color, dashSize: this.unitsPerPixel() * 7, gapSize: this.unitsPerPixel() * 4, depthTest: false, depthWrite: false }),
-        );
-        guide.computeLineDistances();
-        guide.renderOrder = 1000;
-        this.references.add(guide);
+        result.matches.forEach((match) => {
+            const direction = new THREE.Vector2(match.b[0] - match.a[0], match.b[1] - match.a[1]).normalize();
+            const a = this.world([match.a[0] - direction.x * span, match.a[1] - direction.y * span], 0.2);
+            const b = this.world([match.a[0] + direction.x * span, match.a[1] + direction.y * span], 0.2);
+            const color = match.reference.kind === 'origin' ? SKETCH_COLORS.guide : SKETCH_COLORS.reference;
+            const guide = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([a, b]),
+                new THREE.LineDashedMaterial({ color, dashSize: this.unitsPerPixel() * 7, gapSize: this.unitsPerPixel() * 4, depthTest: false, depthWrite: false }),
+            );
+            guide.computeLineDistances();
+            guide.renderOrder = 1000;
+            this.references.add(guide);
 
-        if (match.reference.kind === 'line') {
-            const border = this.createFatLine([this.world(match.reference.a, 0.22), this.world(match.reference.b, 0.22)]);
-            (border.material as LineMaterial).color.set(SKETCH_COLORS.reference);
-            border.renderOrder = 1002;
-            this.references.add(border);
-        } else if (match.reference.kind === 'point') {
-            const marker = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.referencePointRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
-            marker.position.copy(this.world(match.reference.point, 0.24));
-            this.setScreenRadius(marker, SKETCH_STYLE.referencePointPx);
-            marker.renderOrder = 1004;
-            this.references.add(marker);
-        }
+            if (match.reference.kind === 'line') {
+                const border = this.createFatLine([this.world(match.reference.a, 0.22), this.world(match.reference.b, 0.22)]);
+                (border.material as LineMaterial).color.set(SKETCH_COLORS.reference);
+                border.renderOrder = 1002;
+                this.references.add(border);
+            } else if (match.reference.kind === 'point') {
+                const marker = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.referencePointRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
+                marker.position.copy(this.world(match.reference.point, 0.24));
+                this.setScreenRadius(marker, SKETCH_STYLE.referencePointPx);
+                marker.renderOrder = 1004;
+                this.references.add(marker);
+            }
+        });
     }
 
     setSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) {
