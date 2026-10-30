@@ -1606,8 +1606,8 @@ function enforceSketchConstraints(rootId = editingSketchId.value) {
     const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
     const visited = new Set<string>();
     while (queue.length) {
-        if (visited.size >= 10) {
-            message.warning('约束关联超过 10 个元素，已暂停本次传播检查');
+        if (visited.size >= 20) {
+            message.warning('约束关联超过 20 个元素，已暂停本次传播检查');
             break;
         }
         const entityId = queue.shift()!;
