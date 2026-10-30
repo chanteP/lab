@@ -2,7 +2,7 @@ import type { ComputedRef, Ref } from 'vue';
 import { useMessage } from 'naive-ui';
 import type { EditPhase, Viewport } from '../../engine/Viewport';
 import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../engine/profiles';
-import { borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
+import { borderEditingPoints, borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
 import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
@@ -108,7 +108,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         const cubic = segment.curve?.kind === 'cubic' ? segment.curve : null;
         trimmedSelection.value = { entityId, index, sourceCount: segment.sourceCount, kind: cubic || straight ? 'line' : 'curve' };
         editingSketchId.value = entityId;
-        sketchPoints.value = straight ? [[...a], [...b]] : segment.points.map((point) => [...point]);
+        sketchPoints.value = cubic ? borderEditingPoints(segment) : straight ? [[...a], [...b]] : segment.points.map((point) => [...point]);
         sketchType.value = straight ? 'line' : 'polygon';
         sketchCurves.value = cubic ? { 0: { c1: [...cubic.c1], c2: [...cubic.c2] } } : {};
         sketchLockedPoints.value = [];

@@ -13,6 +13,12 @@ export interface BorderSegment {
     curve?: SketchCurve;
 }
 
+export function borderEditingPoints(segment: BorderSegment): Point2[] {
+    // Cubic handles address semantic endpoints, never the first two render samples.
+    if (segment.curve?.kind === 'cubic') return [[...segment.curve.a], [...segment.curve.b]];
+    return segment.points.map((point) => [...point]);
+}
+
 function analyticProfileCurve(entity: ModelEntity): SketchCurve | null {
     const type = entity.profileType || 'polygon';
     const source = entity.points || [];

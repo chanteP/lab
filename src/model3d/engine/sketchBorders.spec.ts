@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { borderInterval, borderSegments, sliceBorder, sliceBorderCurve } from './sketchBorders';
+import { borderEditingPoints as borderEditingPointsForTest, borderInterval, borderSegments, sliceBorder, sliceBorderCurve } from './sketchBorders';
 import { curvePoint } from './sketchCurves';
 import { restitchSketchEdges } from './sketchRestitch';
 import type { ModelEntity, Point2, SketchCurve } from '../types';
@@ -77,4 +77,16 @@ test('restitch splits a rectangle edge at analytic arc intersections before clos
     assert.equal(closed.length, 1);
     assert.equal(closed[0].analyticCurves[0].kind, 'ellipse');
     assert(closed[0].points.length < 10, 'closed path stores semantic vertices rather than arc samples');
+});
+
+test('cubic editing drafts use semantic endpoints instead of render samples', () => {
+    const a: Point2 = [-46.4, 8.2], b: Point2 = [-1.5, 13.3];
+    const curve: SketchCurve = { kind: 'cubic', a, b, c1: [-28.2, -1.9], c2: [-16.5, 11.6] };
+    const entity = sketch('polygon', [a, b]);
+    entity.open = true;
+    entity.analyticCurves = { 0: curve };
+    const segment = borderSegments(entity)[0];
+    assert.equal(segment.points.length, 65);
+    // Using samples[1] as the endpoint collapses the curve during handle writeback.
+    assert.deepEqual(borderEditingPointsForTest(segment), [a, b]);
 });
