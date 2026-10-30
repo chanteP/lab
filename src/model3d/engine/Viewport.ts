@@ -1488,7 +1488,13 @@ export class Viewport {
             if (linked) button.classList.add('linked');
             button.dataset.ruleId = rule.id;
         }
-        if (edge) button.style.transform = `translate(${56 + order * 16}px, -50%)`;
+        if (edge) {
+            button.style.marginLeft = `${56 + order * 16}px`;
+            button.style.marginTop = '-6px';
+        } else {
+            button.style.marginLeft = '4px';
+            button.style.marginTop = '-14px';
+        }
         button.setAttribute('aria-label', '固定或约束');
         button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v6H3V7h1zm2 0h4V5a2 2 0 0 0-4 0v2z"/></svg>';
         button.addEventListener('pointerdown', (event) => event.stopImmediatePropagation());

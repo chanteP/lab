@@ -1028,7 +1028,7 @@ function selectTrimmedBorder(entityId: string, index: number, additive = false) 
     const straight = segment.points.every((point) => Math.abs(dx * (point[1] - a[1]) - dy * (point[0] - a[0])) < 0.0001);
     trimmedSelection.value = { entityId, index, sourceCount: segment.sourceCount, kind: straight ? 'line' : 'curve' };
     editingSketchId.value = entityId;
-    sketchPoints.value = segment.points.map((point) => [...point]);
+    sketchPoints.value = straight ? [[...a], [...b]] : segment.points.map((point) => [...point]);
     sketchType.value = straight ? 'line' : 'polygon';
     sketchCurves.value = {};
     sketchLockedPoints.value = [];
@@ -1559,6 +1559,7 @@ function syncTrimmedEntity(points: Point2[]) {
     viewport?.refreshSketchFaces();
 }
 function enforceEntityConstraints(entity: ModelEntity) {
+        const originalPoints = entity.points!.map((point) => [...point] as Point2);
         if (!entity.points || !entity.edgeConstraints) return;
         Object.entries(entity.edgeConstraints).forEach(([key, constraints]) => constraintRules(constraints).forEach((rule) => {
             if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') return;
@@ -1574,7 +1575,7 @@ function enforceEntityConstraints(entity: ModelEntity) {
             const moving = adjustA ? a : b;
             if (type === 'horizontal') moving[1] = anchor[1];
             else if (type === 'vertical') moving[0] = anchor[0];
-            else if (type === 'equal' && referenceA && referenceB) {
+            else if (type === 'equal' && referenceA && referenceB && (trimmedSelection.value?.entityId !== entity.id || trimmedSelection.value?.index !== index)) {
                 const length = Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]);
                 const angle = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
                 moving[0] = anchor[0] + Math.cos(angle) * length;
@@ -1597,16 +1598,28 @@ function enforceEntityConstraints(entity: ModelEntity) {
             const referenceIndex = equalRule?.reference?.index;
             const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
             const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
-            const secondLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
+            const draggedEqualTarget = trimmedSelection.value?.entityId === entity.id && constraintRules(entity.edgeConstraints?.[trimmedSelection.value.index]).some((rule) => rule.type === 'equal' && rule.reference);
+            const secondLength = draggedEqualTarget ? Math.hypot(entity.points[3][0] - entity.points[2][0], entity.points[3][1] - entity.points[2][1]) : referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
             if (directionLength > 0.000001 && firstLength > 0.000001 && secondLength > 0.000001) {
                 const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
                 const perpendicular: Point2 = [-dy / directionLength * sign, dx / directionLength * sign];
-                const nextB: Point2 = [a[0] + dx / directionLength * firstLength, a[1] + dy / directionLength * firstLength];
+                const baseA: Point2 = draggedEqualTarget
+                    ? [entity.points![3][0] - perpendicular[0] * secondLength, entity.points![3][1] - perpendicular[1] * secondLength]
+                    : a;
+                const nextB: Point2 = [baseA[0] + dx / directionLength * (draggedEqualTarget ? secondLength : firstLength), baseA[1] + dy / directionLength * (draggedEqualTarget ? secondLength : firstLength)];
+                entity.points![0] = baseA;
                 entity.points![1] = nextB;
                 entity.points![2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
-                entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
+                if (!draggedEqualTarget) entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
             }
         }
+        Object.entries(entity.curves || {}).forEach(([key, curve]) => {
+            const index = Number(key);
+            if (entity.shapeConstraint !== 'orthogonal' && !straightConstraintSegment(originalPoints, entity.curves || {}, index)) return;
+            const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
+            curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+            curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
+        });
 }
 function enforceSketchConstraints(rootId = editingSketchId.value) {
     const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
