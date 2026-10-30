@@ -1552,8 +1552,7 @@ function syncTrimmedEntity(points: Point2[]) {
     }
     viewport?.refreshSketchFaces();
 }
-function enforceSketchConstraints() {
-    document.value.entities.forEach((entity) => {
+function enforceEntityConstraints(entity: ModelEntity) {
         if (!entity.points || !entity.edgeConstraints) return;
         Object.entries(entity.edgeConstraints).forEach(([key, constraints]) => constraintRules(constraints).forEach((rule) => {
             if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') return;
@@ -1602,7 +1601,31 @@ function enforceSketchConstraints() {
                 entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
             }
         }
-    });
+}
+function enforceSketchConstraints(rootId = editingSketchId.value) {
+    const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
+    const visited = new Set<string>();
+    while (queue.length) {
+        if (visited.size >= 10) {
+            message.warning('约束关联超过 10 个元素，已暂停本次传播检查');
+            break;
+        }
+        const entityId = queue.shift()!;
+        if (visited.has(entityId)) continue;
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity) continue;
+        visited.add(entityId);
+        enforceEntityConstraints(entity);
+
+        const related = new Set<string>();
+        Object.values(entity.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
+            if (rule.reference) related.add(rule.reference.entityId);
+        }));
+        document.value.entities.forEach((candidate) => Object.values(candidate.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
+            if (rule.reference?.entityId === entityId) related.add(candidate.id);
+        })));
+        related.forEach((id) => { if (!visited.has(id)) queue.push(id); });
+    }
 }
 function syncEditingSketch() {
     if (trimmedSelection.value) {
