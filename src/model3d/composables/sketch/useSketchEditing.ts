@@ -5,7 +5,7 @@ import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../en
 import { borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
-import { curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
+import { collinearCubicCurve, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity } from '../../utils/entity';
 import { cloneDocument, createEntity, ENTITY_NAMES, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
@@ -116,6 +116,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         selectedSketchPoint.value = -1;
         selectedSketchSegment.value = -1;
         selectedSketchSegments.value = [];
+        if (straight) ensureSketchSegment(0);
         selectedIds.value = [entityId];
         sketchContextMenu.value = null;
         viewport()?.setSketchEditing(entityId);
@@ -535,7 +536,8 @@ export function useSketchEditing(options: SketchEditingOptions) {
         selectedSketchSegment.value = index;
         if (!sketchCurves.value[index]) {
             const a = sketchPoints.value[index], b = sketchPoints.value[(index + 1) % sketchPoints.value.length];
-            sketchCurves.value[index] = { c1: [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3] };
+            const curve = collinearCubicCurve(a, b);
+            sketchCurves.value[index] = { c1: curve.c1, c2: curve.c2 };
         }
     }
     function selectSketchSegment(index: number, additive = false) {
@@ -657,7 +659,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             }
             points.forEach((point, index) => entity.points![start + index] = [...point]);
         } else {
-            const oldPoints = entity.points, oldCurves = entity.curves || {};
+            const oldPoints = entity.points, oldCurves = entity.curves || {}, oldAnalyticCurves = entity.analyticCurves || {};
             const delta = 1 - selection.sourceCount;
             entity.points = [...oldPoints.slice(0, start), [...points[0]], [...points[1]], ...oldPoints.slice(end + 1)];
             const curves: ProfileCurves = {};
@@ -666,9 +668,17 @@ export function useSketchEditing(options: SketchEditingOptions) {
                 if (index < start) curves[index] = curve;
                 else if (index >= end) curves[index + delta] = curve;
             });
-            const a = points[0], b = points[1];
-            curves[start] = { c1: [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3], c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3] };
+            const a = points[0], b = points[1], straightCurve = collinearCubicCurve(a, b);
+            curves[start] = { c1: straightCurve.c1, c2: straightCurve.c2 };
             entity.curves = curves;
+            const analyticCurves: Record<number, typeof oldAnalyticCurves[number]> = {};
+            Object.entries(oldAnalyticCurves).forEach(([key, curve]) => {
+                const index = Number(key);
+                if (index < start) analyticCurves[index] = curve;
+                else if (index >= end) analyticCurves[index + delta] = curve;
+            });
+            // borderSegments prefers analyticCurves; leaving the old curve here breaks straight dragging.
+            entity.analyticCurves = { ...analyticCurves, [start]: straightCurve };
             if (entity.controlPoints) {
                 entity.controlPoints = entity.controlPoints.flatMap((index) => index < start ? [index] : index >= end ? [index + delta] : []);
                 entity.controlPoints.push(start + 1);

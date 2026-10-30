@@ -200,3 +200,12 @@ export function translateCurve(curve: SketchCurve, delta: Point2): SketchCurve {
     if (curve.kind === 'cubic') return { ...curve, a: move(curve.a), c1: move(curve.c1), c2: move(curve.c2), b: move(curve.b) };
     return { ...curve, center: move(curve.center) };
 }
+
+/** A straight border keeps editable Bezier handles at exact one-third positions. */
+export function collinearCubicCurve(a: Point2, b: Point2): Extract<SketchCurve, { kind: 'cubic' }> {
+    return {
+        kind: 'cubic', a: [...a], b: [...b],
+        c1: [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3],
+        c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3],
+    };
+}

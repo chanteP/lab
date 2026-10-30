@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
+import { collinearCubicCurve as collinearCubicCurveForTest, curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
 import type { SketchCurve } from '../types';
 
 const circle: SketchCurve = { kind: 'ellipse', center: [0, 0], radiusX: 10, radiusY: 10, rotation: 0, orientation: 1, startAngle: 0, endAngle: Math.PI * 2 };
@@ -35,4 +35,14 @@ test('ellipse slicing, reversal, nearest point and translation preserve analytic
 
     const moved = translateCurve(arc, [3, -2]);
     assertSamePoint(curvePoint(moved, 0), [curvePoint(arc, 0)[0] + 3, curvePoint(arc, 0)[1] - 2], 1e-8);
+});
+
+test('straight endpoint dragging preserves collinear Bezier handles', () => {
+    // Straight borders keep editable handles, but both handles must stay on the dragged line.
+    const curve = collinearCubicCurveForTest([0, 0], [30, 10]);
+    assert.deepEqual(curve.c1, [10, 10 / 3]);
+    assert.deepEqual(curve.c2, [20, 20 / 3]);
+    curvePoints(curve).forEach((point) => {
+        assert(Math.abs(30 * (point[1] - 0) - 10 * (point[0] - 0)) < 1e-8);
+    });
 });
