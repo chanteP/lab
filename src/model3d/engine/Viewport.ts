@@ -118,6 +118,8 @@ export class Viewport {
     private sketchSelectionGuardPointerUp = false;
     private spaceSketchPointerBlocked = false;
     private sketchHoverSegment = -1;
+    private hoverBorder: { entityId: string; index: number } | null = null;
+    private lastPointer: { clientX: number; clientY: number } | null = null;
     private altDeletePoint = -1;
     private altBorderDelete: { entityId: string; index: number; start: number; end: number } | null = null;
     private projectionMode: 'perspective' | 'orthographic' = 'perspective';
@@ -256,16 +258,27 @@ export class Viewport {
         this.onContextMenu = this.onContextMenu.bind(this);
         this.onKeyDown = this.onKeyDown.bind(this);
         this.onKeyUp = this.onKeyUp.bind(this);
+        this.onAltKey = this.onAltKey.bind(this);
         const canvas = this.renderer.domElement;
         canvas.addEventListener('pointerdown', this.onPointerDown, true);
         canvas.addEventListener('pointermove', this.onPointerMove, true);
         canvas.addEventListener('pointerup', this.onPointerUp, true);
         canvas.addEventListener('pointercancel', this.onPointerUp, true);
-        canvas.addEventListener('pointerleave', () => { this.clearHoverFace(); this.hoverFaceAnchor = null; this.refreshFaceFeedback(); });
+        canvas.addEventListener('pointerleave', () => {
+            this.clearHoverFace();
+            this.hoverFaceAnchor = null;
+            this.hoverBorder = null;
+            this.lastPointer = null;
+            this.clearAltBorder();
+            this.container.classList.remove('is-delete-point', 'is-border-hover', 'is-handle-hover');
+            this.refreshFaceFeedback();
+        });
         canvas.addEventListener('dblclick', this.onDoubleClick);
         canvas.addEventListener('contextmenu', this.onContextMenu);
         window.addEventListener('keydown', this.onKeyDown);
         window.addEventListener('keyup', this.onKeyUp);
+        window.addEventListener('keydown', this.onAltKey);
+        window.addEventListener('keyup', this.onAltKey);
         window.addEventListener('blur', this.onKeyUp);
         this.disposers.push(() => {
             canvas.removeEventListener('pointerdown', this.onPointerDown, true);
@@ -276,6 +289,8 @@ export class Viewport {
             canvas.removeEventListener('contextmenu', this.onContextMenu);
             window.removeEventListener('keydown', this.onKeyDown);
             window.removeEventListener('keyup', this.onKeyUp);
+            window.removeEventListener('keydown', this.onAltKey);
+            window.removeEventListener('keyup', this.onAltKey);
             window.removeEventListener('blur', this.onKeyUp);
         });
         this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -313,6 +328,11 @@ export class Viewport {
         this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
         this.container.classList.remove('is-panning');
         this.callbacks.onSpaceChange(false);
+    }
+    private onAltKey(event: KeyboardEvent) {
+        if (!['AltLeft', 'AltRight'].includes(event.code) || !this.sketchMode || !this.lastPointer) return;
+        event.preventDefault();
+        this.updateSketchCursor({ ...this.lastPointer, altKey: event.altKey } as PointerEvent);
     }
     private updateOrbitRotation() {
         this.controls.enableRotate = ['select', 'offsetFace', 'fillet', 'chamfer', 'extrude'].includes(this.tool) && !this.sketchMode && !this.measureMode;
@@ -695,6 +715,7 @@ export class Viewport {
         this.camera.lookAt(this.controls.target);
     }
     private onPointerMove(event: PointerEvent) {
+        this.lastPointer = { clientX: event.clientX, clientY: event.clientY };
         if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
         if (this.sketchMode && this.spacePressed) return;
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
@@ -1565,8 +1586,16 @@ export class Viewport {
     private clearAltBorder() {
         this.altBorderDelete = null;
         this.clearGroup(this.trimFeedback);
-        const targets = this.borderTargets();
-        targets.forEach((object) => (((object as THREE.Line).material as THREE.Material & { color: THREE.Color }).color.set(SKETCH_COLORS.edge)));
+        this.applyBorderHoverColors();
+    }
+    private applyBorderHoverColors() {
+        this.borderTargets().forEach((object) => {
+            const hovered = this.hoverBorder?.entityId === object.userData.borderEntityId && this.hoverBorder.index === object.userData.borderSegmentIndex;
+            const material = (object as THREE.Line).material as THREE.Material & { color: THREE.Color; opacity: number; transparent: boolean };
+            material.color.set(hovered ? SKETCH_COLORS.hover : SKETCH_COLORS.edge);
+            material.transparent = hovered;
+            material.opacity = hovered ? 0.55 : 1;
+        });
     }
     private updateAltBorder(event: PointerEvent) {
         this.clearAltBorder();
@@ -1583,7 +1612,12 @@ export class Viewport {
         const all = this.document.entities.filter((item) => item.kind === 'sketch' && item.planeId === this.activePlane!.id).flatMap((item) => borderSegments(item));
         const interval = borderInterval(segment, all, point);
         this.altBorderDelete = { entityId, index, ...interval };
-        if (interval.start <= 0 && interval.end >= 1) ((hit.object as THREE.Line).material as THREE.Material & { color: THREE.Color }).color.set(SKETCH_COLORS.deletePoint);
+        if (interval.start <= 0 && interval.end >= 1) {
+            const material = (hit.object as THREE.Line).material as THREE.Material & { color: THREE.Color; opacity: number; transparent: boolean };
+            material.color.set(SKETCH_COLORS.deletePoint);
+            material.transparent = false;
+            material.opacity = 1;
+        }
         else {
             const border = this.createFatLine(sliceBorder(segment, interval.start, interval.end).map((value) => this.sketchWorld(value)));
             ((border.material as LineMaterial).color).set(SKETCH_COLORS.deletePoint);
@@ -1673,9 +1707,12 @@ export class Viewport {
         else this.clearAltBorder();
         this.container.classList.toggle('is-delete-point', this.altDeletePoint >= 0 || !!this.altBorderDelete);
         this.container.classList.toggle('is-handle-hover', !!marker && this.altDeletePoint < 0);
+        const border = this.raycaster.intersectObjects(this.borderTargets(), false)[0];
+        this.hoverBorder = border ? { entityId: border.object.userData.borderEntityId, index: border.object.userData.borderSegmentIndex } : null;
+        if (!event.altKey) this.applyBorderHoverColors();
         const segment = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
         this.sketchHoverSegment = segment ? segment.object.userData.segmentIndex : -1;
-        this.container.classList.toggle('is-border-hover', !!segment && !marker);
+        this.container.classList.toggle('is-border-hover', !!border && !marker);
         this.updateMarkerColors();
         this.updateSketchSegmentColors();
     }

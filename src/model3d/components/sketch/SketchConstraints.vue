@@ -22,7 +22,8 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: [] }>
 </template>
 
 <style lang="scss" scoped>
-.constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 174px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; }
+.constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 174px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; border-radius: 8px; transition: background .16s ease; }
+.constraints-panel:hover { background: var(--model3d-ui-0000000a); }
 .tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }

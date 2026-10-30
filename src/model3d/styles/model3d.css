@@ -62,10 +62,6 @@ button { color: inherit; }
 .vertical-toolbar .tool-group { display: flex; flex-direction: column; flex: 0 0 auto; gap: 2px; padding: 4px 0; border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .vertical-toolbar .tool-group:first-child { padding-top: 0; }
 .vertical-toolbar .tool-group:last-child { padding-bottom: 0; border-bottom: 0; }
-.vertical-toolbar button { width: 34px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--model3d-ui-63716a); font-size: 17px; cursor: pointer; }
-.vertical-toolbar button:hover { background: var(--model3d-ui-edf2ef); color: var(--model3d-ui-30483f); }
-.vertical-toolbar button.active { background: var(--model3d-ui-dfeee9); color: var(--accent); }
-.vertical-toolbar button:disabled { opacity: .25; cursor: default; }
 .toolbar-spacer { flex: 1; min-height: 2px; }
 .view-options { position: absolute; z-index: 5; top: 13px; right: 14px; padding: 8px 10px; background: var(--model3d-ui-surface90); border: 1px solid var(--model3d-ui-d8e0db); border-radius: 7px; box-shadow: 0 2px 8px var(--model3d-ui-30433b0c); }
 .viewport-caption { position: absolute; top: 64px; left: 67px; display: flex; align-items: center; gap: 5px; color: var(--model3d-ui-74827a); font-size: 9px; pointer-events: none; }
@@ -183,17 +179,9 @@ button { color: inherit; }
 /* Default tools slide left; the labelled sketch toolbar enters from the same edge. */
 .vertical-toolbar, .sketch-toolbar { transition: transform .24s cubic-bezier(.2,.8,.2,1), opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
-.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: 43px; left: 12px; width: 172px; padding: 10px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
+.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 172px; padding: 10px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
 .sketch-toolbar.toolbar-enter { transform: translateX(0); opacity: 1; pointer-events: auto; }
 .sketch-toolbar button { font: inherit; }
-.sketch-close { width: 100%; display: flex; align-items: center; gap: 10px; padding: 5px 3px 12px; border: 0; border-bottom: 1px solid var(--model3d-ui-e2e8e4); background: transparent; color: var(--model3d-ui-56665d); cursor: pointer; text-align: left; }
-.sketch-close strong { font-size: 12px; font-weight: 550; }
-.sketch-tool-list { display: flex; flex-direction: column; gap: 5px; padding-top: 10px; }
-.sketch-tool-list > button, .sketch-polygon-tool > button { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 3px 5px; border: 0; border-radius: 6px; background: transparent; color: var(--model3d-ui-4d5e54); font-size: 11px; text-align: left; cursor: pointer; }
-.sketch-tool-list button.active, .sketch-polygon-tool.active > button { color: var(--model3d-ui-147d70); background: var(--model3d-ui-e6f2ed); }
-.sketch-tool-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 30px; color: var(--model3d-ui-4d675b); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-dfe6e1); border-radius: 50%; font-size: 16px; }
-.sketch-polygon-tool { border-radius: 6px; }
-.sketch-polygon-tool .n-select { width: calc(100% - 45px); margin: 0 5px 6px 45px; }
 .drawing-active .measure-actions, .drawing-active .gizmo-label { display: none; }
 .drawing-active .viewport-utilities { right: 18px; }
 .drawing-active .viewport-status { background: var(--model3d-ui-drawing90); }
@@ -283,9 +271,6 @@ button { color: inherit; }
 .menu-command:hover > .n-icon, .menu-command:hover > .svg-icon, .menu-command.active > .n-icon, .menu-command.active > .svg-icon, .menu-command.active strong { color: var(--model3d-ui-147d70); }
 .command-results > button:hover { background: transparent; }
 .command-results > button:hover strong { color: var(--model3d-ui-147d70); }
-.sketch-tool-list > button, .sketch-polygon-tool > button, .sketch-tool-list button.active, .sketch-polygon-tool.active > button { background: transparent; }
-.sketch-tool-list button.active, .sketch-polygon-tool.active > button { color: var(--model3d-ui-147d70); }
-.sketch-tool-list button.active .sketch-tool-icon, .sketch-polygon-tool.active .sketch-tool-icon { color: var(--model3d-ui-147d70); border-color: var(--model3d-ui-8fc4b7); }
 .tool-panel .inline-command-row > button, .tool-panel .display-mode-grid > button,
 .constraints-panel > button, .constraint-pair > button { background: transparent; border-color: transparent; }
 .tool-panel .inline-command-row > button:hover, .tool-panel .display-mode-grid > button:hover,
@@ -303,12 +288,8 @@ button { color: inherit; }
 /* Compact 50px project bar. */
 .topbar { height: 50px; flex-basis: 50px; }
 .brand-mark { width: 32px; height: 32px; border-radius: 9px; }
-/* Circular rail buttons with animated labels instead of tooltip wrappers. */
+/* The tool rail stays above adjacent panels while its item labels expand. */
 .vertical-toolbar { z-index: 8; overflow: visible; }
-.vertical-toolbar .tool-group button { position: relative; width: 32px; height: 32px; margin: 1px 0; color: var(--model3d-ui-63716a); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 50%; }
-.vertical-toolbar .tool-group button:hover, .vertical-toolbar .tool-group button.active { color: var(--model3d-ui-147d70); background: var(--model3d-ui-fff); border-color: var(--model3d-ui-7eb8aa); }
-.vertical-toolbar .tool-group button::after { content: attr(data-label); position: absolute; left: calc(100% + 8px); top: 50%; padding: 5px 8px; color: var(--model3d-ui-314139); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 5px; box-shadow: 0 3px 10px var(--model3d-ui-263b3014); font-size: 10px; white-space: nowrap; opacity: 0; pointer-events: none; transform: translate(-5px, -50%); transition: transform .16s ease, opacity .16s ease; }
-.vertical-toolbar .tool-group button:hover::after { opacity: 1; transform: translate(0, -50%); }
 .vertical-toolbar .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .viewport-caption { top: 14px; right: 14px; left: auto; display: flex; align-items: center; gap: 6px; }
 .viewport-utilities { bottom: 12px; }
@@ -317,32 +298,12 @@ button { color: inherit; }
 .viewport.is-handle-dragging { cursor: grabbing; }
 .viewport.is-border-hover { cursor: pointer; }
 .viewport.is-delete-point, .viewport.is-delete-point.is-handle-hover { cursor: not-allowed; }
-/* Compact polygon tool and selector, aligned to the icon's title/subtitle block. */
-.sketch-tool-list > button > span:last-child, .sketch-polygon-tool > button > span:last-child { display: flex; flex-direction: column; justify-content: center; gap: 2px; line-height: 1.2; }
-.sketch-tool-list > button strong, .sketch-polygon-tool > button strong { font-size: 11px; font-weight: 550; }
-.sketch-tool-list > button small, .sketch-polygon-tool > button small { color: var(--model3d-ui-89958e); font-size: 9px; }
-.sketch-polygon-tool .n-select { width: 72px; height: 24px; min-height: 24px; margin: 4px 0 6px 45px; font-size: 10px; }
-.sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 22px; min-height: 22px; font-size: 10px; }
-.sketch-polygon-tool .n-select .n-base-selection-input { padding-top: 0; padding-bottom: 0; line-height: 22px; }
 .viewport.is-panning, .viewport.is-sketching.is-panning { cursor: grab; }
 .viewport.is-panning:active, .viewport.is-sketching.is-panning:active { cursor: grabbing; }
 .viewport.is-arrow-hover { cursor: grab; }
 .viewport.is-link-cursor, .viewport.is-link-cursor.is-handle-hover { cursor: alias; }
-/* Subtitle-style polygon selector: no scale transform, white box or large title gap. */
-.sketch-polygon-tool .n-select { width: 54px; height: 14px; min-height: 14px; margin: 1px 0 0 45px; padding: 0; transform: none; font-size: 10px; }
-.sketch-polygon-tool .n-select .n-base-selection-label, .sketch-polygon-tool .n-select .n-base-selection-input { height: 14px; min-height: 14px; padding: 0; color: var(--model3d-ui-89958e); background: transparent; border: 0; box-shadow: none; font-size: 10px; line-height: 14px; }
-.sketch-polygon-tool .n-select .n-base-selection-input { padding: 0; }
-.sketch-polygon-tool .n-select .n-base-selection-arrow, .sketch-polygon-tool .n-select .n-base-suffix { width: 10px; margin: 0; padding: 0; color: var(--model3d-ui-89958e); font-size: 9px; }
-.sketch-polygon-tool .n-select .n-base-selection-input .n-base-selection-input__content { padding: 0; }
 /* Elastic icon and independent title/subtitle feedback. */
-.vertical-toolbar .tool-group button, .menu-command > .n-icon, .menu-command > .svg-icon, .sketch-tool-icon, .menu-command > span:last-child, .sketch-tool-list > button > span:last-child, .sketch-polygon-tool > button > span:last-child { transition: transform .22s cubic-bezier(.34,1.56,.64,1), color .15s ease; }
-.vertical-toolbar .tool-group button:hover { transform: scale(1.12); }
-.vertical-toolbar .tool-group button:active { transform: scale(.92); }
-.menu-command:hover > .n-icon, .menu-command:hover > .svg-icon, .sketch-tool-list > button:hover .sketch-tool-icon, .sketch-polygon-tool > button:hover .sketch-tool-icon { transform: scale(1.16); }
-.menu-command:hover > span:last-child, .sketch-tool-list > button:hover > span:last-child, .sketch-polygon-tool > button:hover > span:last-child { transform: scale(1.045); transform-origin: left center; }
-.menu-command:active > .n-icon, .menu-command:active > .svg-icon, .sketch-tool-list > button:active .sketch-tool-icon { transform: scale(.9); }
-.sketch-close.is-exiting { padding: 8px 9px 10px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border-bottom: 0; border-radius: 7px; }
-.sketch-close.is-exiting strong { font-size: 14px; font-weight: 700; }
-.sketch-close.is-exiting .sketch-tool-icon { color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border-color: var(--model3d-ui-ffffff70); }
-.sketch-close.is-exiting { color: var(--model3d-ui-c94f4f); background: transparent; }
-.sketch-close.is-exiting .sketch-tool-icon { background: var(--model3d-ui-c94f4f); }
+.menu-command > .n-icon, .menu-command > .svg-icon, .menu-command > span:last-child { transition: transform .22s cubic-bezier(.34,1.56,.64,1), color .15s ease; }
+.menu-command:hover > .n-icon, .menu-command:hover > .svg-icon { transform: scale(1.16); }
+.menu-command:hover > span:last-child { transform: scale(1.045); transform-origin: left center; }
+.menu-command:active > .n-icon, .menu-command:active > .svg-icon { transform: scale(.9); }

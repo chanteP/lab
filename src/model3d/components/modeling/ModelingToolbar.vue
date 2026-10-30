@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
 import { AddOutline, BuildOutline, CameraOutline, CutOutline, EyeOutline, LayersOutline, ListOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
-import ToolButton from '../ui/ToolButton.vue';
+import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
 export interface HistoryStep { id: string; name: string; kind: string }
@@ -35,26 +35,26 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
     <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }" aria-label="建模工具">
         <div class="menu-state">建模</div>
         <div class="tool-group primary-tools">
-            <ToolButton label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ToolButton>
-            <ToolButton label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ToolButton>
-            <ToolButton label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ToolButton>
-            <ToolButton label="构造平面" @click="emit('construct')"><NIcon><LayersOutline /></NIcon></ToolButton>
-            <ToolButton label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ToolButton>
+            <ViewportToolItem label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>
+            <ViewportToolItem label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="构造平面" @click="emit('construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ViewportToolItem>
         </div>
         <div class="tool-group transform-tools">
-            <ToolButton label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ToolButton>
-            <ToolButton label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ToolButton>
-            <ToolButton label="缩放" :disabled="selectionKind === 'plane'" :active="activeTool === 'scale'" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon></ToolButton>
+            <ViewportToolItem label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="缩放" :disabled="selectionKind === 'plane'" :active="activeTool === 'scale'" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
         </div>
         <div class="toolbar-spacer"></div>
         <div class="tool-group primary-tools">
-            <ToolButton label="剖视图" :active="sectionActive" @click="emit('section')"><NIcon><CutOutline /></NIcon></ToolButton>
-            <ToolButton label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ToolButton>
-            <ToolButton label="测量" :active="measureMode" @click="emit('measure')"><SvgIcon name="ruler" /></ToolButton>
-            <ToolButton label="显示" :active="activePanel === 'display'" @click="emit('panel', 'display')"><NIcon><CameraOutline /></NIcon></ToolButton>
-            <ToolButton label="实体树" :active="itemsVisible" @click="emit('items')"><NIcon><ListOutline /></NIcon></ToolButton>
+            <ViewportToolItem label="剖视图" :active="sectionActive" @click="emit('section')"><NIcon><CutOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="测量" :active="measureMode" @click="emit('measure')"><SvgIcon name="ruler" /></ViewportToolItem>
+            <ViewportToolItem label="显示" :active="activePanel === 'display'" @click="emit('panel', 'display')"><NIcon><CameraOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem label="实体树" :active="itemsVisible" @click="emit('items')"><NIcon><ListOutline /></NIcon></ViewportToolItem>
             <NPopover trigger="click" placement="right-start">
-                <template #trigger><ToolButton label="历史"><NIcon><TimeOutline /></NIcon></ToolButton></template>
+                <template #trigger><ViewportToolItem label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></template>
                 <div class="history-panel">
                     <strong>历史</strong>
                     <button v-for="step in historySteps" :key="step.id" type="button" @click="emit('history', step.id)"><span>{{ historyNames[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button>
@@ -69,7 +69,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 .vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 48px; display: flex; flex-direction: column; padding: 4px; overflow: visible; transition: transform .24s ease, opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
 .menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
-.tool-group { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
+.tool-group { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
 .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .toolbar-spacer { flex: 1; min-height: 2px; }
 .history-panel { width: 220px; max-height: 340px; overflow-y: auto; }
