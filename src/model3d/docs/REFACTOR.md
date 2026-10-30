@@ -21,12 +21,28 @@
 
 App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建模工具条、草图工具条和约束区不再重复维护模板。通用 UI 不直接访问 document 或 Viewport，统一通过 props/emits 通信。
 
+## Viewport 分层
+
+- `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
+- `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
+- `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
+- `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
+- `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态。事件优先级、pointer capture、拖拽阈值和 start/move/end 回调顺序保持原实现。
+- `OverlayController` 只保存普通业务数据和世界坐标；每帧投影后由 `ViewportOverlay.vue` 渲染尺寸输入、单位、约束锁和标注。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
+
+销毁顺序为交互监听、TransformControls、相机辅助器、场景/各渲染器资源、渲染核心；Vue 组件卸载时统一触发，App 不再重复 dispose。
+
 ## 可访问性与样式
 
 新增组件使用 scoped SCSS、原生 button、可见焦点样式和 aria-label。既有全局样式逐步收敛，不在一次重构中做无关视觉重排。
 
 ## Changelog
 
+- 2026-10-30：Viewport 尺寸输入、单位选择、约束锁和测量/拉伸标注迁移为 Vue 投影覆盖层，移除 CSS2DRenderer，保持原有编辑回调。
+- 2026-10-30：新增 InteractionController 统一 pointer/key 状态机，保留草图拖拽、框选、直接编辑、测量和相机手势语义；原 Viewport 收敛为轻量门面。
+- 2026-10-30：拆出 SceneSynchronizer、SketchRenderer、MeasurementRenderer 和 GuideRenderer，分别管理场景同步、草图、测量及辅助箭头/面反馈。
+- 2026-10-30：拆出 ViewportEngine 与 CameraController，渲染循环、resize、资源清理、投影切换、fit、相机动画和比例尺不再集中于原类。
+- 2026-10-30：新增 components/viewport/Viewport.vue 管理视口实例生命周期，App 保持原有 Viewport API 和 callbacks。
 - 2026-10-30：逻辑边候选求解仅保留当前 border 另一端，修复正方形右下角连续拖动时左下角移动和边长累积漂移。
 - 2026-10-30：修复矩形等长目标边拖动写死保留另一端的问题；底边两端按候选优先级确定后，仅重建另外两个角点。
 - 2026-10-30：约束链改为分级候选求解，依次保留当前点、关联端点和所在形状，支持反向调整参考边并按改动顶点数选优。

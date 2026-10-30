@@ -126,7 +126,7 @@ button { color: inherit; }
 .plane-form label { display: grid; grid-template-columns: 80px 1fr; align-items: center; color: var(--model3d-ui-68766e); font-size: 11px; }
 .plane-select { width: 112px; }
 
-/* CSS2D measurement annotations stay above the model but never intercept pointer input. */
+/* Projected measurement annotations stay above the model but never intercept pointer input. */
 .measure-label-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
 .measure-value { padding: 3px 6px; color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); border: 1px solid var(--model3d-ui-ffffff80); border-radius: 4px; box-shadow: 0 2px 7px var(--model3d-ui-1d332b2b); font-size: 10px; font-weight: 650; white-space: nowrap; }
 .measure-value.axis-x { background: var(--model3d-ui-df4b5a); }

@@ -10,9 +10,11 @@
 | `components/modeling/` | 业务功能容器 | 建模工具栏、工具面板等组合多个通用控件的业务容器 |
 | `components/sketch/` | 具体草图业务组件 | 草图工具、约束、形状编辑等独立功能组件 |
 | `components/entity/` | 实体业务组件 | 实体树及其节点交互 |
+| `components/viewport/` | 视口 Vue 接入与覆盖层 | Viewport 生命周期、投影后的尺寸/单位/约束/标注控件，不放 Three.js 响应式状态 |
 | `components/ui/` | 通用 UI 组件 | ViewportToolItem、MenuCommand、SvgIcon 等无项目状态的可复用控件 |
 | `composables/` | 可复用状态与事件逻辑 | 单位、撤销历史、项目状态等 Vue 组合式逻辑 |
 | `engine/` | 几何与渲染引擎 | Viewport、几何构建、轮廓、裁剪、坐标系和导出，不放 Vue 模板 |
+| `engine/viewport/` | 视口单一职责模块 | 渲染核心、相机、场景同步、草图/测量/箭头渲染、覆盖层数据和交互状态机 |
 | `stores/` | 持久化数据访问 | IndexedDB/localStorage 读写，保持既有数据兼容 |
 | `types/` | 类型工具与数据契约 | ModelDocument、实体、单位、共享接口 |
 | `config/const.ts` | 写死的规范常量 | 存储 key、阈值、固定像素值；注释说明用途 |

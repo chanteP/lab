@@ -26,6 +26,16 @@
 - `src/wasm/` 是 Vue2 遗留页面，未迁移，不要构建它；如需该功能，先按 Vue3 重写。
 - 页面命名 camelCase，与线上路径一致（`https://lab.neetproject.com/<page>/`）。
 
+## 浏览器存储隔离（localStorage / IndexedDB）
+
+所有页面运行在同一 origin 下，浏览器存储必须按 `src/<page>/` 的页面名隔离。**新增或修改存储代码时遵循本规则；历史 key/数据库只在修改对应页面时迁移，不做全仓批量替换。**
+
+- **localStorage / sessionStorage key**：统一为 `lab:<page>:<feature>:<name>`，例如 `lab:markdown:editor:content`、`lab:guitar:arrangement:currentId`。`feature` 用于隔离同页不同模块；简单页面可省略为 `lab:<page>:<name>`。调用 `cachedRef` 等公共方法时必须传入完整 key，公共方法不要自行猜测页面名或再添加前缀。
+- **IndexedDB 数据库名**：统一为 `lab:<page>`，例如 `lab:model3d`；一个页面默认只使用一个数据库，内部用有明确业务含义的 object store 区分数据，例如 `projects`、`presets`。确需多个数据库时使用 `lab:<page>:<feature>`。
+- **禁止裸名与跨页占用**：禁止使用 `settings`、`cache`、`data`、`app` 等无页面前缀的 key/数据库名；禁止读写、升级或删除其他页面的 key/数据库。确实需要跨页共享的数据只能放 `src/common/`，使用 `lab:shared:<feature>:<name>` / `lab:shared:<feature>`，并在共享模块中注明数据结构和消费者。
+- **禁止破坏性清理**：业务代码不得调用 `localStorage.clear()` / `sessionStorage.clear()`，不得通过遍历存储删除非本页数据，也不得删除整个 IndexedDB 数据库来清空单个 object store；重置功能只能删除本页明确拥有的 key、记录或 store。
+- **版本与迁移**：IndexedDB 版本升级必须兼容已有 store/index，不得假设数据库为空。重命名历史 key/数据库时保留一次性迁移或旧数据读取回退，确认新数据写入成功后再清理旧数据，避免用户数据丢失。
+
 ## 迭代方式（新增/修改一个工具）
 
 1. `yarn install`（首次）。

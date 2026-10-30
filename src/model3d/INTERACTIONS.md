@@ -171,7 +171,7 @@
 - Alt/Option + hover border 使用 `sketchBorders.ts` 计算交点区间并标红，点击删除该区间；普通段转开放 Line，Bezier 段保留分割后的控制点，圆/椭圆保留参数化圆弧。开放圆弧与直线可按端点重闭合，两段轮廓也能组成封闭 Profile。
 - 非 Line 形状的中心点平移整个形状；Line 点使用 Alt/Option + 点击删除，并同步重排 curves 与 lockedPoints。
 - 选中形状与 hover 统一使用 active 色；操作点有描边，hover/拖拽显示抓手，Alt 删点显示透明红色与删除光标。边框 hover/选中使用更深的 active 色。
-- 长度输入 blur 后延迟写回，避免 CSS2D 标注在 blur 中同步重建导致节点 remove 异常。
+- 长度输入 blur 后延迟写回，避免 Vue 覆盖层在 blur 中同步重建导致输入焦点和节点状态异常。
 - 长度和角度输入按 Enter 时立即写回，不必等待 blur。
 - 右键点击已有草图提供删除与取消选择；右键拖动仍只旋转视图。删除前检查 Extrude 引用。
 - 长度输入统一显示两位小数和单位（mm / cm / m），blur 后写回；项目数值不随单位切换换算，单位只改变展示和导出语义，当前单位以 `lab:model3d:sketch:lengthUnit` 作为新项目默认值。

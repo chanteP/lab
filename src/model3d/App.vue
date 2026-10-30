@@ -10,7 +10,8 @@ import {
     ShapesOutline, TrashOutline, NavigateOutline, FolderOutline, PencilOutline, ScanOutline,
     SearchOutline, BuildOutline, ListOutline, TimeOutline, LockClosedOutline, LockOpenOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type EditPhase, type ViewTool, type SketchDimension } from './engine/Viewport';
+import { Viewport, type EditPhase, type ViewTool, type SketchDimension, type ViewportCallbacks } from './engine/Viewport';
+import ViewportView from './components/viewport/Viewport.vue';
 import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
 import SvgIcon from './components/ui/SvgIcon.vue';
 import { entityProfileClosed, profileArcCenter, profileClosed, profileEllipseAngle, type ProfileType, type ProfileCurves } from './engine/profiles';
@@ -39,7 +40,6 @@ import {
 } from './types';
 
 const message = useMessage();
-const viewportElement = ref<HTMLElement>();
 const importInput = ref<HTMLInputElement>();
 let viewport: Viewport;
 let saveTimer: ReturnType<typeof setTimeout>;
@@ -2406,8 +2406,7 @@ Object.defineProperty(window, 'projectData', {
     }),
 });
 
-onMounted(async () => {
-    viewport = new Viewport(viewportElement.value!, {
+const viewportCallbacks: ViewportCallbacks = {
         onSelect: selectEntity,
         onGeometrySelect,
         onBodySelect,
@@ -2477,7 +2476,13 @@ onMounted(async () => {
         onMeasureChange: (active) => measureMode.value = active,
         onScale: (value) => scaleBar.value = value,
         onStats: (value) => stats.value = value,
-    });
+};
+
+function onViewportReady(instance: Viewport) {
+    viewport = instance;
+}
+
+onMounted(async () => {
     viewport.sync(document.value);
     viewport.setLengthUnit(lengthUnit.value);
     window.addEventListener('keydown', onKeyDown);
@@ -2511,7 +2516,6 @@ onBeforeUnmount(() => {
     window.document.removeEventListener('gesturestart', preventGesture);
     window.document.removeEventListener('gesturechange', preventGesture);
     window.removeEventListener('beforeunload', flushSave);
-    viewport?.dispose();
 });
 </script>
 
@@ -2526,7 +2530,7 @@ onBeforeUnmount(() => {
                 @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode }">
-                <div ref="viewportElement" class="viewport"></div>
+                <ViewportView :callbacks="viewportCallbacks" @ready="onViewportReady" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
                     :measure-mode="measureMode" :items-visible="itemsVisible" :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
