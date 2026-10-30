@@ -15,6 +15,8 @@ export const INTERACTION = {
     sketchDragThresholdPx: 4,
     sectorQuarterSnapThresholdDeg: 4,
     sketchGuideSnapPx: 8,
+    // Reconnected intersection endpoints may differ slightly from the sampled host edge.
+    sketchIntersectionTolerance: 0.01,
 } as const;
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */

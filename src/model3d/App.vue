@@ -69,7 +69,7 @@ const selectedSketches = computed(() => selectedEntities.value.filter((item) => 
 const selected = computed(() => selectedEntities.value.length === 1 ? selectedEntities.value[0] : null);
 const sketchState = useSketchState(document);
 const {
-    sketchMode, sketchType, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
+    sketchMode, sketchType, sketchSides, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
     trimmedSelection, sketchContextMenu, selectedShapes, selectedEdges, selectedPoints,
     activeConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled,
     sketchClosed, constraintSegmentCount,

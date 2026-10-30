@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { entityProfileClosed, profilePoints } from './profiles';
 import type { ModelEntity, Point2 } from '../types';
+import { INTERACTION } from '../config/const';
 
 export interface BorderSegment {
     entityId: string;
@@ -72,12 +73,27 @@ function sub(a: Point2, b: Point2): Point2 { return [a[0] - b[0], a[1] - b[1]]; 
 function intersectLines(a: Point2, b: Point2, c: Point2, d: Point2) {
     const r = sub(b, a), s = sub(d, c);
     const denominator = cross(r, s);
-    if (Math.abs(denominator) < 1e-8) return null;
-    const delta = sub(c, a);
-    const t = cross(delta, s) / denominator;
-    const u = cross(delta, r) / denominator;
     const epsilon = 1e-6;
-    return t >= -epsilon && t <= 1 + epsilon && u >= -epsilon && u <= 1 + epsilon ? t : null;
+    if (Math.abs(denominator) >= 1e-8) {
+        const delta = sub(c, a);
+        const t = cross(delta, s) / denominator;
+        const u = cross(delta, r) / denominator;
+        if (t >= -epsilon && t <= 1 + epsilon && u >= -epsilon && u <= 1 + epsilon) return THREE.MathUtils.clamp(t, 0, 1);
+    }
+
+    // Restitched T-junctions can be slightly offset from the sampled host edge.
+    const length = r[0] ** 2 + r[1] ** 2;
+    if (!length) return null;
+    const tolerance = INTERACTION.sketchIntersectionTolerance;
+    for (const point of [c, d]) {
+        const t = ((point[0] - a[0]) * r[0] + (point[1] - a[1]) * r[1]) / length;
+        const projected: Point2 = [a[0] + r[0] * t, a[1] + r[1] * t];
+        const parameterTolerance = tolerance / Math.sqrt(length);
+        if (t >= -parameterTolerance && t <= 1 + parameterTolerance && Math.hypot(point[0] - projected[0], point[1] - projected[1]) <= tolerance) {
+            return THREE.MathUtils.clamp(t, 0, 1);
+        }
+    }
+    return null;
 }
 
 function pointAt(segment: BorderSegment, t: number): Point2 {
@@ -115,17 +131,37 @@ export function borderInterval(segment: BorderSegment, all: BorderSegment[], poi
         });
     }
     const sorted = [...ts].sort((a, b) => a - b);
+    const borderLength = segment.points.reduce((sum, point, index) => index ? sum + Math.hypot(point[0] - segment.points[index - 1][0], point[1] - segment.points[index - 1][1]) : 0, 0);
+    const mergeTolerance = INTERACTION.sketchIntersectionTolerance / Math.max(borderLength, INTERACTION.sketchIntersectionTolerance);
+    const merged: number[] = [];
+    sorted.forEach((value) => {
+        const previous = merged[merged.length - 1];
+        if (previous !== undefined && value - previous <= mergeTolerance) {
+            // Exact and tolerance-based hits at one junction must not create a sliver interval.
+            if (value === 1) merged[merged.length - 1] = 1;
+            return;
+        }
+        merged.push(value);
+    });
     const current = nearestBorderT(segment, point);
-    if (segment.closed && sorted.length > 2) {
-        const first = sorted[1], last = sorted[sorted.length - 2];
+    if (segment.closed && merged.length > 2) {
+        const first = merged[1], last = merged[merged.length - 2];
         if (current <= first || current >= last) return { start: last - 1, end: first, empty: true };
     }
-    const index = Math.max(0, Math.min(sorted.length - 2, sorted.findIndex((value, i) => i < sorted.length - 1 && current >= value && current <= sorted[i + 1])));
-    return { start: sorted[index], end: sorted[index + 1], empty: sorted.length > 2 };
+    const index = Math.max(0, Math.min(merged.length - 2, merged.findIndex((value, i) => i < merged.length - 1 && current >= value && current <= merged[i + 1])));
+    return { start: merged[index], end: merged[index + 1], empty: merged.length > 2 };
 }
 
 export function sliceBorder(segment: BorderSegment, start: number, end: number): Point2[] {
     if (start <= 0 && end >= 1) return segment.points.map((point) => [...point]);
+    if (segment.closed && start < 0) {
+        const from = start + 1;
+        // A single junction does not split a closed border into two distinct arcs.
+        if (Math.abs(from - end) < 1e-9) return segment.points.map((point) => [...point]);
+        const before = sliceBorder(segment, from, 1);
+        const after = sliceBorder(segment, 0, end);
+        return [...before, ...after.slice(1)];
+    }
     const points: Point2[] = [pointAt(segment, start)];
     const first = Math.ceil(start * (segment.points.length - 1));
     const last = Math.floor(end * (segment.points.length - 1));
