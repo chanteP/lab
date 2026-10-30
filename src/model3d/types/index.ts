@@ -4,6 +4,7 @@ export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
 export type SketchElementRef = { entityId: string; index: number };
 export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal';
+export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef };
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
@@ -46,7 +47,7 @@ export interface ModelEntity {
     trimmed?: boolean;
     shapeConstraint?: 'orthogonal' | 'equal';
     constraintEdges?: number[];
-    edgeConstraints?: Record<number, { type: SketchConstraintKind; reference?: SketchElementRef }>;
+    edgeConstraints?: Record<number, SketchEdgeConstraint | SketchEdgeConstraint[]>;
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
     open?: boolean;
     profileStartAngle?: number;
@@ -121,10 +122,15 @@ export function cloneDocument(document: ModelDocument): ModelDocument {
 }
 
 export function normalizeDocument(document: ModelDocument): ModelDocument {
+    let legacyConstraintId = 0;
     document.lengthUnit = document.lengthUnit || 'mm';
     document.folders = Array.isArray(document.folders) ? document.folders : [];
     document.planes = Array.isArray(document.planes) ? document.planes : [];
     document.entities.forEach((entity) => entity.parentId = entity.parentId || null);
+    document.entities.forEach((entity) => Object.values(entity.edgeConstraints || {}).forEach((value) => {
+        const rules = Array.isArray(value) ? value : [value];
+        rules.forEach((rule) => { if (!rule.id) rule.id = `constraint-${legacyConstraintId++}`; });
+    }));
     document.folders.forEach((folder) => { folder.parentId = folder.parentId || null; folder.visible = folder.visible !== false; });
     return document;
 }

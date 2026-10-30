@@ -15,7 +15,7 @@ import { borderInterval, borderSegments, sliceBorder } from './sketchBorders';
 import { matchSketchGuide, type SketchGuideMatch } from './sketchGuides';
 import { integerStep } from '../utils/number';
 import { computeSketchFaces, type SketchFace } from './sketchFaces';
-import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3, SketchElementRef } from '../types';
+import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3, SketchElementRef, SketchEdgeConstraint } from '../types';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
@@ -41,6 +41,7 @@ interface ViewportCallbacks {
     onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
     onSketchSelect: (index: number, additive: boolean) => void;
     onSketchPointRefSelect: (entityId: string, index: number) => void;
+    onSketchConstraintRule: (entityId: string, index: number, ruleId: string) => void;
     onSketchComplete: () => void;
     onSketchClosePath: () => void;
     onSketchEntitySelect: (id: string, additive: boolean) => void;
@@ -94,6 +95,8 @@ export class Viewport {
     private sketchSelectionFeedback = new THREE.Group();
     private selectedEdgeRefs: SketchElementRef[] = [];
     private selectedPointRefs: SketchElementRef[] = [];
+    private activeConstraintRule: { entityId: string; index: number; ruleId: string } | null = null;
+    private activeConstraintReference: SketchElementRef | null = null;
     private hoverSketchFace: THREE.Mesh | null = null;
     private booleanRoles: { target: string; tool: string } | null = null;
     private grid: THREE.GridHelper;
@@ -1424,6 +1427,11 @@ export class Viewport {
         this.selectedPointRefs = points.map((item) => ({ ...item }));
         this.refreshSketchSelectionFeedback();
     }
+    setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) {
+        this.activeConstraintRule = selection;
+        this.activeConstraintReference = reference;
+        this.refreshSketchSelectionFeedback();
+    }
     private refreshSketchSelectionFeedback() {
         this.clearGroup(this.sketchSelectionFeedback);
         if (!this.sketchMode || !this.document) return;
@@ -1432,10 +1440,15 @@ export class Viewport {
                 const point = entity.points?.[index];
                 if (point) this.addSketchLockBadge(point, entity.id, index, false);
             });
-            const edges = new Set([...(entity.constraintEdges || []), ...Object.keys(entity.edgeConstraints || {}).map(Number)]);
-            edges.forEach((index) => {
+            (entity.constraintEdges || []).forEach((index) => {
                 const a = entity.points?.[index], b = entity.points?.[(index + 1) % (entity.points?.length || 0)];
                 if (a && b) this.addSketchLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true);
+            });
+            Object.entries(entity.edgeConstraints || {}).forEach(([key, value]) => {
+                const index = Number(key), a = entity.points?.[index], b = entity.points?.[(index + 1) % (entity.points?.length || 0)];
+                if (!a || !b) return;
+                const rules = Array.isArray(value) ? value : [value];
+                rules.forEach((rule, order) => this.addSketchLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true, rule, order));
             });
         });
         this.selectedEdgeRefs.forEach(({ entityId, index }, order) => {
@@ -1464,15 +1477,25 @@ export class Viewport {
             this.sketchSelectionFeedback.add(outer, inner);
         });
     }
-    private addSketchLockBadge(point: Point2, entityId: string, index: number, edge: boolean) {
+    private addSketchLockBadge(point: Point2, entityId: string, index: number, edge: boolean, rule?: SketchEdgeConstraint, order = 0) {
         const button = window.document.createElement('button');
         button.className = `sketch-lock-badge${edge ? ' is-edge' : ''}`;
+        if (rule) {
+            const active = this.activeConstraintRule?.ruleId === rule.id;
+            const linked = this.activeConstraintRule && this.activeConstraintRule.ruleId !== rule.id && this.activeConstraintReference?.entityId === entityId && this.activeConstraintReference.index === index;
+            button.style.color = active ? SKETCH_COLORS.active : linked ? SKETCH_COLORS.referenceActive : SKETCH_COLORS.pointLocked;
+            if (active) button.classList.add('active');
+            if (linked) button.classList.add('linked');
+            button.dataset.ruleId = rule.id;
+        }
+        if (edge) button.style.transform = `translate(${56 + order * 16}px, -50%)`;
         button.setAttribute('aria-label', '固定或约束');
         button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v6H3V7h1zm2 0h4V5a2 2 0 0 0-4 0v2z"/></svg>';
         button.addEventListener('pointerdown', (event) => event.stopImmediatePropagation());
         button.addEventListener('click', (event) => {
             event.stopImmediatePropagation();
-            if (edge) this.callbacks.onSketchBorderSelect(entityId, index, event.metaKey || event.ctrlKey);
+            if (rule) this.callbacks.onSketchConstraintRule(entityId, index, rule.id!);
+            else if (edge) this.callbacks.onSketchBorderSelect(entityId, index, event.metaKey || event.ctrlKey);
             else this.callbacks.onSketchPointRefSelect(entityId, index);
         });
         const label = new CSS2DObject(button);

@@ -111,6 +111,13 @@ const selectedSketchSegments = ref<number[]>([]);
 const selectedShapes = ref<string[]>([]);
 const selectedEdges = ref<SketchElementRef[]>([]);
 const selectedPoints = ref<SketchElementRef[]>([]);
+const activeConstraintRule = ref<{ entityId: string; index: number; ruleId: string } | null>(null);
+const activeConstraintRuleData = computed(() => {
+    const selection = activeConstraintRule.value;
+    if (!selection) return null;
+    const entity = document.value.entities.find((item) => item.id === selection.entityId);
+    return constraintRules(entity?.edgeConstraints?.[selection.index]).find((rule) => rule.id === selection.ruleId) || null;
+});
 const sketchLockedPoints = ref<number[]>([]);
 const sketchSectorAngle = ref(360);
 const sketchOpen = ref(false);
@@ -453,14 +460,22 @@ function removeSelected() {
     if (selectedIds.value.length) deleteNodeIds(selectedIds.value);
 }
 function removeConstraintsForEdge(entityId: string, index: number) {
+    if (activeConstraintRule.value?.entityId === entityId && activeConstraintRule.value.index === index) {
+        activeConstraintRule.value = null;
+        viewport?.setActiveConstraintRule(null);
+    }
     document.value.entities.forEach((entity) => {
         if (!entity.edgeConstraints) return;
-        Object.entries(entity.edgeConstraints).forEach(([key, rule]) => {
+        Object.entries(entity.edgeConstraints).forEach(([key, constraints]) => constraintRules(constraints).forEach((rule) => {
             if ((entity.id === entityId && Number(key) === index) || (rule.reference?.entityId === entityId && rule.reference.index === index)) delete entity.edgeConstraints![Number(key)];
-        });
+        }));
     });
 }
 function removeConstraintsForEntity(entityId: string) {
+    if (activeConstraintRule.value?.entityId === entityId) {
+        activeConstraintRule.value = null;
+        viewport?.setActiveConstraintRule(null);
+    }
     document.value.entities.forEach((entity) => {
         if (entity.id === entityId) {
             entity.edgeConstraints = {};
@@ -908,7 +923,7 @@ function ensureShapeConstraints(entity: ModelEntity) {
     if (entity.profileType === 'rectangle') {
         if (!entity.shapeConstraint) {
             entity.shapeConstraint = 'orthogonal';
-            const constraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, { type: 'perpendicular', reference: { entityId: entity.id, index: (index + 3) % 4 } }]));
+            const constraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, { id: uid(), type: 'perpendicular', reference: { entityId: entity.id, index: (index + 3) % 4 } }]));
             entity.edgeConstraints = { ...constraints, ...(entity.edgeConstraints || {}) };
         }
     } else if (entity.profileType === 'regular') entity.shapeConstraint = 'equal';
@@ -963,6 +978,8 @@ function activateSketchSelectionTool() {
 }
 function clearSketchSelection() {
     finishSketchHandleDrag();
+    activeConstraintRule.value = null;
+    viewport?.setActiveConstraintRule(null);
     viewport?.setSketchEdgeEditing(null);
     selectedShapes.value = [];
     selectedEdges.value = [];
@@ -987,6 +1004,8 @@ function clearSketchSelection() {
     activateSketchSelectionTool();
 }
 function selectTrimmedBorder(entityId: string, index: number, additive = false) {
+    activeConstraintRule.value = null;
+    viewport?.setActiveConstraintRule(null);
     const entity = document.value.entities.find((item) => item.id === entityId);
     const segment = entity && borderSegments(entity).find((item) => item.index === index);
     if (!entity || !segment) return;
@@ -1536,7 +1555,8 @@ function syncTrimmedEntity(points: Point2[]) {
 function enforceSketchConstraints() {
     document.value.entities.forEach((entity) => {
         if (!entity.points || !entity.edgeConstraints) return;
-        Object.entries(entity.edgeConstraints).forEach(([key, rule]) => {
+        Object.entries(entity.edgeConstraints).forEach(([key, constraints]) => constraintRules(constraints).forEach((rule) => {
+            if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') return;
             const index = Number(key), aIndex = index, bIndex = (index + 1) % entity.points!.length;
             const a = entity.points![aIndex], b = entity.points![bIndex];
             if (!a || !b) return;
@@ -1562,7 +1582,23 @@ function enforceSketchConstraints() {
                 moving[0] = anchor[0] + Math.cos(desired) * length;
                 moving[1] = anchor[1] + Math.sin(desired) * length;
             }
-        });
+        }));
+        if (entity.shapeConstraint === 'orthogonal' && entity.points.length === 4) {
+            const [a, b, d] = entity.points;
+            const dx = b[0] - a[0], dy = b[1] - a[1];
+            const firstLength = Math.hypot(dx, dy);
+            const equalRule = constraintRules(entity.edgeConstraints?.[1]).find((rule) => rule.type === 'equal' && rule.reference);
+            const reference = equalRule && document.value.entities.find((item) => item.id === equalRule.reference!.entityId);
+            const referenceIndex = equalRule?.reference?.index;
+            const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
+            const secondLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
+            if (firstLength > 0.000001 && secondLength > 0.000001) {
+                const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
+                const perpendicular: Point2 = [-dy / firstLength * sign, dx / firstLength * sign];
+                entity.points![2] = [b[0] + perpendicular[0] * secondLength, b[1] + perpendicular[1] * secondLength];
+                entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
+            }
+        }
     });
 }
 function syncEditingSketch() {
@@ -1582,18 +1618,50 @@ function syncEditingSketch() {
     enforceSketchConstraints();
     if (item) sketchPoints.value = item.points!.map((point) => [...point]);
 }
+function constraintRules(value: NonNullable<ModelEntity['edgeConstraints']>[number] | undefined) {
+    return Array.isArray(value) ? [...value] : value ? [value] : [];
+}
+function selectConstraintRule(entityId: string, index: number, ruleId: string) {
+    activeConstraintRule.value = { entityId, index, ruleId };
+    selectedPoints.value = [];
+    selectedShapes.value = [];
+    selectedEdges.value = [{ entityId, index }];
+    selectedIds.value = [entityId];
+    viewport?.setActiveConstraintRule(activeConstraintRule.value, activeConstraintRuleData.value?.reference || null);
+    refreshSketch();
+}
+function cancelConstraintRule() {
+    const selection = activeConstraintRule.value;
+    if (!selection) return;
+    const entity = document.value.entities.find((item) => item.id === selection.entityId);
+    if (entity?.edgeConstraints) {
+        const remaining = constraintRules(entity.edgeConstraints[selection.index]).filter((rule) => rule.id !== selection.ruleId);
+        if (remaining.length) entity.edgeConstraints[selection.index] = remaining;
+        else delete entity.edgeConstraints[selection.index];
+    }
+    pushHistory();
+    activeConstraintRule.value = null;
+    viewport?.setActiveConstraintRule(null);
+    refreshSketch();
+}
 function applySketchConstraint(type: SketchConstraintType) {
     const selected = selectedEdges.value;
     if (!selected.length) return;
+    activeConstraintRule.value = null;
+    viewport?.setActiveConstraintRule(null);
     const cancel = selected.every(({ entityId, index }) => {
         const constraint = document.value.entities.find((entity) => entity.id === entityId)?.edgeConstraints?.[index];
-        return constraint?.type === type || (type === 'auto' && ['horizontal', 'vertical'].includes(constraint?.type || ''));
+        return constraintRules(constraint).some((rule) => rule.type === type || (type === 'auto' && ['horizontal', 'vertical'].includes(rule.type)));
     });
     if (cancel) {
         pushHistory();
         selected.forEach(({ entityId, index }) => {
             const entity = document.value.entities.find((item) => item.id === entityId);
-            if (entity?.edgeConstraints) delete entity.edgeConstraints[index];
+            if (entity?.edgeConstraints) {
+                const remaining = constraintRules(entity.edgeConstraints[index]).filter((rule) => rule.type !== type && !(type === 'auto' && ['horizontal', 'vertical'].includes(rule.type)));
+                if (remaining.length) entity.edgeConstraints[index] = remaining;
+                else delete entity.edgeConstraints[index];
+            }
         });
         refreshSketch();
         return;
@@ -1639,7 +1707,10 @@ function applySketchConstraint(type: SketchConstraintType) {
         const entity = document.value.entities.find((item) => item.id === entityId)!;
         const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
         const resolved = type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : type;
-        entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: { type: resolved, reference: ['parallel', 'perpendicular', 'equal'].includes(type) ? reference : undefined } };
+        const rules = constraintRules(entity.edgeConstraints?.[index]);
+        const next = { id: uid(), type: resolved, reference: ['parallel', 'perpendicular', 'equal'].includes(type) ? reference : undefined };
+        if (!rules.some((rule) => rule.type === next.type && rule.reference?.entityId === next.reference?.entityId && rule.reference?.index === next.reference?.index)) rules.push(next);
+        entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
     });
     viewport?.refreshSketchFaces();
     refreshSketch();
@@ -2084,6 +2155,7 @@ onMounted(async () => {
         onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
         onSketchPointRefSelect: selectSketchPointRef,
+        onSketchConstraintRule: selectConstraintRule,
         onSketchComplete: finishSketch,
         onSketchClosePath: closeSketchPath,
         onSketchEntitySelect: selectSketchEntity,
@@ -2223,7 +2295,7 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" />
+                    :constraint-rule="activeConstraintRuleData" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
