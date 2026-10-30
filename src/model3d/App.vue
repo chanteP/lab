@@ -1532,8 +1532,8 @@ function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
     if (sketchSelectionTool.value) return;
     if (editingSketchId.value) return;
     if (phase === 'start') return;
-    if (phase === 'end' && sketchType.value === 'line') {
-        // Finish a dragged Line through the same second-point path as click-click creation.
+    if (phase === 'end' && ['line', 'polygon'].includes(sketchType.value)) {
+        // The Line tool creates an open polygon; finish both types through the click-click path.
         sketchPoints.value = [start];
         addSketchPoint(point);
         return;
