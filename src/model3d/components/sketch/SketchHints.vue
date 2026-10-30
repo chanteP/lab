@@ -36,9 +36,9 @@ onBeforeUnmount(() => observer?.disconnect());
             <li>Space / 空格：拖动画布。</li>
             <li>Alt / Option：删除边。</li>
             <li>普通点击选择形状，Ctrl/Command 多选。</li>
+            <li v-if="['polygon', 'line'].includes(profileType)">Line：超过 2 个点时，Shift + 点击连接首尾。</li>
             <li>双击 border：选择整个形状。</li>
             <li v-if="selectionTool">点、边、形状不混选，后选类型优先。</li>
-            <li v-if="profileType === 'polygon'">Line：超过 2 个点时，Shift + 点击连接首尾。</li>
             <li v-else-if="profileType === 'arc'">Arc：第 3 点确定圆弧，开放弧可独立存在。</li>
             <li v-else-if="profileType === 'circle'">圆形：拖动半径；扇形点控制角度，双击恢复。</li>
             <li v-else-if="profileType === 'ellipse'">椭圆：拖动双半径；扇形点控制角度，双击恢复。</li>
