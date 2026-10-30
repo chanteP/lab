@@ -1760,6 +1760,15 @@ function constraintAnchorLevels(): SketchElementRef[][] {
         const entity = document.value.entities.find((item) => item.id === anchor.entityId);
         if (!entity?.points) return;
         entity.points.forEach((_, index) => shape.set(`${entity.id}:${index}`, { entityId: entity.id, index }));
+
+        // Logical-edge editing has exactly one counterpart: the other endpoint of the selected border.
+        if (trimmedSelection.value?.entityId === entity.id) {
+            const start = trimmedSelection.value.index;
+            const end = start + trimmedSelection.value.sourceCount;
+            const counterpart = anchor.index === start ? end : anchor.index === end ? start : -1;
+            if (counterpart >= 0) counterparts.set(`${entity.id}:${counterpart}`, { entityId: entity.id, index: counterpart });
+            return;
+        }
         const previous = anchor.index > 0 ? anchor.index - 1 : entityProfileClosed(entity) ? entity.points.length - 1 : -1;
         const next = anchor.index < entity.points.length - 1 || entityProfileClosed(entity) ? (anchor.index + 1) % entity.points.length : -1;
         if (previous >= 0) counterparts.set(`${entity.id}:${previous}`, { entityId: entity.id, index: previous });
