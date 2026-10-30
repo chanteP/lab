@@ -1195,6 +1195,7 @@ function moveSelectedPoints(point: Point2, phase: EditPhase) {
                 entity.curves = change.curves;
             }
         });
+        enforceSketchConstraints();
         viewport?.refreshSketchFaces();
         multiPointDrag = null;
     }
@@ -1422,6 +1423,10 @@ function selectSketchPoint(index: number, additive = false) {
     viewport?.setSketchSelection(index);
     refreshSketch();
 }
+function selectSketchPointRef(entityId: string, index: number) {
+    if (editingSketchId.value !== entityId) selectSketchEntity(entityId);
+    selectSketchPoint(index);
+}
 function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
     if (sketchSelectionTool.value) return;
     if (editingSketchId.value) return;
@@ -1465,7 +1470,7 @@ function syncTrimmedEntity(points: Point2[]) {
     } else {
         const oldPoints = entity.points, oldCurves = entity.curves || {};
         const delta = 1 - selection.sourceCount;
-        entity.points = [...oldPoints.slice(0, start), [...points[0]], [...points[1]], ...oldPoints.slice(end)];
+        entity.points = [...oldPoints.slice(0, start), [...points[0]], [...points[1]], ...oldPoints.slice(end + 1)];
         const curves: ProfileCurves = {};
         Object.entries(oldCurves).forEach(([key, curve]) => {
             const index = Number(key);
@@ -1485,14 +1490,54 @@ function syncTrimmedEntity(points: Point2[]) {
     }
     viewport?.refreshSketchFaces();
 }
+function enforceSketchConstraints() {
+    document.value.entities.forEach((entity) => {
+        if (!entity.points || !entity.edgeConstraints) return;
+        Object.entries(entity.edgeConstraints).forEach(([key, rule]) => {
+            const index = Number(key), aIndex = index, bIndex = (index + 1) % entity.points!.length;
+            const a = entity.points![aIndex], b = entity.points![bIndex];
+            if (!a || !b) return;
+            const reference = rule.reference && document.value.entities.find((item) => item.id === rule.reference!.entityId);
+            const referenceIndex = rule.reference?.index;
+            const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
+            const type = rule.type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : rule.type;
+            const adjustA = entity.id === editingSketchId.value && selectedSketchPoint.value === aIndex;
+            const anchor = adjustA ? b : a;
+            const moving = adjustA ? a : b;
+            if (type === 'horizontal') moving[1] = anchor[1];
+            else if (type === 'vertical') moving[0] = anchor[0];
+            else if (type === 'equal' && referenceA && referenceB) {
+                const length = Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]);
+                const angle = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
+                moving[0] = anchor[0] + Math.cos(angle) * length;
+                moving[1] = anchor[1] + Math.sin(angle) * length;
+            } else if ((type === 'parallel' || type === 'perpendicular') && referenceA && referenceB) {
+                const base = Math.atan2(referenceB[1] - referenceA[1], referenceB[0] - referenceA[0]) + (type === 'perpendicular' ? Math.PI / 2 : 0);
+                const current = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
+                const desired = base + Math.round(Math.atan2(Math.sin(current - base), Math.cos(current - base)) / Math.PI) * Math.PI;
+                const length = Math.hypot(moving[0] - anchor[0], moving[1] - anchor[1]);
+                moving[0] = anchor[0] + Math.cos(desired) * length;
+                moving[1] = anchor[1] + Math.sin(desired) * length;
+            }
+        });
+    });
+}
 function syncEditingSketch() {
     if (trimmedSelection.value) {
         syncTrimmedEntity(sketchPoints.value);
+        enforceSketchConstraints();
+        const entity = document.value.entities.find((item) => item.id === trimmedSelection.value!.entityId)!;
+        const start = trimmedSelection.value!.index;
+        sketchPoints.value = trimmedSelection.value!.kind === 'line'
+            ? [entity.points![start], entity.points![(start + 1) % entity.points!.length]]
+            : entity.points!.slice(start, start + trimmedSelection.value!.sourceCount + 1);
         return;
     }
     if (!editingSketchId.value) return;
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
     if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
+    enforceSketchConstraints();
+    if (item) sketchPoints.value = item.points!.map((point) => [...point]);
 }
 function applySketchConstraint(type: SketchConstraintType) {
     const selected = selectedEdges.value;
@@ -1533,6 +1578,13 @@ function applySketchConstraint(type: SketchConstraintType) {
             sketchCurves.value = change.curves;
         }
     });
+    selected.forEach(({ entityId, index }) => {
+        if (['parallel', 'perpendicular', 'equal'].includes(type) && entityId === reference.entityId && index === reference.index) return;
+        const entity = document.value.entities.find((item) => item.id === entityId)!;
+        const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
+        const resolved = type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : type;
+        entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: { type: resolved, reference: ['parallel', 'perpendicular', 'equal'].includes(type) ? reference : undefined } };
+    });
     viewport?.refreshSketchFaces();
     refreshSketch();
 }
@@ -1558,6 +1610,10 @@ function toggleSketchPointLock() {
         const entity = document.value.entities.find((item) => item.id === entityId)!;
         const current = entity.lockedPoints || [];
         entity.lockedPoints = locked ? current.filter((index) => !indices.includes(index)) : [...new Set([...current, ...indices])];
+        if (selectedEdges.value.length || selectedShapes.value.length) {
+            const currentEdges = entity.constraintEdges || [];
+            entity.constraintEdges = locked ? currentEdges.filter((index) => !indices.includes(index)) : [...new Set([...currentEdges, ...indices])];
+        }
         if (entityId === editingSketchId.value) sketchLockedPoints.value = [...entity.lockedPoints];
     });
     refreshSketch();
@@ -1970,6 +2026,7 @@ onMounted(async () => {
         onSketchHandleReset: resetSketchHandle,
         onSketchDrag: dragSketch,
         onSketchSelect: selectSketchPoint,
+        onSketchPointRefSelect: selectSketchPointRef,
         onSketchComplete: finishSketch,
         onSketchClosePath: closeSketchPath,
         onSketchEntitySelect: selectSketchEntity,

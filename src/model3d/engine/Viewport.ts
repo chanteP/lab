@@ -40,6 +40,7 @@ interface ViewportCallbacks {
     onSketchHandleReset: (segment: number, handle: 1 | 2) => void;
     onSketchDrag: (start: Point2, point: Point2, phase: EditPhase) => void;
     onSketchSelect: (index: number, additive: boolean) => void;
+    onSketchPointRefSelect: (entityId: string, index: number) => void;
     onSketchComplete: () => void;
     onSketchClosePath: () => void;
     onSketchEntitySelect: (id: string, additive: boolean) => void;
@@ -624,7 +625,7 @@ export class Viewport {
                     return;
                 }
             }
-            const borderHit = this.sketchSelectionTool ? this.raycaster.intersectObjects(this.borderTargets(), false)[0] : null;
+            const borderHit = this.raycaster.intersectObjects(this.borderTargets(), false)[0];
             if (borderHit) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const entityId = borderHit.object.userData.borderEntityId;
@@ -635,8 +636,7 @@ export class Viewport {
                     this.shapeDrag = null;
                     this.sketchDrag = null;
                     const additive = event.metaKey || event.ctrlKey;
-                    if (entity.trimmed || additive) this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex, additive);
-                    else this.callbacks.onSketchEntitySelect(entityId, false);
+                    this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex, additive);
                     return;
                 }
             }
@@ -1138,6 +1138,11 @@ export class Viewport {
             event.preventDefault();
             this.setPointer(event as unknown as PointerEvent);
             this.sketch.updateMatrixWorld(true);
+            const border = this.raycaster.intersectObjects(this.borderTargets(), false)[0];
+            if (border && !this.document?.entities.find((entity) => entity.id === border.object.userData.borderEntityId)?.trimmed) {
+                this.callbacks.onSketchEntitySelect(border.object.userData.borderEntityId, false);
+                return;
+            }
             const handle = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.handleSegment !== undefined), false)[0];
             if (handle) {
                 this.callbacks.onSketchHandleReset(handle.object.userData.handleSegment, handle.object.userData.handleIndex);
@@ -1411,6 +1416,17 @@ export class Viewport {
     private refreshSketchSelectionFeedback() {
         this.clearGroup(this.sketchSelectionFeedback);
         if (!this.sketchMode || !this.document) return;
+        this.document.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === this.activePlane?.id).forEach((entity) => {
+            (entity.lockedPoints || []).forEach((index) => {
+                const point = entity.points?.[index];
+                if (point) this.addSketchLockBadge(point, entity.id, index, false);
+            });
+            const edges = new Set([...(entity.constraintEdges || []), ...Object.keys(entity.edgeConstraints || {}).map(Number)]);
+            edges.forEach((index) => {
+                const a = entity.points?.[index], b = entity.points?.[(index + 1) % (entity.points?.length || 0)];
+                if (a && b) this.addSketchLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true);
+            });
+        });
         this.selectedEdgeRefs.forEach(({ entityId, index }) => {
             const entity = this.document!.entities.find((item) => item.id === entityId);
             const segment = entity && borderSegments(entity).find((item) => item.index === index);
@@ -1436,6 +1452,21 @@ export class Viewport {
             outer.renderOrder = inner.renderOrder = 1006;
             this.sketchSelectionFeedback.add(outer, inner);
         });
+    }
+    private addSketchLockBadge(point: Point2, entityId: string, index: number, edge: boolean) {
+        const button = window.document.createElement('button');
+        button.className = `sketch-lock-badge${edge ? ' is-edge' : ''}`;
+        button.setAttribute('aria-label', '固定或约束');
+        button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 0 1 8 0v2h1v6H3V7h1zm2 0h4V5a2 2 0 0 0-4 0v2z"/></svg>';
+        button.addEventListener('pointerdown', (event) => event.stopImmediatePropagation());
+        button.addEventListener('click', (event) => {
+            event.stopImmediatePropagation();
+            if (edge) this.callbacks.onSketchBorderSelect(entityId, index, event.metaKey || event.ctrlKey);
+            else this.callbacks.onSketchPointRefSelect(entityId, index);
+        });
+        const label = new CSS2DObject(button);
+        label.position.copy(this.sketchWorld(point, 0.32));
+        this.sketchSelectionFeedback.add(label);
     }
     clearGeometrySelection() {
         this.geometryAnchor = null;

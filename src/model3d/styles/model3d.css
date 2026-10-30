@@ -263,7 +263,10 @@ button { color: inherit; }
 .sketch-length-input:hover, .sketch-length-input:focus-within { opacity: 1; }
 .context-fields .n-input-number { opacity: .5; transition: opacity .16s ease; }
 .context-fields .n-input-number:hover, .context-fields .n-input-number:focus-within { opacity: 1; }
-.sketch-length-input input { width: 62px; height: 23px; padding: 0 3px 0 6px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sketch-length-input input { width: 50px; height: 23px; padding: 0 3px 0 6px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sketch-lock-badge { width: 13px; height: 13px; display: grid; place-items: center; padding: 0; color: var(--model3d-ui-54a184); background: transparent; border: 0; cursor: pointer; transform: translate(4px, -14px); pointer-events: auto; }
+.sketch-lock-badge.is-edge { transform: translate(-18px, -50%); }
+.sketch-lock-badge svg { width: 13px; height: 13px; fill: currentColor; }
 .sketch-length-input select, .sketch-length-input span { height: 23px; padding: 0 5px; border: 0; border-left: 1px solid var(--model3d-ui-efd3b2); outline: 0; background: var(--model3d-ui-fff4e5); color: var(--model3d-ui-8a5c25); font-size: 9px; line-height: 23px; }
 .sketch-length-input select { width: 43px; padding: 0 2px; }
 /* Menus use icon + title/subtitle, without full-row active or hover fills. */
