@@ -1600,19 +1600,16 @@ function constraintResidual(entity: ModelEntity, index: number, rule: SketchEdge
     const currentAngle = Math.atan2(dy, dx);
     return Math.abs(Math.sin(currentAngle - referenceAngle)) * length;
 }
-function constraintPriorityIndices(entity: ModelEntity) {
-    const anchors = sketchConstraintAnchors.length
-        ? sketchConstraintAnchors
-        : entity.id === editingSketchId.value && selectedSketchPoint.value >= 0 ? [{ entityId: entity.id, index: selectedSketchPoint.value }] : [];
-    return new Set(anchors.filter((anchor) => anchor.entityId === entity.id).map((anchor) => anchor.index));
+function constraintPriorityIndices(entity: ModelEntity, softAnchors: SketchElementRef[]) {
+    return new Set(softAnchors.filter((anchor) => anchor.entityId === entity.id).map((anchor) => anchor.index));
 }
-function enforceEntityConstraints(entity: ModelEntity) {
-    if (!entity.points || !entity.edgeConstraints) return true;
+function enforceEntityConstraints(entity: ModelEntity, softAnchors: SketchElementRef[], preferEndpointA: boolean) {
+    if (!entity.points) return true;
     const originalPoints = entity.points.map((point) => [...point] as Point2);
-    const priority = constraintPriorityIndices(entity);
+    const priority = constraintPriorityIndices(entity, softAnchors);
     const anchored = new Set([...(entity.lockedPoints || []), ...priority]);
 
-    for (const [key, constraints] of Object.entries(entity.edgeConstraints)) {
+    for (const [key, constraints] of Object.entries(entity.edgeConstraints || {})) {
         for (const rule of constraintRules(constraints)) {
             if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') continue;
             const index = Number(key), aIndex = index, bIndex = (index + 1) % entity.points.length;
@@ -1628,12 +1625,12 @@ function enforceEntityConstraints(entity: ModelEntity) {
                 if (rule.reference) continue;
                 return false;
             }
-            const adjustA = anchored.has(bIndex) || (!anchored.has(aIndex) && priority.has(aIndex));
+            const adjustA = anchored.has(aIndex) ? false : anchored.has(bIndex) ? true : preferEndpointA;
             const anchor = adjustA ? b : a;
             const moving = adjustA ? a : b;
             if (type === 'horizontal') moving[1] = anchor[1];
             else if (type === 'vertical') moving[0] = anchor[0];
-            else if ((type === 'equal' || type === 'length') && (type === 'length' || referenceA && referenceB) && (type === 'length' || trimmedSelection.value?.entityId !== entity.id || trimmedSelection.value?.index !== index)) {
+            else if ((type === 'equal' || type === 'length') && (type === 'length' || referenceA && referenceB)) {
                 const length = type === 'length' ? rule.length! : Math.hypot(referenceB![0] - referenceA![0], referenceB![1] - referenceA![1]);
                 if (Math.hypot(moving[0] - anchor[0], moving[1] - anchor[1]) < SKETCH_CONSTRAINT_TOLERANCE) return false;
                 const angle = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
@@ -1648,6 +1645,41 @@ function enforceEntityConstraints(entity: ModelEntity) {
                 moving[1] = anchor[1] + Math.sin(desired) * length;
             }
             if (!moving.every(Number.isFinite)) return false;
+        }
+    }
+
+    // Incoming rules let a preserved target edge drive its reference instead of forcing its other endpoint to move.
+    for (const source of document.value.entities) {
+        if (source.id === entity.id || !source.points) continue;
+        for (const [key, constraints] of Object.entries(source.edgeConstraints || {})) {
+            for (const rule of constraintRules(constraints)) {
+                if (rule.reference?.entityId !== entity.id) continue;
+                const sourceIndex = Number(key), referenceIndex = rule.reference.index;
+                if (constraintResidual(source, sourceIndex, rule) <= SKETCH_CONSTRAINT_TOLERANCE) continue;
+                const aIndex = referenceIndex, bIndex = (referenceIndex + 1) % entity.points.length;
+                const a = entity.points[aIndex], b = entity.points[bIndex];
+                const sourceA = source.points[sourceIndex], sourceB = source.points[(sourceIndex + 1) % source.points.length];
+                if (!a || !b || !sourceA || !sourceB) return false;
+                if (anchored.has(aIndex) && anchored.has(bIndex)) continue;
+
+                const adjustA = anchored.has(aIndex) ? false : anchored.has(bIndex) ? true : preferEndpointA;
+                const anchor = adjustA ? b : a;
+                const moving = adjustA ? a : b;
+                if (rule.type === 'equal') {
+                    const length = Math.hypot(sourceB[0] - sourceA[0], sourceB[1] - sourceA[1]);
+                    const angle = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
+                    moving[0] = anchor[0] + Math.cos(angle) * length;
+                    moving[1] = anchor[1] + Math.sin(angle) * length;
+                } else if (rule.type === 'parallel' || rule.type === 'perpendicular') {
+                    const base = Math.atan2(sourceB[1] - sourceA[1], sourceB[0] - sourceA[0]) + (rule.type === 'perpendicular' ? Math.PI / 2 : 0);
+                    const current = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
+                    const desired = base + Math.round(Math.atan2(Math.sin(current - base), Math.cos(current - base)) / Math.PI) * Math.PI;
+                    const length = Math.hypot(moving[0] - anchor[0], moving[1] - anchor[1]);
+                    moving[0] = anchor[0] + Math.cos(desired) * length;
+                    moving[1] = anchor[1] + Math.sin(desired) * length;
+                }
+                if (!moving.every(Number.isFinite)) return false;
+            }
         }
     }
 
@@ -1700,25 +1732,59 @@ function syncLocalSketchFromDocument() {
     sketchCurves.value = JSON.parse(JSON.stringify(entity.curves || {}));
     sketchLockedPoints.value = [...(entity.lockedPoints || [])];
 }
-function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void) {
-    const rollback = (reason: string) => {
-        document.value.entities = before.entities;
-        onRollback?.();
-        syncLocalSketchFromDocument();
-        sketchOperationRolledBack = transforming;
-        message.warning(reason);
-        return false;
-    };
+function currentConstraintAnchors() {
+    if (sketchConstraintAnchors.length) return sketchConstraintAnchors.map((anchor) => ({ ...anchor }));
+    return editingSketchId.value && selectedSketchPoint.value >= 0 ? [{ entityId: editingSketchId.value, index: selectedSketchPoint.value }] : [];
+}
+function constraintAnchorLevels(): SketchElementRef[][] {
+    const current = currentConstraintAnchors();
+    if (!current.length) return [[]];
+    const counterparts = new Map<string, SketchElementRef>();
+    const shape = new Map<string, SketchElementRef>();
+    current.forEach((anchor) => {
+        const entity = document.value.entities.find((item) => item.id === anchor.entityId);
+        if (!entity?.points) return;
+        entity.points.forEach((_, index) => shape.set(`${entity.id}:${index}`, { entityId: entity.id, index }));
+        const previous = anchor.index > 0 ? anchor.index - 1 : entityProfileClosed(entity) ? entity.points.length - 1 : -1;
+        const next = anchor.index < entity.points.length - 1 || entityProfileClosed(entity) ? (anchor.index + 1) % entity.points.length : -1;
+        if (previous >= 0) counterparts.set(`${entity.id}:${previous}`, { entityId: entity.id, index: previous });
+        if (next >= 0) counterparts.set(`${entity.id}:${next}`, { entityId: entity.id, index: next });
+    });
+
+    const key = (anchors: SketchElementRef[]) => anchors.map((anchor) => `${anchor.entityId}:${anchor.index}`).sort().join('|');
+    const unique = (anchors: SketchElementRef[]) => [...new Map(anchors.map((anchor) => [`${anchor.entityId}:${anchor.index}`, anchor])).values()];
+    const withoutCounterparts = [...shape.values()].filter((anchor) => !counterparts.has(`${anchor.entityId}:${anchor.index}`));
+    const levels = [
+        [...shape.values()],
+        unique([...current, ...counterparts.values()]),
+        unique([...current, ...withoutCounterparts]),
+        current,
+        [],
+    ];
+    return [...new Map(levels.map((anchors) => [key(anchors), anchors])).values()];
+}
+function changedConstraintPointCount(source: ModelDocument, target: ModelDocument) {
+    let count = 0;
+    target.entities.forEach((entity) => {
+        const original = source.entities.find((item) => item.id === entity.id);
+        entity.points?.forEach((point, index) => {
+            const before = original?.points?.[index];
+            if (before && Math.hypot(point[0] - before[0], point[1] - before[1]) > SKETCH_CONSTRAINT_TOLERANCE) count++;
+        });
+    });
+    return count;
+}
+function runConstraintChain(rootId: string | null, softAnchors: SketchElementRef[], preferEndpointA: boolean): 'ok' | 'limit' | 'conflict' {
     const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
     const visited = new Set<string>();
     while (queue.length) {
-        if (visited.size >= constraintLimit.value) return rollback(`约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚`);
+        if (visited.size >= constraintLimit.value) return 'limit';
         const entityId = queue.shift()!;
         if (visited.has(entityId)) continue;
         const entity = document.value.entities.find((item) => item.id === entityId);
         if (!entity) continue;
         visited.add(entityId);
-        if (!enforceEntityConstraints(entity)) return rollback('约束链无法满足固定元素或当前操作位置，本次操作已回滚');
+        if (!enforceEntityConstraints(entity, softAnchors, preferEndpointA)) return 'conflict';
 
         const related = new Set<string>();
         Object.values(entity.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
@@ -1734,11 +1800,44 @@ function enforceSketchConstraints(rootId = editingSketchId.value, before = clone
         if (!entity) continue;
         for (const [key, constraints] of Object.entries(entity.edgeConstraints || {})) {
             if (constraintRules(constraints).some((rule) => constraintResidual(entity, Number(key), rule) > SKETCH_CONSTRAINT_TOLERANCE)) {
-                return rollback('约束链无法满足固定元素或当前操作位置，本次操作已回滚');
+                return 'conflict';
             }
         }
     }
-    return true;
+    return 'ok';
+}
+function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void) {
+    const attempted = cloneDocument(document.value);
+    let failure: 'limit' | 'conflict' = 'conflict';
+
+    // Try stronger preservation first; endpoint direction variants break ties by changed vertex count.
+    for (const anchors of constraintAnchorLevels()) {
+        let best: { document: ModelDocument; changed: number } | null = null;
+        for (const preferEndpointA of [false, true]) {
+            document.value.entities = cloneDocument(attempted).entities;
+            const result = runConstraintChain(rootId, anchors, preferEndpointA);
+            if (result === 'limit') {
+                failure = 'limit';
+                break;
+            }
+            if (result !== 'ok') continue;
+            const candidate = cloneDocument(document.value);
+            const changed = changedConstraintPointCount(attempted, candidate);
+            if (!best || changed < best.changed) best = { document: candidate, changed };
+        }
+        if (best) {
+            document.value.entities = best.document.entities;
+            syncLocalSketchFromDocument();
+            return true;
+        }
+    }
+
+    document.value.entities = before.entities;
+    onRollback?.();
+    syncLocalSketchFromDocument();
+    sketchOperationRolledBack = transforming;
+    message.warning(failure === 'limit' ? `约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚` : '约束链无法同时满足固定元素，本次操作已回滚');
+    return false;
 }
 function syncEditingSketch() {
     const before = sketchOperationBefore || cloneDocument(document.value);
