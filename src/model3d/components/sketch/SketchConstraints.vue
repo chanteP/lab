@@ -5,7 +5,7 @@ import { computed } from 'vue';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
 import type { SketchEdgeConstraint } from '../../types';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number; guideSnapEnabled: boolean }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean }>();
 const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: []; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean] }>();
 const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度' })[props.constraintRule?.type || 'auto']);
 </script>
@@ -14,8 +14,8 @@ const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平
     <aside class="constraints-panel" aria-label="草图约束">
         <div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div>
         <p>{{ selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Ctrl/Command 多选。' }}</p>
-        <button :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
-        <div class="constraint-pair"><button :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
+        <button :class="{ active: autoActive }" :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
+        <div class="constraint-pair"><button :class="{ active: horizontalActive }" :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :class="{ active: verticalActive }" :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'perpendicular')">正交</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'equal')">等长</button>
@@ -38,6 +38,7 @@ const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平
 p { color: var(--model3d-ui-7e8b83); font-size: 10px; line-height: 1.6; }
 button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 0; background: transparent; color: var(--model3d-ui-56675d); font-size: 10px; cursor: pointer; }
 button:hover { color: var(--model3d-ui-147d70); }
+button.active { color: var(--model3d-ui-147d70); font-weight: 700; }
 button:disabled { opacity: .3; cursor: default; }
 .constraint-pair { display: flex; gap: 5px; }
 .constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-8a968f); font-size: 9px; }

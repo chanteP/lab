@@ -181,6 +181,18 @@ const selectionLengthLocked = computed(() => selectedEdges.value.length > 0 && s
     const entity = document.value.entities.find((item) => item.id === entityId);
     return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => rule.type === 'length');
 }));
+const horizontalConstraintActive = computed(() => selectedEdges.value.length > 0 && selectedEdges.value.every(({ entityId, index }) => {
+    const entity = document.value.entities.find((item) => item.id === entityId);
+    return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => rule.type === 'horizontal');
+}));
+const verticalConstraintActive = computed(() => selectedEdges.value.length > 0 && selectedEdges.value.every(({ entityId, index }) => {
+    const entity = document.value.entities.find((item) => item.id === entityId);
+    return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => rule.type === 'vertical');
+}));
+const autoConstraintActive = computed(() => selectedEdges.value.length > 0 && selectedEdges.value.every(({ entityId, index }) => {
+    const entity = document.value.entities.find((item) => item.id === entityId);
+    return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => ['horizontal', 'vertical'].includes(rule.type));
+}));
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
@@ -2599,7 +2611,8 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
+                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
+                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
