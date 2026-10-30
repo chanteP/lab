@@ -2,12 +2,13 @@ import type { ComputedRef, Ref } from 'vue';
 import { useMessage } from 'naive-ui';
 import type { EditPhase, Viewport } from '../../engine/Viewport';
 import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../engine/profiles';
-import { borderSegments, sliceBorder, splitCubic } from '../../engine/sketchBorders';
+import { borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
+import { curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity } from '../../utils/entity';
-import { cloneDocument, createEntity, ENTITY_NAMES, type ModelDocument, type ModelEntity, type Point2, type SketchElementRef, type SketchPlane } from '../../types';
+import { cloneDocument, createEntity, ENTITY_NAMES, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
 import type { SketchState } from './useSketchState';
 import type { SketchConstraints } from './useSketchConstraints';
 
@@ -454,7 +455,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             return;
         }
         const remaining: ModelEntity[] = [];
-        const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false) => {
+        const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false, analyticCurve?: SketchCurve) => {
             if (points.length < 2) return;
             const next = createEntity('sketch', uid());
             next.name = `${ENTITY_NAMES.sketch} ${document.value.entities.filter((item) => item.kind === 'sketch').length + remaining.length + 1}`;
@@ -465,6 +466,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             next.profileType = arc ? 'arc' : 'polygon';
             next.points = points.map((point) => [...point]);
             next.curves = curve ? { 0: curve } : {};
+            if (analyticCurve) next.analyticCurves = { 0: analyticCurve };
             delete next.depth;
             remaining.push(next);
         };
@@ -472,7 +474,12 @@ export function useSketchEditing(options: SketchEditingOptions) {
             const ranges = segment.index !== index ? [[0, 1]] : segment.closed && start < 0 ? [[end, 1], [0, start + 1]] : [[0, start], [end, 1]];
             ranges.forEach(([from, to]) => {
                 if (to - from < 0.00001) return;
-                const samples = sliceBorder(segment, from, to);
+                const sliced = sliceBorderCurve(segment, from, to);
+                const samples = sliced.points;
+                if (sliced.curve) {
+                    const cubic = sliced.curve.kind === 'cubic' ? { c1: sliced.curve.c1, c2: sliced.curve.c2 } : undefined;
+                    return makeOpen([samples[0], samples[samples.length - 1]], cubic, false, sliced.curve);
+                }
                 if (type === 'arc') return makeOpen([samples[0], samples[Math.floor(samples.length / 2)], samples[samples.length - 1]], undefined, true);
                 const source = entity.points || [];
                 const a = source[segment.index], b = source[(segment.index + 1) % source.length];
@@ -503,6 +510,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points.map((point) => [...point] as Point2),
             c1: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c1 : undefined,
             c2: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c2 : undefined,
+            curve: segment.curve,
         })));
         const rebuilt = restitchSketchEdges(edges).map((path, index) => {
             const entity = createEntity('sketch', uid());
@@ -515,6 +523,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             entity.controlPoints = path.controlPoints;
             entity.trimmed = true;
             entity.curves = path.curves;
+            entity.analyticCurves = path.analyticCurves;
             delete entity.depth;
             return entity;
         });
@@ -629,8 +638,22 @@ export function useSketchEditing(options: SketchEditingOptions) {
         const entity = selection && document.value.entities.find((item) => item.id === selection.entityId);
         if (!selection || !entity?.points) return;
         const start = selection.index, end = start + selection.sourceCount;
-        if (end >= entity.points.length) return;
+        if (end > entity.points.length || end === entity.points.length && !entityProfileClosed(entity)) return;
         if (selection.kind === 'curve') {
+            const segment = borderSegments(entity).find((item) => item.index === selection.index);
+            if (segment?.curve) {
+                const startDelta: Point2 = [points[0][0] - segment.points[0][0], points[0][1] - segment.points[0][1]];
+                const last = points[points.length - 1], originalLast = segment.points[segment.points.length - 1];
+                const endDelta: Point2 = [last[0] - originalLast[0], last[1] - originalLast[1]];
+                const delta = Math.hypot(...startDelta) > 1e-12 ? startDelta : endDelta;
+                const curve = translateCurve(segment.curve, delta);
+                entity.points![start] = curvePointForEntity(curve, 0);
+                entity.points![(start + 1) % entity.points!.length] = curvePointForEntity(curve, 1);
+                entity.analyticCurves = { ...(entity.analyticCurves || {}), [start]: curve };
+                if (curve.kind === 'cubic') entity.curves = { ...(entity.curves || {}), [start]: { c1: [...curve.c1], c2: [...curve.c2] } };
+                viewport()?.refreshSketchFaces();
+                return;
+            }
             points.forEach((point, index) => entity.points![start + index] = [...point]);
         } else {
             const oldPoints = entity.points, oldCurves = entity.curves || {};

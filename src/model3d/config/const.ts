@@ -17,8 +17,6 @@ export const INTERACTION = {
     sketchGuideSnapPx: 8,
     // Reconnected intersection endpoints may differ slightly from the sampled host edge.
     sketchIntersectionTolerance: 0.02,
-    // Sampled circles/ellipses remain one logical border through small tangent changes.
-    sketchCurveContinuityDeg: 12,
 } as const;
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */

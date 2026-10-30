@@ -1,4 +1,5 @@
-import type { Point2 } from '../types';
+import type { Point2, SketchCurve } from '../types';
+import { reverseCurve } from './sketchCurves';
 import type { ProfileCurves } from './profiles';
 
 export interface RestitchEdge {
@@ -7,12 +8,14 @@ export interface RestitchEdge {
     points: Point2[];
     c1?: Point2;
     c2?: Point2;
+    curve?: SketchCurve;
 }
 
 export interface RestitchPath {
     points: Point2[];
     controlPoints: number[];
     curves: ProfileCurves;
+    analyticCurves: Record<number, SketchCurve>;
     closed: boolean;
 }
 
@@ -34,10 +37,16 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
         const points: Point2[] = [];
         const controlPoints: number[] = [];
         const curves: ProfileCurves = {};
+        const analyticCurves: Record<number, SketchCurve> = {};
         ordered.forEach(({ index, forward }) => {
             const edge = edges[index];
             controlPoints.push(points.length);
-            if (edge.c1 && edge.c2) {
+            if (edge.curve) {
+                points.push([...(forward ? edge.a : edge.b)]);
+                const curve = forward ? edge.curve : reverseCurve(edge.curve);
+                analyticCurves[points.length - 1] = curve;
+                if (curve.kind === 'cubic') curves[points.length - 1] = { c1: [...curve.c1], c2: [...curve.c2] };
+            } else if (edge.c1 && edge.c2) {
                 points.push([...(forward ? edge.a : edge.b)]);
                 curves[points.length - 1] = forward ? { c1: [...edge.c1], c2: [...edge.c2] } : { c1: [...edge.c2], c2: [...edge.c1] };
             } else {
@@ -50,7 +59,7 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
             controlPoints.push(points.length);
             points.push([...(last.forward ? edges[last.index].b : edges[last.index].a)]);
         }
-        return { points, controlPoints: [...new Set(controlPoints)], curves, closed };
+        return { points, controlPoints: [...new Set(controlPoints)], curves, analyticCurves, closed };
     };
 
     const trace = (first: number, start: string, stopAtJunction: boolean) => {
@@ -71,14 +80,14 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
             if (stopAtJunction && (adjacency.get(current)?.length || 0) !== 2) break;
             const candidates = (adjacency.get(current) || []).filter((index) => !used.has(index));
             if (!candidates.length) break;
-            const incoming = forward ? [edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]] : [edge.a[0] - edge.b[0], edge.a[1] - edge.b[1]];
+            const incoming = (forward ? [edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]] : [edge.a[0] - edge.b[0], edge.a[1] - edge.b[1]]) as Point2;
             next = candidates.sort((aIndex, bIndex) => {
                 const score = (index: number) => {
                     const candidate = edges[index];
                     const forwardCandidate = key(candidate.a) === current;
-                    const outgoing = forwardCandidate
+                    const outgoing = (forwardCandidate
                         ? [candidate.b[0] - candidate.a[0], candidate.b[1] - candidate.a[1]]
-                        : [candidate.a[0] - candidate.b[0], candidate.a[1] - candidate.b[1]];
+                        : [candidate.a[0] - candidate.b[0], candidate.a[1] - candidate.b[1]]) as Point2;
                     return (incoming[0] * outgoing[0] + incoming[1] * outgoing[1]) / ((length(incoming) * length(outgoing)) || 1);
                 };
                 return score(bIndex) - score(aIndex);

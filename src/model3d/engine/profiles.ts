@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { ModelEntity, Point2 } from '../types';
+import type { ModelEntity, Point2, SketchCurve } from '../types';
+import { curvePoints } from './sketchCurves';
 
 export type ProfileType = 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
 export type ProfileCurves = Record<number, { c1: Point2; c2: Point2 }>;
@@ -42,8 +43,8 @@ export function profileEllipseAngle(center: Point2, edge: Point2, vertical: Poin
     return Math.atan2(orientation * (-sin * dx + cos * dy), cos * dx + sin * dy);
 }
 
-export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number): Point2[] {
-    if (curves && Object.keys(curves).length) return profileShape(type, source, segments, curves, sides, sectorAngle, open, startAngle).getPoints(segments).map((point) => [point.x, point.y]);
+export function profilePoints(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number, analyticCurves?: Record<number, SketchCurve>): Point2[] {
+    if (curves && Object.keys(curves).length || analyticCurves && Object.keys(analyticCurves).length) return profileShape(type, source, segments, curves, sides, sectorAngle, open, startAngle, analyticCurves).getPoints(segments).map((point) => [point.x, point.y]);
     if (type === 'circle' && source.length >= 2) {
         const [center, edge] = source;
         const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
@@ -99,18 +100,28 @@ export function profilePoints(type: ProfileType, source: Point2[], segments = 64
     return source;
 }
 
-export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number) {
-    if (curves && Object.keys(curves).length && source.length > 1) {
+export function profileShape(type: ProfileType, source: Point2[], segments = 64, curves?: ProfileCurves, sides = 3, sectorAngle = 360, open = false, startAngle?: number, analyticCurves?: Record<number, SketchCurve>) {
+    if ((curves && Object.keys(curves).length || analyticCurves && Object.keys(analyticCurves).length) && source.length > 1) {
         const shape = new THREE.Shape();
         shape.moveTo(...source[0]);
-        for (let index = 1; index < source.length; index++) {
-            const curve = curves[index - 1];
-            if (curve) shape.bezierCurveTo(curve.c1[0], curve.c1[1], curve.c2[0], curve.c2[1], source[index][0], source[index][1]);
-            else shape.lineTo(...source[index]);
-        }
+        const append = (index: number, point: Point2) => {
+            const analytic = analyticCurves?.[index];
+            if (analytic?.kind === 'cubic') {
+                shape.bezierCurveTo(analytic.c1[0], analytic.c1[1], analytic.c2[0], analytic.c2[1], point[0], point[1]);
+                return;
+            }
+            if (analytic) {
+                // Sampling is only for Three.js geometry; the logical border remains analytic.
+                curvePoints(analytic, 0, 1, segments).slice(1).forEach((sample) => shape.lineTo(...sample));
+                return;
+            }
+            const curve = curves?.[index];
+            if (curve) shape.bezierCurveTo(curve.c1[0], curve.c1[1], curve.c2[0], curve.c2[1], point[0], point[1]);
+            else shape.lineTo(...point);
+        };
+        for (let index = 1; index < source.length; index++) append(index - 1, source[index]);
         if (profileClosed(type) && !open) {
-            const curve = curves[source.length - 1];
-            if (curve) shape.bezierCurveTo(curve.c1[0], curve.c1[1], curve.c2[0], curve.c2[1], source[0][0], source[0][1]);
+            append(source.length - 1, source[0]);
             shape.closePath();
         }
         return shape;

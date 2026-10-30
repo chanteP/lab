@@ -52,6 +52,7 @@ export interface ModelEntity {
     open?: boolean;
     profileStartAngle?: number;
     curves?: Record<number, { c1: Point2; c2: Point2 }>;
+    analyticCurves?: Record<number, SketchCurve>;
     lockedPoints?: number[];
     sectorAngle?: number;
     sides?: number;
@@ -153,4 +154,13 @@ export type OperationState = {
     type: 'extrude'; profileId: string; bodyId: string; profileIds: string[]; bodyIds: string[]; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean;
 } | {
     type: 'boolean'; resultId: string; targetId: string; toolId: string; before: ModelDocument; keepTarget: boolean; keepTool: boolean; existing: boolean;
+};
+
+/** Analytic sketch curves; sampling is a render detail, not the logical edge representation. */
+export type SketchCurve = {
+    kind: 'line'; a: Point2; b: Point2;
+} | {
+    kind: 'cubic'; a: Point2; c1: Point2; c2: Point2; b: Point2;
+} | {
+    kind: 'ellipse'; center: Point2; radiusX: number; radiusY: number; rotation: number; orientation: 1 | -1; startAngle: number; endAngle: number;
 };
