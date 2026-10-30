@@ -1,7 +1,7 @@
-import type { Point2 } from '../types';
+import type { ModelEntity, Point2, SketchEdgeConstraint } from '../types';
 import type { ProfileCurves } from './profiles';
 
-export type SketchConstraintType = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal';
+export type SketchConstraintType = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
 
 export interface SketchConstraintResult {
     points: Point2[];
@@ -13,6 +13,46 @@ const EPSILON = 0.000001;
 const clonePoints = (points: Point2[]) => points.map((point) => [...point] as Point2);
 const distance = (a: Point2, b: Point2) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const angleDelta = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+
+function fixedLengthRule(entity: ModelEntity, index: number) {
+    const value = entity.edgeConstraints?.[index];
+    const rules = Array.isArray(value) ? value : value ? [value] : [];
+    return rules.find((rule): rule is SketchEdgeConstraint & { length: number } => rule.type === 'length' && !!rule.length && rule.length > EPSILON);
+}
+
+function projectToCircle(point: Point2, center: Point2, radius: number): Point2 {
+    const angle = Math.atan2(point[1] - center[1], point[0] - center[0]);
+    return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius];
+}
+
+/** Keep a dragged endpoint on its adjacent fixed-length edges, including circle intersections at corners. */
+export function projectSketchPointToFixedLengths(entity: ModelEntity, index: number, point: Point2, closed: boolean): Point2 {
+    if (!entity.points?.[index]) return point;
+    const previous = index > 0 ? index - 1 : closed ? entity.points.length - 1 : -1;
+    const nextRule = fixedLengthRule(entity, index);
+    const previousRule = previous >= 0 ? fixedLengthRule(entity, previous) : undefined;
+    const nextCenter = entity.points[(index + 1) % entity.points.length];
+    const previousCenter = previous >= 0 ? entity.points[previous] : undefined;
+
+    if (nextRule && nextCenter && previousRule && previousCenter) {
+        const dx = nextCenter[0] - previousCenter[0], dy = nextCenter[1] - previousCenter[1];
+        const centerDistance = Math.hypot(dx, dy);
+        if (centerDistance < EPSILON) return projectToCircle(point, previousCenter, previousRule.length);
+        const along = (previousRule.length ** 2 - nextRule.length ** 2 + centerDistance ** 2) / (2 * centerDistance);
+        const heightSquared = previousRule.length ** 2 - along ** 2;
+        if (heightSquared < -EPSILON) return point;
+        const height = Math.sqrt(Math.max(0, heightSquared));
+        const base: Point2 = [previousCenter[0] + along * dx / centerDistance, previousCenter[1] + along * dy / centerDistance];
+        const candidates: Point2[] = [
+            [base[0] - height * dy / centerDistance, base[1] + height * dx / centerDistance],
+            [base[0] + height * dy / centerDistance, base[1] - height * dx / centerDistance],
+        ];
+        return candidates.sort((a, b) => distance(a, point) - distance(b, point))[0];
+    }
+    if (nextRule && nextCenter) return projectToCircle(point, nextCenter, nextRule.length);
+    if (previousRule && previousCenter) return projectToCircle(point, previousCenter, previousRule.length);
+    return point;
+}
 
 function segmentIndices(index: number, count: number): [number, number] {
     return [index, (index + 1) % count];

@@ -30,12 +30,12 @@ import SketchHints from './components/sketch/SketchHints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
 import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
 import { INTERACTION, STORAGE_KEYS } from './config/const';
-import { solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
+import { projectSketchPointToFixedLengths, solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from './engine/sketchRestitch';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     cloneDocument, createDocument, createEntity, ENTITY_NAMES, isDocument, normalizeDocument,
-    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit, type SketchElementRef,
+    type BooleanOperation, type GeometryQuality, type ModelDocument, type ModelEntity, type ProjectRecord, type Point2, type Vec3, type SketchPlane, type LengthUnit, type SketchElementRef, type SketchEdgeConstraint,
 } from './types';
 
 const message = useMessage();
@@ -52,6 +52,9 @@ let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves }
 let sketchRefreshFrame = 0;
 let trimmedCurveDrag: { start: Point2; points: Point2[] } | null = null;
 let multiPointDrag: { start: Point2; points: Map<string, Point2[]>; curves: Map<string, ProfileCurves> } | null = null;
+let sketchConstraintAnchors: SketchElementRef[] = [];
+let sketchOperationRolledBack = false;
+let sketchOperationBefore: ModelDocument | null = null;
 type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
 
 const projects = ref<ProjectRecord[]>([]);
@@ -173,6 +176,10 @@ const selectionLocked = computed(() => {
     });
     return false;
 });
+const selectionLengthLocked = computed(() => selectedEdges.value.length > 0 && selectedEdges.value.every(({ entityId, index }) => {
+    const entity = document.value.entities.find((item) => item.id === entityId);
+    return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => rule.type === 'length');
+}));
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
@@ -1139,10 +1146,16 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         return;
     }
     if (phase === 'start') {
-        beginSketchHandleDrag();
+        const pointIndex = trimmedSelection.value ? trimmedSelection.value.index + (index ? trimmedSelection.value.sourceCount : 0) : index;
+        beginSketchHandleDrag(editingSketchId.value ? [{ entityId: editingSketchId.value, index: pointIndex }] : []);
         return;
     }
     if (!sketchPoints.value[index]) return;
+    const edited = document.value.entities.find((entity) => entity.id === editingSketchId.value);
+    if (edited) {
+        const pointIndex = trimmedSelection.value ? trimmedSelection.value.index + (index ? trimmedSelection.value.sourceCount : 0) : index;
+        point = projectSketchPointToFixedLengths(edited, pointIndex, point, !trimmedSelection.value && entityProfileClosed(edited));
+    }
     const previous = sketchPoints.value[index];
     const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
     const straightCurveSegments = new Set<number>();
@@ -1195,14 +1208,21 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
     refreshSketch();
     if (phase === 'end') finishSketchHandleDrag();
 }
-function beginSketchHandleDrag() {
+function beginSketchHandleDrag(anchors: SketchElementRef[] = []) {
     if (!editingSketchId.value) return;
+    sketchOperationBefore = cloneDocument(document.value);
     pushHistory();
     transforming = true;
+    sketchConstraintAnchors = anchors.map((anchor) => ({ ...anchor }));
+    sketchOperationRolledBack = false;
 }
 function finishSketchHandleDrag() {
     if (!transforming) return;
     transforming = false;
+    if (sketchOperationRolledBack) popHistory();
+    sketchConstraintAnchors = [];
+    sketchOperationRolledBack = false;
+    sketchOperationBefore = null;
 }
 function moveSelectedPoints(point: Point2, phase: EditPhase) {
     if (phase === 'start') {
@@ -1210,7 +1230,7 @@ function moveSelectedPoints(point: Point2, phase: EditPhase) {
             message.info('所选点包含固定点，请先取消固定');
             return;
         }
-        beginSketchHandleDrag();
+        beginSketchHandleDrag(selectedPoints.value);
         const points = new Map<string, Point2[]>(), curves = new Map<string, ProfileCurves>();
         new Set(selectedPoints.value.map((item) => item.entityId)).forEach((entityId) => {
             const entity = document.value.entities.find((item) => item.id === entityId);
@@ -1252,6 +1272,7 @@ function moveSelectedPoints(point: Point2, phase: EditPhase) {
         sketchCurves.value = current.curves;
     }
     if (phase === 'end') {
+        const before = sketchOperationBefore || cloneDocument(document.value);
         changes.forEach((change, entityId) => {
             const entity = document.value.entities.find((item) => item.id === entityId);
             if (entity) {
@@ -1259,7 +1280,7 @@ function moveSelectedPoints(point: Point2, phase: EditPhase) {
                 entity.curves = change.curves;
             }
         });
-        enforceSketchConstraints();
+        enforceSketchConstraints(editingSketchId.value, before);
         viewport?.refreshSketchFaces();
         multiPointDrag = null;
     }
@@ -1293,7 +1314,7 @@ function moveSketchCenter(point: Point2, phase: EditPhase) {
             message.info('形状包含固定点，请先取消固定再整体移动');
             return;
         }
-        beginSketchHandleDrag();
+        beginSketchHandleDrag(editingSketchId.value ? sketchPoints.value.map((_, index) => ({ entityId: editingSketchId.value!, index })) : []);
         sketchCenterDrag = { start: [...point], points: sketchPoints.value.map((source) => [...source]), curves: JSON.parse(JSON.stringify(sketchCurves.value)) };
         return;
     }
@@ -1558,25 +1579,63 @@ function syncTrimmedEntity(points: Point2[]) {
     }
     viewport?.refreshSketchFaces();
 }
+const SKETCH_CONSTRAINT_TOLERANCE = 0.0001;
+function constraintResidual(entity: ModelEntity, index: number, rule: SketchEdgeConstraint) {
+    if (!entity.points) return Number.POSITIVE_INFINITY;
+    const a = entity.points[index], b = entity.points[(index + 1) % entity.points.length];
+    if (!a || !b) return Number.POSITIVE_INFINITY;
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const length = Math.hypot(dx, dy);
+    const type = rule.type === 'auto' ? (Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical') : rule.type;
+    if (type === 'horizontal') return Math.abs(dy);
+    if (type === 'vertical') return Math.abs(dx);
+    if (type === 'length') return rule.length! > 0 ? Math.abs(length - rule.length!) : Number.POSITIVE_INFINITY;
+
+    const reference = rule.reference && document.value.entities.find((item) => item.id === rule.reference!.entityId);
+    const referenceIndex = rule.reference?.index;
+    const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
+    if (!referenceA || !referenceB) return Number.POSITIVE_INFINITY;
+    if (type === 'equal') return Math.abs(length - Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]));
+    const referenceAngle = Math.atan2(referenceB[1] - referenceA[1], referenceB[0] - referenceA[0]) + (type === 'perpendicular' ? Math.PI / 2 : 0);
+    const currentAngle = Math.atan2(dy, dx);
+    return Math.abs(Math.sin(currentAngle - referenceAngle)) * length;
+}
+function constraintPriorityIndices(entity: ModelEntity) {
+    const anchors = sketchConstraintAnchors.length
+        ? sketchConstraintAnchors
+        : entity.id === editingSketchId.value && selectedSketchPoint.value >= 0 ? [{ entityId: entity.id, index: selectedSketchPoint.value }] : [];
+    return new Set(anchors.filter((anchor) => anchor.entityId === entity.id).map((anchor) => anchor.index));
+}
 function enforceEntityConstraints(entity: ModelEntity) {
-        const originalPoints = entity.points!.map((point) => [...point] as Point2);
-        if (!entity.points || !entity.edgeConstraints) return;
-        Object.entries(entity.edgeConstraints).forEach(([key, constraints]) => constraintRules(constraints).forEach((rule) => {
-            if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') return;
-            const index = Number(key), aIndex = index, bIndex = (index + 1) % entity.points!.length;
-            const a = entity.points![aIndex], b = entity.points![bIndex];
-            if (!a || !b) return;
+    if (!entity.points || !entity.edgeConstraints) return true;
+    const originalPoints = entity.points.map((point) => [...point] as Point2);
+    const priority = constraintPriorityIndices(entity);
+    const anchored = new Set([...(entity.lockedPoints || []), ...priority]);
+
+    for (const [key, constraints] of Object.entries(entity.edgeConstraints)) {
+        for (const rule of constraintRules(constraints)) {
+            if (entity.shapeConstraint === 'orthogonal' && rule.type === 'perpendicular') continue;
+            const index = Number(key), aIndex = index, bIndex = (index + 1) % entity.points.length;
+            if (constraintResidual(entity, index, rule) <= SKETCH_CONSTRAINT_TOLERANCE) continue;
+            const a = entity.points[aIndex], b = entity.points[bIndex];
             const reference = rule.reference && document.value.entities.find((item) => item.id === rule.reference!.entityId);
             const referenceIndex = rule.reference?.index;
             const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
             const type = rule.type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : rule.type;
-            const adjustA = entity.id === editingSketchId.value && selectedSketchPoint.value === aIndex;
+
+            // A referenced rule may be satisfied from the other end of the chain without moving fixed/current points.
+            if (anchored.has(aIndex) && anchored.has(bIndex)) {
+                if (rule.reference) continue;
+                return false;
+            }
+            const adjustA = anchored.has(bIndex) || (!anchored.has(aIndex) && priority.has(aIndex));
             const anchor = adjustA ? b : a;
             const moving = adjustA ? a : b;
             if (type === 'horizontal') moving[1] = anchor[1];
             else if (type === 'vertical') moving[0] = anchor[0];
-            else if (type === 'equal' && referenceA && referenceB && (trimmedSelection.value?.entityId !== entity.id || trimmedSelection.value?.index !== index)) {
-                const length = Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]);
+            else if ((type === 'equal' || type === 'length') && (type === 'length' || referenceA && referenceB) && (type === 'length' || trimmedSelection.value?.entityId !== entity.id || trimmedSelection.value?.index !== index)) {
+                const length = type === 'length' ? rule.length! : Math.hypot(referenceB![0] - referenceA![0], referenceB![1] - referenceA![1]);
+                if (Math.hypot(moving[0] - anchor[0], moving[1] - anchor[1]) < SKETCH_CONSTRAINT_TOLERANCE) return false;
                 const angle = Math.atan2(moving[1] - anchor[1], moving[0] - anchor[0]);
                 moving[0] = anchor[0] + Math.cos(angle) * length;
                 moving[1] = anchor[1] + Math.sin(angle) * length;
@@ -1588,53 +1647,78 @@ function enforceEntityConstraints(entity: ModelEntity) {
                 moving[0] = anchor[0] + Math.cos(desired) * length;
                 moving[1] = anchor[1] + Math.sin(desired) * length;
             }
-        }));
-        if (entity.shapeConstraint === 'orthogonal' && entity.points.length === 4) {
-            const [a, b, d] = entity.points;
-            const dx = b[0] - a[0], dy = b[1] - a[1];
-            const directionLength = Math.hypot(dx, dy);
-            const equalRule = Array.from({ length: 4 }, (_, index) => constraintRules(entity.edgeConstraints?.[index]).find((rule) => rule.type === 'equal' && rule.reference)).find(Boolean);
-            const reference = equalRule && document.value.entities.find((item) => item.id === equalRule.reference!.entityId);
-            const referenceIndex = equalRule?.reference?.index;
-            const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
-            const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
-            const draggedEqualTarget = trimmedSelection.value?.entityId === entity.id && constraintRules(entity.edgeConstraints?.[trimmedSelection.value.index]).some((rule) => rule.type === 'equal' && rule.reference);
-            const secondLength = draggedEqualTarget ? Math.hypot(entity.points[3][0] - entity.points[2][0], entity.points[3][1] - entity.points[2][1]) : referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
-            if (directionLength > 0.000001 && firstLength > 0.000001 && secondLength > 0.000001) {
-                const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
-                const perpendicular: Point2 = [-dy / directionLength * sign, dx / directionLength * sign];
-                const baseA: Point2 = draggedEqualTarget
-                    ? [entity.points![3][0] - perpendicular[0] * secondLength, entity.points![3][1] - perpendicular[1] * secondLength]
-                    : a;
-                const nextB: Point2 = [baseA[0] + dx / directionLength * (draggedEqualTarget ? secondLength : firstLength), baseA[1] + dy / directionLength * (draggedEqualTarget ? secondLength : firstLength)];
-                entity.points![0] = baseA;
-                entity.points![1] = nextB;
-                entity.points![2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
-                if (!draggedEqualTarget) entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
-            }
+            if (!moving.every(Number.isFinite)) return false;
         }
-        Object.entries(entity.curves || {}).forEach(([key, curve]) => {
-            const index = Number(key);
-            if (entity.shapeConstraint !== 'orthogonal' && !straightConstraintSegment(originalPoints, entity.curves || {}, index)) return;
-            const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
-            curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
-            curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
-        });
+    }
+
+    if (entity.shapeConstraint === 'orthogonal' && entity.points.length === 4) {
+        const [a, b, d] = entity.points;
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const directionLength = Math.hypot(dx, dy);
+        const equalRule = Array.from({ length: 4 }, (_, index) => constraintRules(entity.edgeConstraints?.[index]).find((rule) => rule.type === 'equal' && rule.reference)).find(Boolean);
+        const reference = equalRule && document.value.entities.find((item) => item.id === equalRule.reference!.entityId);
+        const referenceIndex = equalRule?.reference?.index;
+        const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
+        const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
+        const draggedEqualTarget = trimmedSelection.value?.entityId === entity.id && constraintRules(entity.edgeConstraints?.[trimmedSelection.value.index]).some((rule) => rule.type === 'equal' && rule.reference);
+        const secondLength = draggedEqualTarget ? Math.hypot(entity.points[3][0] - entity.points[2][0], entity.points[3][1] - entity.points[2][1]) : referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
+        if (directionLength > 0.000001 && firstLength > 0.000001 && secondLength > 0.000001) {
+            const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
+            const perpendicular: Point2 = [-dy / directionLength * sign, dx / directionLength * sign];
+            const baseA: Point2 = draggedEqualTarget ? [entity.points[3][0] - perpendicular[0] * secondLength, entity.points[3][1] - perpendicular[1] * secondLength] : a;
+            const nextB: Point2 = [baseA[0] + dx / directionLength * (draggedEqualTarget ? secondLength : firstLength), baseA[1] + dy / directionLength * (draggedEqualTarget ? secondLength : firstLength)];
+            entity.points[0] = baseA;
+            entity.points[1] = nextB;
+            entity.points[2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
+            if (!draggedEqualTarget) entity.points[3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
+        }
+    }
+    if ([...anchored].some((index) => originalPoints[index] && Math.hypot(entity.points![index][0] - originalPoints[index][0], entity.points![index][1] - originalPoints[index][1]) > SKETCH_CONSTRAINT_TOLERANCE)) return false;
+
+    Object.entries(entity.curves || {}).forEach(([key, curve]) => {
+        const index = Number(key);
+        if (entity.shapeConstraint !== 'orthogonal' && !straightConstraintSegment(originalPoints, entity.curves || {}, index)) return;
+        const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
+        curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
+        curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
+    });
+    return true;
 }
-function enforceSketchConstraints(rootId = editingSketchId.value) {
+function syncLocalSketchFromDocument() {
+    const entity = document.value.entities.find((item) => item.id === editingSketchId.value);
+    if (!entity?.points) return;
+    if (trimmedSelection.value) {
+        const start = trimmedSelection.value.index;
+        sketchPoints.value = trimmedSelection.value.kind === 'line'
+            ? [[...entity.points[start]], [...entity.points[(start + 1) % entity.points.length]]]
+            : entity.points.slice(start, start + trimmedSelection.value.sourceCount + 1).map((point) => [...point]);
+        const curve = trimmedSelection.value.kind === 'line' ? entity.curves?.[start] : undefined;
+        sketchCurves.value = curve ? { 0: { c1: [...curve.c1], c2: [...curve.c2] } } : {};
+        return;
+    }
+    sketchPoints.value = entity.points.map((point) => [...point]);
+    sketchCurves.value = JSON.parse(JSON.stringify(entity.curves || {}));
+    sketchLockedPoints.value = [...(entity.lockedPoints || [])];
+}
+function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void) {
+    const rollback = (reason: string) => {
+        document.value.entities = before.entities;
+        onRollback?.();
+        syncLocalSketchFromDocument();
+        sketchOperationRolledBack = transforming;
+        message.warning(reason);
+        return false;
+    };
     const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
     const visited = new Set<string>();
     while (queue.length) {
-        if (visited.size >= constraintLimit.value) {
-            message.warning(`约束关联超过 ${constraintLimit.value} 个元素，已暂停本次传播检查`);
-            break;
-        }
+        if (visited.size >= constraintLimit.value) return rollback(`约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚`);
         const entityId = queue.shift()!;
         if (visited.has(entityId)) continue;
         const entity = document.value.entities.find((item) => item.id === entityId);
         if (!entity) continue;
         visited.add(entityId);
-        enforceEntityConstraints(entity);
+        if (!enforceEntityConstraints(entity)) return rollback('约束链无法满足固定元素或当前操作位置，本次操作已回滚');
 
         const related = new Set<string>();
         Object.values(entity.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
@@ -1645,23 +1729,31 @@ function enforceSketchConstraints(rootId = editingSketchId.value) {
         })));
         related.forEach((id) => { if (!visited.has(id)) queue.push(id); });
     }
+    for (const entityId of visited) {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity) continue;
+        for (const [key, constraints] of Object.entries(entity.edgeConstraints || {})) {
+            if (constraintRules(constraints).some((rule) => constraintResidual(entity, Number(key), rule) > SKETCH_CONSTRAINT_TOLERANCE)) {
+                return rollback('约束链无法满足固定元素或当前操作位置，本次操作已回滚');
+            }
+        }
+    }
+    return true;
 }
 function syncEditingSketch() {
+    const before = sketchOperationBefore || cloneDocument(document.value);
     if (trimmedSelection.value) {
+        const sourceCount = trimmedSelection.value.sourceCount;
         syncTrimmedEntity(sketchPoints.value);
-        enforceSketchConstraints();
-        const entity = document.value.entities.find((item) => item.id === trimmedSelection.value!.entityId)!;
-        const start = trimmedSelection.value!.index;
-        sketchPoints.value = trimmedSelection.value!.kind === 'line'
-            ? [entity.points![start], entity.points![(start + 1) % entity.points!.length]]
-            : entity.points!.slice(start, start + trimmedSelection.value!.sourceCount + 1);
+        if (!enforceSketchConstraints(editingSketchId.value, before, () => { if (trimmedSelection.value) trimmedSelection.value.sourceCount = sourceCount; })) return;
+        syncLocalSketchFromDocument();
         return;
     }
     if (!editingSketchId.value) return;
     const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
     if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
-    enforceSketchConstraints();
-    if (item) sketchPoints.value = item.points!.map((point) => [...point]);
+    if (!enforceSketchConstraints(editingSketchId.value, before)) return;
+    syncLocalSketchFromDocument();
 }
 function constraintRules(value: NonNullable<ModelEntity['edgeConstraints']>[number] | undefined) {
     return Array.isArray(value) ? [...value] : value ? [value] : [];
@@ -1692,6 +1784,7 @@ function cancelConstraintRule() {
 function applySketchConstraint(type: SketchConstraintType) {
     const selected = selectedEdges.value;
     if (!selected.length) return;
+    const before = cloneDocument(document.value);
     activeConstraintRule.value = null;
     viewport?.setActiveConstraintRule(null);
     const cancel = selected.every(({ entityId, index }) => {
@@ -1707,6 +1800,26 @@ function applySketchConstraint(type: SketchConstraintType) {
                 if (remaining.length) entity.edgeConstraints[index] = remaining;
                 else delete entity.edgeConstraints[index];
             }
+        });
+        refreshSketch();
+        return;
+    }
+    if (type === 'length') {
+        const valid = selected.every(({ entityId, index }) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            if (!entity?.points || !straightConstraintSegment(entity.points, entity.curves || {}, index)) return false;
+            const a = entity.points[index], b = entity.points[(index + 1) % entity.points.length];
+            return Math.hypot(b[0] - a[0], b[1] - a[1]) > SKETCH_CONSTRAINT_TOLERANCE;
+        });
+        if (!valid) return message.warning('固定长度仅适用于非零长度的直线');
+        pushHistory();
+        selected.forEach(({ entityId, index }) => {
+            const entity = document.value.entities.find((item) => item.id === entityId)!;
+            const rules = constraintRules(entity.edgeConstraints?.[index]);
+            if (rules.some((rule) => rule.type === 'length')) return;
+            const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
+            rules.push({ id: uid(), type: 'length', length: Math.hypot(b[0] - a[0], b[1] - a[1]) });
+            entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
         });
         refreshSketch();
         return;
@@ -1757,9 +1870,12 @@ function applySketchConstraint(type: SketchConstraintType) {
         if (!rules.some((rule) => rule.type === next.type && rule.reference?.entityId === next.reference?.entityId && rule.reference?.index === next.reference?.index)) rules.push(next);
         entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
     });
-    enforceSketchConstraints();
-    const current = document.value.entities.find((entity) => entity.id === editingSketchId.value);
-    if (current?.points) sketchPoints.value = current.points.map((point) => [...point]);
+    if (!enforceSketchConstraints(editingSketchId.value, before)) {
+        popHistory();
+        refreshSketch();
+        return;
+    }
+    syncLocalSketchFromDocument();
     viewport?.refreshSketchFaces();
     refreshSketch();
 }
@@ -2343,7 +2459,7 @@ onBeforeUnmount(() => {
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides"
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
-                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
+                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 

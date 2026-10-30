@@ -3,8 +3,8 @@ import { ENTITY_COLORS } from '../config/colors';
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
 export type SketchElementRef = { entityId: string; index: number };
-export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal';
-export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef };
+export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
+export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number };
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
@@ -127,9 +127,15 @@ export function normalizeDocument(document: ModelDocument): ModelDocument {
     document.folders = Array.isArray(document.folders) ? document.folders : [];
     document.planes = Array.isArray(document.planes) ? document.planes : [];
     document.entities.forEach((entity) => entity.parentId = entity.parentId || null);
-    document.entities.forEach((entity) => Object.values(entity.edgeConstraints || {}).forEach((value) => {
+    document.entities.forEach((entity) => Object.entries(entity.edgeConstraints || {}).forEach(([key, value]) => {
         const rules = Array.isArray(value) ? value : [value];
-        rules.forEach((rule) => { if (!rule.id) rule.id = `constraint-${legacyConstraintId++}`; });
+        rules.forEach((rule) => {
+            if (!rule.id) rule.id = `constraint-${legacyConstraintId++}`;
+            if (rule.type === 'length' && !(rule.length! > 0) && entity.points) {
+                const index = Number(key), a = entity.points[index], b = entity.points[(index + 1) % entity.points.length];
+                if (a && b) rule.length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            }
+        });
     }));
     document.folders.forEach((folder) => { folder.parentId = folder.parentId || null; folder.visible = folder.visible !== false; });
     return document;

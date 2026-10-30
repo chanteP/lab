@@ -5,9 +5,9 @@ import { computed } from 'vue';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
 import type { SketchEdgeConstraint } from '../../types';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number }>();
 const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: []; 'update:constraintLimit': [value: number] }>();
-const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长' })[props.constraintRule?.type || 'auto']);
+const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度' })[props.constraintRule?.type || 'auto']);
 </script>
 
 <template>
@@ -19,6 +19,7 @@ const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'perpendicular')">正交</button>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'equal')">等长</button>
+        <button :disabled="!segmentCount" @click="emit('constraint', 'length')">{{ lengthLocked ? '取消长度固定' : '固定长度' }}</button>
         <button :disabled="selectedPoint < 0 && !edgeSelected" @click="emit('lock')"><NIcon><component :is="selectionLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectionLocked ? '取消固定' : '固定' }}</button>
         <div v-if="constraintRule" class="constraint-rule"><span>当前规则：{{ ruleLabel }}</span><button @click="emit('cancelRule')">取消此规则</button></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
