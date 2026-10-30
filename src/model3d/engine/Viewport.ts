@@ -131,6 +131,7 @@ export class Viewport {
     private activeArrowKey: string | null = null;
     private hoverArrowKey: string | null = null;
     private editingSketchId: string | null = null;
+    private editingBorderIndex: number | null = null;
     private sketchHoverId: string | null = null;
     private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private measureMode = false;
@@ -1334,7 +1335,13 @@ export class Viewport {
         this.model.children.forEach((child) => {
             const entity = this.document?.entities.find((item) => item.id === child.userData.entityId);
             const inSketch = !this.sketchMode || (entity?.kind === 'sketch' && entity.planeId === this.activePlane?.id);
-            child.visible = inSketch && child.userData.entityId !== this.editingSketchId && (!this.isolateIds || this.isolateIds.has(child.userData.entityId));
+            child.traverse((border) => { if (border.userData.borderEntityId) border.visible = true; });
+            child.visible = inSketch && (this.editingBorderIndex !== null || child.userData.entityId !== this.editingSketchId) && (!this.isolateIds || this.isolateIds.has(child.userData.entityId));
+            if (this.editingBorderIndex !== null && child.userData.entityId === this.editingSketchId) {
+                child.traverse((border) => {
+                    if (border.userData.borderSegmentIndex === this.editingBorderIndex) border.visible = false;
+                });
+            }
         });
         this.planes.children.forEach((child) => child.visible = !this.isolateIds || this.isolateIds.has(child.userData.planeId));
     }
@@ -1348,6 +1355,10 @@ export class Viewport {
             this.clearSketchReferences();
         }
         this.editingSketchId = id;
+        this.applyIsolation();
+    }
+    setSketchEdgeEditing(index: number | null) {
+        this.editingBorderIndex = index;
         this.applyIsolation();
     }
     private setSketchHover(id: string | null) {
@@ -1427,13 +1438,13 @@ export class Viewport {
                 if (a && b) this.addSketchLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true);
             });
         });
-        this.selectedEdgeRefs.forEach(({ entityId, index }) => {
+        this.selectedEdgeRefs.forEach(({ entityId, index }, order) => {
             const entity = this.document!.entities.find((item) => item.id === entityId);
             const segment = entity && borderSegments(entity).find((item) => item.index === index);
             if (!segment) return;
             const line = this.createFatLine(segment.points.map((point) => this.sketchWorld(point, 0.25)), segment.closed);
             const material = line.material as LineMaterial;
-            material.color.set(SKETCH_COLORS.active);
+            material.color.set(order === 0 && this.selectedEdgeRefs.length > 1 ? SKETCH_COLORS.referenceActive : SKETCH_COLORS.active);
             material.opacity = 1;
             line.renderOrder = 1005;
             this.sketchSelectionFeedback.add(line);

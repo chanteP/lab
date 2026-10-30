@@ -5,6 +5,7 @@ export const SKETCH_COLORS = {
     hoverFill: '#f2a65a',
     active: '#e99a45',
     hover: '#e99a45',
+    referenceActive: '#00c853',
     activeDark: '#a95616',
     border: '#8a6b3a',
     deletePoint: '#e05252',

@@ -900,6 +900,7 @@ function renderSketch() {
     viewport?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value, controlPoints, trimmed?.kind === 'curve');
 }
 function setSketchType(type: ProfileType) {
+    viewport?.setSketchEdgeEditing(null);
     selectedShapes.value = [];
     selectedEdges.value = [];
     selectedPoints.value = [];
@@ -929,6 +930,7 @@ function activateSketchSelectionTool() {
 }
 function clearSketchSelection() {
     finishSketchHandleDrag();
+    viewport?.setSketchEdgeEditing(null);
     selectedShapes.value = [];
     selectedEdges.value = [];
     selectedPoints.value = [];
@@ -980,6 +982,7 @@ function selectTrimmedBorder(entityId: string, index: number, additive = false) 
     selectedIds.value = [entityId];
     sketchContextMenu.value = null;
     viewport?.setSketchEditing(entityId);
+    viewport?.setSketchEdgeEditing(index);
     refreshSketch();
 }
 function selectSketchEntity(id: string, additive = false) {
@@ -996,6 +999,7 @@ function selectSketchEntity(id: string, additive = false) {
         viewport?.setActivePlane(activePlane.value);
     }
     trimmedSelection.value = null;
+    viewport?.setSketchEdgeEditing(null);
     editingSketchId.value = id;
     sketchPoints.value = cloneEntity(entity).points || [];
     sketchType.value = entity.profileType || 'polygon';
@@ -1734,6 +1738,7 @@ function closeSketch() {
 }
 function cancelSketch() {
     finishSketchHandleDrag();
+    viewport?.setSketchEdgeEditing(null);
     selectedShapes.value = [];
     selectedEdges.value = [];
     selectedPoints.value = [];

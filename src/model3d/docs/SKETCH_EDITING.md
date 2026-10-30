@@ -45,6 +45,9 @@
 
 - 选择状态分为 `selectedShapes`、`selectedEdges`、`selectedPoints`，同一类型可多选且不限数量。
 - 普通点击 border 选择逻辑边，Ctrl/Command 追加或取消选择；双击未裁剪 border 才进入整形状编辑。未选中的 border 保持正常不透明渲染。
+- 逻辑边编辑只隐藏正在编辑的 border，不得隐藏同实体的其他 border；退出编辑时恢复全部 border。
+- 多边约束以第一条选中边为参考，参考边使用高饱和 `SKETCH_COLORS.referenceActive`，其他选中边继续使用不透明 active 色。
+- 提示区包含“双击 border 选择整个形状”。
 - Ctrl/Command 再次点击已选元素可取消该元素；实体树中的形状也支持累加选择。
 - 点、边、形状不混选，后选择的类型替换先选择的类型。例如选点后再选边会清空点选择，选边后再选形状会清空边选择。
 - 选中元素使用不透明 `SKETCH_COLORS.active`；普通 hover 使用同色但更低不透明度，面 hover 继续使用独立半透明 active 填充。
