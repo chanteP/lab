@@ -33,7 +33,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 
 <template>
     <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }" aria-label="建模工具">
-        <div class="menu-state">建模</div>
+        <div class="menu-state"></div>
         <div class="tool-group primary-tools">
             <ViewportToolItem label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>

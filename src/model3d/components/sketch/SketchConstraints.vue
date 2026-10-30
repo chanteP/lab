@@ -43,7 +43,7 @@ button:disabled { opacity: .3; cursor: default; }
 .constraint-state i.locked { background: var(--model3d-ui-54a184); }
 .constraint-rule { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-147d70); font-size: 10px; }
 .constraint-rule button { color: var(--model3d-ui-c45757); }
-.constraint-limit { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }
+.constraint-limit { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }
 .constraint-limit label { display: flex; justify-content: space-between; color: var(--model3d-ui-8a968f); font-size: 9px; }
 .constraint-limit input { width: 100%; margin-top: 6px; accent-color: var(--model3d-ui-147d70); }
 </style>

@@ -191,7 +191,7 @@ button { color: inherit; }
 .primary-tools { gap: 4px !important; }
 .vertical-toolbar .primary-tools button { height: 34px; }
 .tool-panel, .constraints-panel { position: absolute; z-index: 7; top: 12px; width: 210px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); backdrop-filter: blur(12px); }
-.tool-panel { left: 68px; }
+.tool-panel { left: 108px; }
 .tool-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; letter-spacing: 1.1px; }
@@ -229,10 +229,10 @@ button { color: inherit; }
 .sketch-plane-picker .inline-command-row { margin-bottom: 12px; }
 .sketch-plane-picker .menu-command { min-height: 36px; }
 .constraints-panel { right: 12px; width: 174px; }
-.constraints-panel > button, .constraint-pair > button { width: 100%; min-height: 31px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 1px solid var(--model3d-ui-dce4df); border-radius: 5px; background: var(--model3d-ui-fff); color: var(--model3d-ui-56675d); font-size: 10px; cursor: pointer; }
+.constraints-panel > button, .constraint-pair > button { width: 100%; min-height: 20px; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0; padding: 4px 7px; border: 1px solid var(--model3d-ui-dce4df); border-radius: 5px; background: var(--model3d-ui-fff); color: var(--model3d-ui-56675d); font-size: 10px; cursor: pointer; }
 .constraints-panel > button:hover, .constraint-pair > button:hover { color: var(--model3d-ui-147d70); border-color: var(--model3d-ui-a9c9c2); }
 .constraints-panel button:disabled { opacity: .3; cursor: default; }
-.constraint-pair { display: flex; gap: 5px; }
+.constraint-pair { display: flex; gap: 5px; height: 23px; }
 .constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-8a968f); font-size: 9px; line-height: 1.5; }
 .constraint-state i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--model3d-ui-599fd0); }
 .constraint-state i.locked { background: var(--model3d-ui-54a184); }

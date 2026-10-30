@@ -1489,8 +1489,8 @@ export class Viewport {
             button.dataset.ruleId = rule.id;
         }
         if (edge) {
-            button.style.marginLeft = `${56 + order * 16}px`;
-            button.style.marginTop = '-6px';
+            button.style.marginLeft = `${order * 16}px`;
+            button.style.marginTop = '0';
         } else {
             button.style.marginLeft = '4px';
             button.style.marginTop = '-14px';
