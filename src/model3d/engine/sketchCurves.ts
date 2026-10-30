@@ -209,3 +209,9 @@ export function collinearCubicCurve(a: Point2, b: Point2): Extract<SketchCurve, 
         c2: [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3],
     };
 }
+
+export function cubicCurveFromHandles(a: Point2, b: Point2, handles?: { c1: Point2; c2: Point2 }): Extract<SketchCurve, { kind: 'cubic' }> {
+    return handles
+        ? { kind: 'cubic', a: [...a], b: [...b], c1: [...handles.c1], c2: [...handles.c2] }
+        : collinearCubicCurve(a, b);
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collinearCubicCurve as collinearCubicCurveForTest, curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
+import { collinearCubicCurve as collinearCubicCurveForTest, cubicCurveFromHandles as cubicCurveFromHandlesForTest, curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
 import type { SketchCurve } from '../types';
 
 const circle: SketchCurve = { kind: 'ellipse', center: [0, 0], radiusX: 10, radiusY: 10, rotation: 0, orientation: 1, startAngle: 0, endAngle: Math.PI * 2 };
@@ -45,4 +45,11 @@ test('straight endpoint dragging preserves collinear Bezier handles', () => {
     curvePoints(curve).forEach((point) => {
         assert(Math.abs(30 * (point[1] - 0) - 10 * (point[0] - 0)) < 1e-8);
     });
+});
+
+test('Bezier handle dragging keeps non-collinear controls instead of snapping back', () => {
+    const curve = cubicCurveFromHandlesForTest([0, 0], [30, 10], { c1: [2, 18], c2: [24, -8] });
+    assert.deepEqual(curve.c1, [2, 18]);
+    assert.deepEqual(curve.c2, [24, -8]);
+    assert(curvePoints(curve).some((point) => Math.abs(30 * point[1] - 10 * point[0]) > 0.001));
 });

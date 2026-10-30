@@ -5,7 +5,7 @@ import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../en
 import { borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
-import { collinearCubicCurve, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
+import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity } from '../../utils/entity';
 import { cloneDocument, createEntity, ENTITY_NAMES, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
@@ -105,16 +105,17 @@ export function useSketchEditing(options: SketchEditingOptions) {
         const a = segment.points[0], b = segment.points[segment.points.length - 1];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const straight = segment.points.every((point) => Math.abs(dx * (point[1] - a[1]) - dy * (point[0] - a[0])) < 0.0001);
-        trimmedSelection.value = { entityId, index, sourceCount: segment.sourceCount, kind: straight ? 'line' : 'curve' };
+        const cubic = segment.curve?.kind === 'cubic' ? segment.curve : null;
+        trimmedSelection.value = { entityId, index, sourceCount: segment.sourceCount, kind: cubic || straight ? 'line' : 'curve' };
         editingSketchId.value = entityId;
         sketchPoints.value = straight ? [[...a], [...b]] : segment.points.map((point) => [...point]);
         sketchType.value = straight ? 'line' : 'polygon';
-        sketchCurves.value = {};
+        sketchCurves.value = cubic ? { 0: { c1: [...cubic.c1], c2: [...cubic.c2] } } : {};
         sketchLockedPoints.value = [];
         sketchOpen.value = true;
         sketchAppendMode.value = false;
         selectedSketchPoint.value = -1;
-        selectedSketchSegment.value = -1;
+        selectedSketchSegment.value = cubic ? 0 : -1;
         selectedSketchSegments.value = [];
         if (straight) ensureSketchSegment(0);
         selectedIds.value = [entityId];
@@ -668,8 +669,10 @@ export function useSketchEditing(options: SketchEditingOptions) {
                 if (index < start) curves[index] = curve;
                 else if (index >= end) curves[index + delta] = curve;
             });
-            const a = points[0], b = points[1], straightCurve = collinearCubicCurve(a, b);
-            curves[start] = { c1: straightCurve.c1, c2: straightCurve.c2 };
+            const a = points[0], b = points[1];
+            // Endpoint dragging rebuilds collinear handles; handle dragging must preserve the actual curve.
+            const straightCurve = cubicCurveFromHandles(a, b, sketchCurves.value[0]);
+            curves[start] = { c1: [...straightCurve.c1], c2: [...straightCurve.c2] };
             entity.curves = curves;
             const analyticCurves: Record<number, typeof oldAnalyticCurves[number]> = {};
             Object.entries(oldAnalyticCurves).forEach(([key, curve]) => {
