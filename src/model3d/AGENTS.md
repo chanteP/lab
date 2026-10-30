@@ -10,7 +10,7 @@
 | `components/modeling/` | 业务功能容器 | 建模工具栏、工具面板等组合多个通用控件的业务容器 |
 | `components/sketch/` | 具体草图业务组件 | 草图工具、约束、形状编辑等独立功能组件 |
 | `components/entity/` | 实体业务组件 | 实体树及其节点交互 |
-| `components/ui/` | 通用 UI 组件 | ToolButton、MenuCommand、SvgIcon 等无项目状态的可复用控件 |
+| `components/ui/` | 通用 UI 组件 | ViewportToolItem、MenuCommand、SvgIcon 等无项目状态的可复用控件 |
 | `composables/` | 可复用状态与事件逻辑 | 单位、撤销历史、项目状态等 Vue 组合式逻辑 |
 | `engine/` | 几何与渲染引擎 | Viewport、几何构建、轮廓、裁剪、坐标系和导出，不放 Vue 模板 |
 | `stores/` | 持久化数据访问 | IndexedDB/localStorage 读写，保持既有数据兼容 |
