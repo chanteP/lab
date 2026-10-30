@@ -38,6 +38,7 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 
 ## Changelog
 
+- 2026-10-30：修复逻辑边局部端点误映射到矩形左上角的问题；正方形拖动等长参考边时也按当前边重建，保留拖动点与另一端点。
 - 2026-10-30：Viewport 尺寸输入、单位选择、约束锁和测量/拉伸标注迁移为 Vue 投影覆盖层，移除 CSS2DRenderer，保持原有编辑回调。
 - 2026-10-30：新增 InteractionController 统一 pointer/key 状态机，保留草图拖拽、框选、直接编辑、测量和相机手势语义；原 Viewport 收敛为轻量门面。
 - 2026-10-30：拆出 SceneSynchronizer、SketchRenderer、MeasurementRenderer 和 GuideRenderer，分别管理场景同步、草图、测量及辅助箭头/面反馈。

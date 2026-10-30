@@ -1137,23 +1137,22 @@ function moveSketchPoint(index: number, point: Point2, phase: EditPhase) {
         moveTrimmedCurve(point, phase);
         return;
     }
-    if (selectedPoints.value.length > 1 && selectedPoints.value.some((item) => item.entityId === editingSketchId.value && item.index === index)) {
+    const pointIndex = absoluteSketchPointIndex(index);
+    if (selectedPoints.value.length > 1 && selectedPoints.value.some((item) => item.entityId === editingSketchId.value && item.index === pointIndex)) {
         moveSelectedPoints(point, phase);
         return;
     }
-    if (sketchLockedPoints.value.includes(index)) {
+    if (sketchLockedPoints.value.includes(pointIndex)) {
         if (phase === 'start') message.info('该点已锁定，请先在 Constraints 中解锁');
         return;
     }
     if (phase === 'start') {
-        const pointIndex = trimmedSelection.value ? trimmedSelection.value.index + (index ? trimmedSelection.value.sourceCount : 0) : index;
         beginSketchHandleDrag(editingSketchId.value ? [{ entityId: editingSketchId.value, index: pointIndex }] : []);
         return;
     }
     if (!sketchPoints.value[index]) return;
     const edited = document.value.entities.find((entity) => entity.id === editingSketchId.value);
     if (edited) {
-        const pointIndex = trimmedSelection.value ? trimmedSelection.value.index + (index ? trimmedSelection.value.sourceCount : 0) : index;
         point = projectSketchPointToFixedLengths(edited, pointIndex, point, !trimmedSelection.value && entityProfileClosed(edited));
     }
     const previous = sketchPoints.value[index];
@@ -1500,10 +1499,10 @@ function selectSketchPoint(index: number, additive = false) {
     }
     selectedEdges.value = [];
     selectedShapes.value = [];
-    const item = { entityId, index };
-    const exists = selectedPoints.value.some((point) => point.entityId === entityId && point.index === index);
+    const item = { entityId, index: absoluteSketchPointIndex(index) };
+    const exists = selectedPoints.value.some((point) => point.entityId === entityId && point.index === item.index);
     selectedPoints.value = additive
-        ? exists ? selectedPoints.value.filter((point) => !(point.entityId === entityId && point.index === index)) : [...selectedPoints.value, item]
+        ? exists ? selectedPoints.value.filter((point) => !(point.entityId === entityId && point.index === item.index)) : [...selectedPoints.value, item]
         : [item];
     selectedIds.value = [entityId];
     selectedSketchPoint.value = index;
@@ -1692,8 +1691,8 @@ function enforceEntityConstraints(entity: ModelEntity, softAnchors: SketchElemen
         const referenceIndex = equalRule?.reference?.index;
         const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
         const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
-        const draggedEqualTarget = trimmedSelection.value?.entityId === entity.id && constraintRules(entity.edgeConstraints?.[trimmedSelection.value.index]).some((rule) => rule.type === 'equal' && rule.reference);
-        if (draggedEqualTarget) {
+        const draggedEqualEdge = trimmedSelection.value?.entityId === entity.id && !!equalRule;
+        if (draggedEqualEdge) {
             const index = trimmedSelection.value!.index;
             const targetA = entity.points[index], targetB = entity.points[(index + 1) % 4];
             const targetDx = targetB[0] - targetA[0], targetDy = targetB[1] - targetA[1];
@@ -1749,7 +1748,12 @@ function syncLocalSketchFromDocument() {
 }
 function currentConstraintAnchors() {
     if (sketchConstraintAnchors.length) return sketchConstraintAnchors.map((anchor) => ({ ...anchor }));
-    return editingSketchId.value && selectedSketchPoint.value >= 0 ? [{ entityId: editingSketchId.value, index: selectedSketchPoint.value }] : [];
+    return editingSketchId.value && selectedSketchPoint.value >= 0 ? [{ entityId: editingSketchId.value, index: absoluteSketchPointIndex(selectedSketchPoint.value) }] : [];
+}
+function absoluteSketchPointIndex(index: number) {
+    // A trimmed border uses local endpoint indices; selection and constraint refs always use entity indices.
+    const selection = trimmedSelection.value;
+    return selection ? selection.index + (index ? selection.sourceCount : 0) : index;
 }
 function constraintAnchorLevels(): SketchElementRef[][] {
     const current = currentConstraintAnchors();
