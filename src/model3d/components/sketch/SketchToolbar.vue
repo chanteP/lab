@@ -49,6 +49,7 @@ function active(type: ProfileType) { return !props.selectionTool && props.sketch
 .sketch-toolbar button { font: inherit; }
 .sketch-close { margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--model3d-ui-e2e8e4); }
 .sketch-close.is-exiting { padding-bottom: 5px; border-bottom-color: transparent; }
+.sketch-close.is-exiting :deep(.viewport-tool-item) { padding-left: 2px; }
 .sketch-tool-list { display: flex; flex-direction: column; gap: 4px; }
 .sketch-plane-picker > p { margin: 4px 3px 12px; color: var(--model3d-ui-7e8b83); font-size: 10px; }
 .inline-command-row { display: flex; gap: 5px; margin-bottom: 12px; }
