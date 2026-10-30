@@ -1982,6 +1982,7 @@ onMounted(async () => {
         onSketchSectorMove,
         onSketchSectorReset: resetSketchSector,
         onSketchDimension,
+        onSketchDragEnd: refreshSketch,
         onLengthUnitChange: setLengthUnit,
         onExtrudeGesture,
         onBlankCommit,

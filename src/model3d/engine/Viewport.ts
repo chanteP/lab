@@ -52,6 +52,7 @@ interface ViewportCallbacks {
     onSketchSectorMove: (point: Point2, phase: EditPhase) => void;
     onSketchSectorReset: () => void;
     onSketchDimension: (target: SketchDimension, value: number) => void;
+    onSketchDragEnd: () => void;
     onLengthUnitChange: (unit: LengthUnit) => void;
     onExtrudeGesture: (profileId: string, direction: 1 | -1, delta: number, phase: EditPhase) => void;
     onBlankCommit: () => void;
@@ -409,6 +410,22 @@ export class Viewport {
         const distance = this.camera.position.distanceTo(this.controls.target);
         return 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
     }
+    private setScreenRadius(object: THREE.Mesh, pixels: number) {
+        object.userData.screenRadius = { radius: (object.geometry as THREE.SphereGeometry).parameters.radius, pixels };
+        this.updateScreenRadius(object);
+    }
+    private updateScreenRadius(object: THREE.Object3D) {
+        const data = object.userData.screenRadius as { radius: number; pixels: number } | undefined;
+        if (!data) return;
+        const position = object.getWorldPosition(new THREE.Vector3());
+        const unitsPerPixel = this.camera instanceof THREE.OrthographicCamera
+            ? this.sketchUnitsPerPixel()
+            : 2 * position.distanceTo(this.camera.position) * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / Math.max(1, this.renderer.domElement.clientHeight);
+        object.scale.setScalar(unitsPerPixel * data.pixels / data.radius);
+    }
+    private updateScreenSpaceMarkers() {
+        [this.sketch, this.sketchReferences, this.sketchSelectionFeedback].forEach((group) => group.traverse((object) => this.updateScreenRadius(object)));
+    }
     private clearSketchReferences() {
         this.clearGroup(this.sketchReferences);
     }
@@ -435,6 +452,7 @@ export class Viewport {
         } else if (match.reference.kind === 'point') {
             const marker = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.referencePointRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.reference, depthTest: false, depthWrite: false }));
             marker.position.copy(this.sketchWorld(match.reference.point, 0.24));
+            this.setScreenRadius(marker, SKETCH_STYLE.referencePointPx);
             marker.renderOrder = 1004;
             this.sketchReferences.add(marker);
         }
@@ -887,6 +905,8 @@ export class Viewport {
             this.sketchDrag = null;
             this.container.classList.remove('is-handle-dragging');
             this.controls.enabled = true;
+            this.callbacks.onSketchDragEnd();
+            this.sketchOperationPoint(event);
             return;
         }
         if (this.extrudeArrowDrag) {
@@ -1153,6 +1173,7 @@ export class Viewport {
             if (t === 1) this.fitAnimation = null;
         }
         this.controls.update();
+        this.updateScreenSpaceMarkers();
         if (this.viewHelper.animating) this.viewHelper.update(delta);
         this.viewHelper.center.copy(this.controls.target);
         this.renderer.clear();
@@ -1387,6 +1408,8 @@ export class Viewport {
             const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.active, depthTest: false, depthWrite: false }));
             outer.position.copy(this.sketchWorld(point, 0.26));
             inner.position.copy(this.sketchWorld(point, 0.28));
+            this.setScreenRadius(outer, SKETCH_STYLE.markerOuterPx);
+            this.setScreenRadius(inner, SKETCH_STYLE.markerInnerPx);
             outer.renderOrder = inner.renderOrder = 1006;
             this.sketchSelectionFeedback.add(outer, inner);
         });
@@ -1674,11 +1697,14 @@ export class Viewport {
         outer.renderOrder = 1001;
         const inner = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.markerInnerRadius, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }));
         inner.position.copy(this.sketchWorld(point, 0.14));
+        this.setScreenRadius(outer, SKETCH_STYLE.markerOuterPx);
+        this.setScreenRadius(inner, SKETCH_STYLE.markerInnerPx);
         inner.userData = { pointIndex: index, centerHandle: center, locked };
         inner.renderOrder = 1002;
         this.sketch.add(outer, inner);
     }
     private addSketchDimension(position: Point2, target: SketchDimension, value: number, unit: LengthUnit) {
+        if (this.sketchDrag?.moved) return;
         const element = window.document.createElement('div');
         element.className = 'sketch-length-input';
         const input = window.document.createElement('input');
@@ -1801,6 +1827,7 @@ export class Viewport {
                 const sectorPoint = profileType === 'circle' ? [center[0] + Math.cos(angle) * radius * 0.82, center[1] + Math.sin(angle) * radius * 0.82] as Point2 : profileEllipsePoint(center, edge, points[2], angle, 0.82);
                 const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.sectorHandleRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(sectorPoint));
+                this.setScreenRadius(handle, SKETCH_STYLE.sectorHandlePx);
                 handle.userData.sectorHandle = true;
                 handle.renderOrder = 1003;
                 this.sketch.add(handle);
@@ -1832,6 +1859,7 @@ export class Viewport {
             [curve.c1, curve.c2].forEach((point, handleIndex) => {
                 const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.bezierHandleRadius, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false, depthWrite: false }));
                 handle.position.copy(this.sketchWorld(point));
+                this.setScreenRadius(handle, SKETCH_STYLE.bezierHandlePx);
                 handle.userData.handleSegment = selectedSegment;
                 handle.userData.handleIndex = handleIndex + 1;
                 handle.renderOrder = 1003;
