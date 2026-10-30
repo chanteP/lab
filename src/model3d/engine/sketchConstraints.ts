@@ -204,3 +204,8 @@ export function solveSketchConstraints(
     });
     return { points, curves, changed };
 }
+
+/** Normalizes legacy single-rule storage and current multi-rule storage for reads. */
+export function constraintRules(value: NonNullable<ModelEntity['edgeConstraints']>[number] | undefined) {
+    return Array.isArray(value) ? [...value] : value ? [value] : [];
+}

@@ -21,6 +21,14 @@
 
 App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建模工具条、草图工具条和约束区不再重复维护模板。通用 UI 不直接访问 document 或 Viewport，统一通过 props/emits 通信。
 
+### App 业务模块
+
+- `useProjectLibrary` 负责项目记录、自动保存和导入导出；`useDocumentEntities` 负责实体、文件夹、平面和实体树操作。
+- `useModelingOperations` 持有拉伸/布尔操作草稿，处理直接编辑与历史回改。
+- `composables/sketch/useSketchState` 持有草图草稿、选择与派生状态；`useSketchSession` 负责草图生命周期、持久化和尺寸操作；`useSketchEditing` 负责点边选择、拖拽、裁剪和控制柄。
+- `useSketchConstraints` 负责约束交互、历史与回滚；`engine/sketchConstraintChain` 只负责无 Vue 依赖的关联约束求解。
+- App 保留共享文档状态、跨模块命令和 Viewport 回调编排。跨域能力通过窄接口或延迟回调注入，避免项目、建模与草图模块循环引用。
+
 ## Viewport 分层
 
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
@@ -37,6 +45,8 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 新增组件使用 scoped SCSS、原生 button、可见焦点样式和 aria-label。既有全局样式逐步收敛，不在一次重构中做无关视觉重排。
 
 ## Changelog
+
+- 2026-10-30：将 2774 行 App 按项目库、实体文档、建模操作、草图状态/会话/编辑和约束交互拆分；关联约束链迁入独立 engine 模块，保持数据格式、Viewport API 与交互语义不变，App 收敛至少于 750 行。
 
 - 2026-10-30：当前规则区改为列出所选元素的全部固定与边规则，每行提供红底圆角白 X 独立删除按钮。
 - 2026-10-30：Line 的 Shift 闭合提示移到 Ctrl/Command 多选说明下方，并覆盖 polygon 与 line 两种状态。
