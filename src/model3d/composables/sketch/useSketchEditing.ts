@@ -642,6 +642,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         if (selection.kind === 'curve') {
             const segment = borderSegments(entity).find((item) => item.index === selection.index);
             if (segment?.curve) {
+                // Draft points may be render samples; write back only translated analytic parameters and endpoints.
                 const startDelta: Point2 = [points[0][0] - segment.points[0][0], points[0][1] - segment.points[0][1]];
                 const last = points[points.length - 1], originalLast = segment.points[segment.points.length - 1];
                 const endDelta: Point2 = [last[0] - originalLast[0], last[1] - originalLast[1]];

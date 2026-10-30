@@ -164,6 +164,7 @@ export function curveIntersections(first: SketchCurve, second: SketchCurve): { f
         }
     };
     visit({ curve: first, start: 0, end: 1 }, { curve: second, start: 0, end: 1 }, 0);
+    // t=0 and t=1 are the same point on a closed ellipse; keep one hit or a phantom arc appears.
     const closed = (curve: SketchCurve) => curve.kind === 'ellipse' && Math.abs(Math.abs(curve.endAngle - curve.startAngle) - TAU) < 1e-8;
     const sameT = (a: number, b: number, curve: SketchCurve) => Math.abs(a - b) < 0.001 || closed(curve) && Math.abs(Math.abs(a - b) - 1) < 0.001;
     return results.filter((result, index) => results.findIndex((other) => sameT(other.first, result.first, first) && sameT(other.second, result.second, second)) === index);

@@ -41,6 +41,7 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
         ordered.forEach(({ index, forward }) => {
             const edge = edges[index];
             controlPoints.push(points.length);
+            // Keep semantic endpoints plus analytic parameters; never expand curves into render samples here.
             if (edge.curve) {
                 points.push([...(forward ? edge.a : edge.b)]);
                 const curve = forward ? edge.curve : reverseCurve(edge.curve);

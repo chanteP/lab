@@ -4,6 +4,12 @@
 
 草图编辑的独立交互契约维护在 `docs/SKETCH_EDITING.md`；修改草图行为时必须同时更新该文档。
 
+## 方案变更与回归
+
+- 任何交互、几何表示、求交、裁剪、重连或约束方案变更，必须在同一提交同步更新 `DEV.md`、`INTERACTIONS.md`、`docs/SKETCH_EDITING.md` 和 `docs/REFACTOR.md` changelog；文档与实现不一致视为未完成。
+- 已踩过的边界条件和历史坑点必须同时留下 spec 回归与源码注释，说明触发条件和正确约束，禁止只靠临时浏览器验证或下次重新调参。
+- model3d spec 使用 Node 原生 test，通过 `node src/model3d/run-tests.mjs` 执行；解析曲线、交点、圆周接缝、裁剪和重连变更必须先补失败用例，再修改实现。
+
 ## 交付
 
 - 只修改 `src/model3d/` 与构建生成的 `docs/model3d/`，不带入其他页面或无关文件。
