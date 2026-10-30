@@ -46,7 +46,7 @@ onBeforeUnmount(() => observer?.disconnect());
 </template>
 
 <style lang="scss" scoped>
-.hints-panel { position: absolute; z-index: 7; right: 12px; width: 174px; padding: 12px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); backdrop-filter: blur(12px); }
+.hints-panel { position: absolute; z-index: 7; right: 12px; width: 174px; padding: 12px; background: transparent; border: 0; box-shadow: none; }
 .tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }

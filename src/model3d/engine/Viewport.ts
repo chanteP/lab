@@ -474,7 +474,7 @@ export class Viewport {
                 })() },
             ],
             edgeStart: options.edgeStart,
-            excludeEntityId: options.excludeEntityId || this.editingSketchId || undefined,
+            excludeEntityId: options.excludeEntityId || (!['polygon', 'line', 'arc'].includes(this.sketchProfileType) ? this.editingSketchId || undefined : undefined),
             excludePoint: options.excludePointIndex !== undefined && this.editingSketchId ? { entityId: this.editingSketchId, index: options.excludePointIndex } : undefined,
             threshold: this.sketchUnitsPerPixel() * INTERACTION.sketchGuideSnapPx,
         });
@@ -742,6 +742,7 @@ export class Viewport {
             if (!this.sketchDrag.moved) {
                 if (Math.hypot(event.clientX - this.sketchDrag.startX, event.clientY - this.sketchDrag.startY) < INTERACTION.sketchDragThresholdPx) return;
                 this.sketchDrag.moved = true;
+                this.refreshSketchSelectionFeedback();
                 if (this.sketchDrag.center) this.callbacks.onSketchCenterMove(this.sketchDrag.startPoint, 'start');
                 else if (this.sketchDrag.sector) this.callbacks.onSketchSectorMove(this.sketchDrag.startPoint, 'start');
                 else if (this.sketchDrag.handle) this.callbacks.onSketchHandleMove(this.sketchDrag.index, this.sketchDrag.handle, this.sketchDrag.startPoint, 'start');
@@ -1401,6 +1402,7 @@ export class Viewport {
             this.sketchSelectionFeedback.add(line);
         });
         this.selectedPointRefs.forEach(({ entityId, index }) => {
+            if (this.sketchDrag?.moved && entityId === this.editingSketchId && index === this.sketchDrag.index) return;
             const entity = this.document!.entities.find((item) => item.id === entityId);
             const point = entity?.points?.[index];
             if (!point) return;
