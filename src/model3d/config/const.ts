@@ -4,6 +4,7 @@ export { SKETCH_COLORS } from './colors';
 /** Browser storage keys owned by model3d. */
 export const STORAGE_KEYS = {
     lengthUnit: 'lab:model3d:sketch:lengthUnit',
+    constraintLimit: 'lab:model3d:sketch:constraintLimit',
 } as const;
 
 /** Timing and interaction thresholds shared by sketch tools. */

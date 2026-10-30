@@ -5,8 +5,8 @@ import { computed } from 'vue';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
 import type { SketchEdgeConstraint } from '../../types';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null }>();
-const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: [] }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; edgeSelected: boolean; constraintRule?: SketchEdgeConstraint | null; constraintLimit: number }>();
+const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; cancelRule: []; 'update:constraintLimit': [value: number] }>();
 const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长' })[props.constraintRule?.type || 'auto']);
 </script>
 
@@ -22,6 +22,7 @@ const ruleLabel = computed(() => ({ auto: '水平 / 垂直', horizontal: '水平
         <button :disabled="selectedPoint < 0 && !edgeSelected" @click="emit('lock')"><NIcon><component :is="selectionLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectionLocked ? '取消固定' : '固定' }}</button>
         <div v-if="constraintRule" class="constraint-rule"><span>当前规则：{{ ruleLabel }}</span><button @click="emit('cancelRule')">取消此规则</button></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
+        <div class="constraint-limit"><label for="constraint-limit-range">关联检查 <output>{{ constraintLimit }}</output></label><input id="constraint-limit-range" type="range" min="10" max="100" step="1" :value="constraintLimit" aria-label="关联检查元素上限" @input="emit('update:constraintLimit', Number(($event.target as HTMLInputElement).value))" /></div>
     </aside>
 </template>
 
@@ -42,4 +43,7 @@ button:disabled { opacity: .3; cursor: default; }
 .constraint-state i.locked { background: var(--model3d-ui-54a184); }
 .constraint-rule { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-147d70); font-size: 10px; }
 .constraint-rule button { color: var(--model3d-ui-c45757); }
+.constraint-limit { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }
+.constraint-limit label { display: flex; justify-content: space-between; color: var(--model3d-ui-8a968f); font-size: 9px; }
+.constraint-limit input { width: 100%; margin-top: 6px; accent-color: var(--model3d-ui-147d70); }
 </style>

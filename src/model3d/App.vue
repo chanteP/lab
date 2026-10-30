@@ -29,7 +29,7 @@ import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import SketchHints from './components/sketch/SketchHints.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
 import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
-import { INTERACTION } from './config/const';
+import { INTERACTION, STORAGE_KEYS } from './config/const';
 import { solveSketchConstraints, straightConstraintSegment, type SketchConstraintType } from './engine/sketchConstraints';
 import { restitchSketchEdges, type RestitchEdge } from './engine/sketchRestitch';
 import { computeSketchFaces } from './engine/sketchFaces';
@@ -124,6 +124,12 @@ const sketchOpen = ref(false);
 const sketchProfileStartAngle = ref<number | undefined>(undefined);
 const sketchAppendMode = ref(true);
 const sketchSelectionTool = ref(false);
+const constraintLimit = ref(readConstraintLimit());
+
+function readConstraintLimit() {
+    const value = Number(localStorage.getItem(STORAGE_KEYS.constraintLimit));
+    return Number.isFinite(value) && value >= 10 && value <= 100 ? Math.round(value) : 20;
+}
 
 const projectOptions = computed(() => projects.value.map((item) => ({ label: item.name, value: item.id })));
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
@@ -1606,8 +1612,8 @@ function enforceSketchConstraints(rootId = editingSketchId.value) {
     const queue = rootId ? [rootId] : document.value.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
     const visited = new Set<string>();
     while (queue.length) {
-        if (visited.size >= 20) {
-            message.warning('约束关联超过 20 个元素，已暂停本次传播检查');
+        if (visited.size >= constraintLimit.value) {
+            message.warning(`约束关联超过 ${constraintLimit.value} 个元素，已暂停本次传播检查`);
             break;
         }
         const entityId = queue.shift()!;
@@ -2113,6 +2119,7 @@ watch(document, () => {
 watch([selectedIds, selectedShapes, sketchMode], ([ids, shapes, active]) => viewport?.setSelected(active ? shapes : ids), { deep: true });
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(() => project.value.name, scheduleSave);
+watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
@@ -2324,7 +2331,7 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :constraint-rule="activeConstraintRuleData" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" />
+                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
