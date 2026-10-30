@@ -9,7 +9,7 @@ import {
 } from '../../engine/sketchConstraints';
 import { uid } from '../../utils/id';
 import type { ProfileCurves } from '../../engine/profiles';
-import { borderSegments } from '../../engine/sketchBorders';
+import { borderEditingPoints, borderSegments } from '../../engine/sketchBorders';
 import { cloneDocument, type ModelDocument, type ModelEntity, type Point2, type SketchElementRef } from '../../types';
 import type { SketchState } from './useSketchState';
 import type { Ref } from 'vue';
@@ -58,7 +58,8 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
                 : entity.points.slice(start, start + trimmedSelection.value.sourceCount + 1).map((point) => [...point]);
             const segment = borderSegments(entity).find((item) => item.index === trimmedSelection.value?.index);
             if (segment?.curve) {
-                sketchPoints.value = segment.points.map((point) => [...point]);
+                // Cubic synchronization must also keep semantic endpoints, not restore render samples.
+                sketchPoints.value = borderEditingPoints(segment);
                 const curve = segment.curve.kind === 'cubic' ? segment.curve : undefined;
                 sketchCurves.value = curve ? { 0: { c1: [...curve.c1], c2: [...curve.c2] } } : {};
                 return;
