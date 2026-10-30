@@ -56,6 +56,7 @@ let sketchConstraintAnchors: SketchElementRef[] = [];
 let sketchOperationRolledBack = false;
 let sketchOperationBefore: ModelDocument | null = null;
 type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
+type ConstraintRuleListItem = { id: string; label: string; entityId: string; index: number; ruleId?: string; lock?: 'point' | 'edge' };
 
 const projects = ref<ProjectRecord[]>([]);
 const document = ref<ModelDocument>(createDocument(storedLengthUnit()));
@@ -193,6 +194,40 @@ const autoConstraintActive = computed(() => selectedEdges.value.length > 0 && se
     const entity = document.value.entities.find((item) => item.id === entityId);
     return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => ['horizontal', 'vertical'].includes(rule.type));
 }));
+const selectedConstraintRuleItems = computed<ConstraintRuleListItem[]>(() => {
+    const items: ConstraintRuleListItem[] = [];
+    const labels: Record<SketchConstraintType, string> = { auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度' };
+    const addPoint = (entityId: string, index: number, covered?: Set<string>) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity?.lockedPoints?.includes(index) || covered?.has(`${entityId}:${index}`)) return;
+        items.push({ id: `lock-point:${entityId}:${index}`, label: '固定', entityId, index, lock: 'point' });
+    };
+    const addEdge = (entityId: string, index: number, covered?: Set<string>) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity?.points) return;
+        const endpoints = [index, (index + 1) % entity.points.length];
+        const edgeLocked = !!entity.constraintEdges?.includes(index) && endpoints.every((point) => entity.lockedPoints?.includes(point));
+        if (edgeLocked) {
+            items.push({ id: `lock-edge:${entityId}:${index}`, label: '固定', entityId, index, lock: 'edge' });
+            endpoints.forEach((point) => covered?.add(`${entityId}:${point}`));
+        } else endpoints.forEach((point) => addPoint(entityId, point, covered));
+        constraintRules(entity.edgeConstraints?.[index]).forEach((rule) => items.push({
+            id: `rule:${entityId}:${index}:${rule.id}`, label: labels[rule.type], entityId, index, ruleId: rule.id,
+        }));
+    };
+
+    if (selectedPoints.value.length) selectedPoints.value.forEach(({ entityId, index }) => addPoint(entityId, index));
+    else if (selectedEdges.value.length) selectedEdges.value.forEach(({ entityId, index }) => addEdge(entityId, index));
+    else selectedShapes.value.forEach((entityId) => {
+        const entity = document.value.entities.find((item) => item.id === entityId);
+        if (!entity?.points) return;
+        const covered = new Set<string>();
+        const edges = new Set([...Object.keys(entity.edgeConstraints || {}).map(Number), ...(entity.constraintEdges || [])]);
+        edges.forEach((index) => addEdge(entityId, index, covered));
+        entity.lockedPoints?.forEach((index) => addPoint(entityId, index, covered));
+    });
+    return items;
+});
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
@@ -1913,18 +1948,25 @@ function selectConstraintRule(entityId: string, index: number, ruleId: string) {
     viewport?.setActiveConstraintRule(activeConstraintRule.value, activeConstraintRuleData.value?.reference || null);
     refreshSketch();
 }
-function cancelConstraintRule() {
-    const selection = activeConstraintRule.value;
-    if (!selection) return;
-    const entity = document.value.entities.find((item) => item.id === selection.entityId);
-    if (entity?.edgeConstraints) {
+function deleteSelectedConstraintRule(id: string) {
+    const selection = selectedConstraintRuleItems.value.find((item) => item.id === id);
+    const entity = selection && document.value.entities.find((item) => item.id === selection.entityId);
+    if (!selection || !entity) return;
+    pushHistory();
+    if (selection.lock) {
+        const indices = selection.lock === 'edge' && entity.points ? [selection.index, (selection.index + 1) % entity.points.length] : [selection.index];
+        entity.lockedPoints = (entity.lockedPoints || []).filter((index) => !indices.includes(index));
+        if (selection.lock === 'edge') entity.constraintEdges = (entity.constraintEdges || []).filter((index) => index !== selection.index);
+        if (selection.entityId === editingSketchId.value) sketchLockedPoints.value = [...(entity.lockedPoints || [])];
+    } else if (entity.edgeConstraints) {
         const remaining = constraintRules(entity.edgeConstraints[selection.index]).filter((rule) => rule.id !== selection.ruleId);
         if (remaining.length) entity.edgeConstraints[selection.index] = remaining;
         else delete entity.edgeConstraints[selection.index];
     }
-    pushHistory();
-    activeConstraintRule.value = null;
-    viewport?.setActiveConstraintRule(null);
+    if (activeConstraintRule.value?.entityId === selection.entityId && activeConstraintRule.value.index === selection.index && activeConstraintRule.value.ruleId === selection.ruleId) {
+        activeConstraintRule.value = null;
+        viewport?.setActiveConstraintRule(null);
+    }
     refreshSketch();
 }
 function applySketchConstraint(type: SketchConstraintType) {
@@ -2611,8 +2653,8 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
                     @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
                 <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :constraint-rule="activeConstraintRuleData" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
-                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @cancel-rule="cancelConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
+                    :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
+                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
