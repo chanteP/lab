@@ -1586,16 +1586,19 @@ function enforceSketchConstraints() {
         if (entity.shapeConstraint === 'orthogonal' && entity.points.length === 4) {
             const [a, b, d] = entity.points;
             const dx = b[0] - a[0], dy = b[1] - a[1];
-            const firstLength = Math.hypot(dx, dy);
-            const equalRule = constraintRules(entity.edgeConstraints?.[1]).find((rule) => rule.type === 'equal' && rule.reference);
+            const directionLength = Math.hypot(dx, dy);
+            const equalRule = Array.from({ length: 4 }, (_, index) => constraintRules(entity.edgeConstraints?.[index]).find((rule) => rule.type === 'equal' && rule.reference)).find(Boolean);
             const reference = equalRule && document.value.entities.find((item) => item.id === equalRule.reference!.entityId);
             const referenceIndex = equalRule?.reference?.index;
             const referenceA = reference?.points?.[referenceIndex!], referenceB = reference?.points?.[(referenceIndex! + 1) % reference.points.length];
+            const firstLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : directionLength;
             const secondLength = referenceA && referenceB ? Math.hypot(referenceB[0] - referenceA[0], referenceB[1] - referenceA[1]) : Math.hypot(d[0] - b[0], d[1] - b[1]);
-            if (firstLength > 0.000001 && secondLength > 0.000001) {
+            if (directionLength > 0.000001 && firstLength > 0.000001 && secondLength > 0.000001) {
                 const sign = Math.sign(dx * (d[1] - b[1]) - dy * (d[0] - b[0])) || 1;
-                const perpendicular: Point2 = [-dy / firstLength * sign, dx / firstLength * sign];
-                entity.points![2] = [b[0] + perpendicular[0] * secondLength, b[1] + perpendicular[1] * secondLength];
+                const perpendicular: Point2 = [-dy / directionLength * sign, dx / directionLength * sign];
+                const nextB: Point2 = [a[0] + dx / directionLength * firstLength, a[1] + dy / directionLength * firstLength];
+                entity.points![1] = nextB;
+                entity.points![2] = [nextB[0] + perpendicular[0] * secondLength, nextB[1] + perpendicular[1] * secondLength];
                 entity.points![3] = [a[0] + perpendicular[0] * secondLength, a[1] + perpendicular[1] * secondLength];
             }
         }
@@ -1712,6 +1715,9 @@ function applySketchConstraint(type: SketchConstraintType) {
         if (!rules.some((rule) => rule.type === next.type && rule.reference?.entityId === next.reference?.entityId && rule.reference?.index === next.reference?.index)) rules.push(next);
         entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
     });
+    enforceSketchConstraints();
+    const current = document.value.entities.find((entity) => entity.id === editingSketchId.value);
+    if (current?.points) sketchPoints.value = current.points.map((point) => [...point]);
     viewport?.refreshSketchFaces();
     refreshSketch();
 }
