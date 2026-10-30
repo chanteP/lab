@@ -61,3 +61,20 @@ test('trim and restitch retain an ellipse arc instead of expanding it into polyl
     assert.equal(segments[0].curve?.kind, 'ellipse');
     assert.equal(segments[0].points.length, 65, 'samples are recreated for rendering only');
 });
+
+test('restitch splits a rectangle edge at analytic arc intersections before closing', () => {
+    // The arc endpoints lie inside the top line, not at rectangle vertices; unsplit input cannot close.
+    const arc: SketchCurve = { kind: 'ellipse', center: [0, 0], radiusX: 10, radiusY: 10, rotation: 0, orientation: 1, startAngle: Math.PI, endAngle: Math.PI * 2 };
+    const points = Array.from({ length: 65 }, (_, index) => curvePoint(arc, index / 64));
+    const paths = restitchSketchEdges([
+        { a: points[0], b: points.at(-1)!, points, curve: arc },
+        { a: [-20, 0], b: [20, 0], points: [[-20, 0], [20, 0]] },
+        { a: [20, 0], b: [20, -20], points: [[20, 0], [20, -20]] },
+        { a: [20, -20], b: [-20, -20], points: [[20, -20], [-20, -20]] },
+        { a: [-20, -20], b: [-20, 0], points: [[-20, -20], [-20, 0]] },
+    ]);
+    const closed = paths.filter((path) => path.closed);
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0].analyticCurves[0].kind, 'ellipse');
+    assert(closed[0].points.length < 10, 'closed path stores semantic vertices rather than arc samples');
+});

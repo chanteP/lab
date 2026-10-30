@@ -1,5 +1,5 @@
 import type { Point2, SketchCurve } from '../types';
-import { reverseCurve } from './sketchCurves';
+import { curveIntersections, curvePoints, reverseCurve, sliceCurve } from './sketchCurves';
 import type { ProfileCurves } from './profiles';
 
 export interface RestitchEdge {
@@ -24,9 +24,69 @@ type OrderedEdge = { index: number; forward: boolean };
 const key = (point: Point2) => `${Math.round(point[0] * 10)},${Math.round(point[1] * 10)}`;
 const length = (point: Point2) => Math.hypot(point[0], point[1]);
 
+function lineEdge(a: Point2, b: Point2): SketchCurve { return { kind: 'line', a, b }; }
+
+function sliceEdge(edge: RestitchEdge, start: number, end: number): RestitchEdge {
+    if (edge.curve) {
+        const curve = sliceCurve(edge.curve, start, end);
+        const points = curvePoints(curve, 0, 1, Math.max(2, edge.points.length - 1));
+        return { ...edge, a: points[0], b: points[points.length - 1], points, curve };
+    }
+    const pointAt = (t: number): Point2 => {
+        const scaled = Math.max(0, Math.min(1, t)) * (edge.points.length - 1);
+        const index = Math.min(edge.points.length - 2, Math.floor(scaled)), fraction = scaled - index;
+        const a = edge.points[index], b = edge.points[index + 1];
+        return [a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction];
+    };
+    const points: Point2[] = [pointAt(start)];
+    const first = Math.ceil(start * (edge.points.length - 1)), last = Math.floor(end * (edge.points.length - 1));
+    for (let index = first; index <= last; index++) {
+        const point = edge.points[index], previous = points[points.length - 1];
+        if (Math.hypot(point[0] - previous[0], point[1] - previous[1]) > 1e-8) points.push([...point]);
+    }
+    const lastPoint = pointAt(end), previous = points[points.length - 1];
+    if (Math.hypot(lastPoint[0] - previous[0], lastPoint[1] - previous[1]) > 1e-8) points.push(lastPoint);
+    return { ...edge, a: points[0], b: points[points.length - 1], points };
+}
+
+/** Split every crossed edge before tracing nodes; an arc endpoint inside another edge is a real junction. */
+function splitCrossedEdges(source: RestitchEdge[]) {
+    const parameters = source.map(() => new Set<number>([0, 1]));
+    const addHits = (first: SketchCurve, firstIndex: number, second: SketchCurve, secondIndex: number, secondStart = 0, secondEnd = 1) => {
+        curveIntersections(first, second).forEach((hit) => {
+            parameters[firstIndex].add(hit.first);
+            parameters[secondIndex].add(secondStart + (secondEnd - secondStart) * hit.second);
+        });
+    };
+    for (let first = 0; first < source.length; first++) {
+        for (let second = first + 1; second < source.length; second++) {
+            const a = source[first], b = source[second];
+            if (a.curve && b.curve) addHits(a.curve, first, b.curve, second);
+            else if (a.curve) {
+                for (let index = 0; index < b.points.length - 1; index++) addHits(a.curve, first, lineEdge(b.points[index], b.points[index + 1]), second, index / (b.points.length - 1), (index + 1) / (b.points.length - 1));
+            } else if (b.curve) {
+                for (let index = 0; index < a.points.length - 1; index++) addHits(b.curve, second, lineEdge(a.points[index], a.points[index + 1]), first, index / (a.points.length - 1), (index + 1) / (a.points.length - 1));
+            } else {
+                for (let i = 0; i < a.points.length - 1; i++) {
+                    for (let j = 0; j < b.points.length - 1; j++) {
+                        curveIntersections(lineEdge(a.points[i], a.points[i + 1]), lineEdge(b.points[j], b.points[j + 1])).forEach((hit) => {
+                            parameters[first].add((i + hit.first) / (a.points.length - 1));
+                            parameters[second].add((j + hit.second) / (b.points.length - 1));
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return source.flatMap((edge, index) => {
+        const sorted = [...parameters[index]].sort((a, b) => a - b);
+        return sorted.slice(1).map((end, part) => sliceEdge(edge, sorted[part], end)).filter((part) => part.points.length > 1);
+    });
+}
+
 /** Join degree-two nodes into continuous paths before extracting the remaining closed cycles. */
 export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
-    edges = edges.filter((edge) => key(edge.a) !== key(edge.b) && length([edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]]) > 1e-8);
+    edges = splitCrossedEdges(edges).filter((edge) => key(edge.a) !== key(edge.b) && length([edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]]) > 1e-8);
     const adjacency = new Map<string, number[]>();
     edges.forEach((edge, index) => {
         [key(edge.a), key(edge.b)].forEach((node) => adjacency.set(node, [...adjacency.get(node) || [], index]));
@@ -99,7 +159,8 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
 
     const paths: RestitchPath[] = [];
     [...adjacency.keys()].forEach((node) => {
-        if ((adjacency.get(node)?.length || 0) === 2) return;
+        // Only open endpoints start open chains; junctions may still belong to a closed cycle.
+        if ((adjacency.get(node)?.length || 0) !== 1) return;
         (adjacency.get(node) || []).forEach((index) => {
             if (used.has(index)) return;
             const { ordered, closed } = trace(index, node, true);
