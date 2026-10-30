@@ -44,6 +44,7 @@ export interface ModelEntity {
     points?: Point2[];
     controlPoints?: number[];
     trimmed?: boolean;
+    shapeConstraint?: 'orthogonal' | 'equal';
     constraintEdges?: number[];
     edgeConstraints?: Record<number, { type: SketchConstraintKind; reference?: SketchElementRef }>;
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';

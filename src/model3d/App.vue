@@ -452,6 +452,27 @@ function updateVector(key: 'position' | 'rotation' | 'scale', index: number, val
 function removeSelected() {
     if (selectedIds.value.length) deleteNodeIds(selectedIds.value);
 }
+function removeConstraintsForEdge(entityId: string, index: number) {
+    document.value.entities.forEach((entity) => {
+        if (!entity.edgeConstraints) return;
+        Object.entries(entity.edgeConstraints).forEach(([key, rule]) => {
+            if ((entity.id === entityId && Number(key) === index) || (rule.reference?.entityId === entityId && rule.reference.index === index)) delete entity.edgeConstraints![Number(key)];
+        });
+    });
+}
+function removeConstraintsForEntity(entityId: string) {
+    document.value.entities.forEach((entity) => {
+        if (entity.id === entityId) {
+            entity.edgeConstraints = {};
+            entity.constraintEdges = [];
+            delete entity.shapeConstraint;
+        } else if (entity.edgeConstraints) {
+            Object.entries(entity.edgeConstraints).forEach(([key, rule]) => {
+                if (rule.reference?.entityId === entityId) delete entity.edgeConstraints![Number(key)];
+            });
+        }
+    });
+}
 function deleteNodeIds(ids: string[]) {
     const planeSketchIds = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId && ids.includes(item.planeId)).map((item) => item.id);
     const allIds = [...new Set([...ids, ...planeSketchIds])];
@@ -459,6 +480,7 @@ function deleteNodeIds(ids: string[]) {
     const removedEditedSketch = !!editingSketchId.value && allIds.includes(editingSketchId.value);
     const referenced = document.value.entities.find((item) => !allIds.includes(item.id) && ((item.kind === 'boolean' && item.operands?.some((id) => allIds.includes(id))) || (item.profileId && allIds.includes(item.profileId))));
     if (referenced) return message.warning(`请先删除依赖它的「${referenced.name}」`);
+    allIds.forEach(removeConstraintsForEntity);
     pushHistory();
     if (sketchMode.value && activePlaneId.value && ids.includes(activePlaneId.value)) cancelSketch();
     allIds.forEach((id) => {
@@ -871,6 +893,7 @@ function persistSketchProgress(resetAfter: boolean) {
         entity.open = sketchOpen.value;
         entity.profileStartAngle = sketchProfileStartAngle.value;
         entity.visible = true;
+        ensureShapeConstraints(entity);
     }
     if (resetAfter) {
         selectedIds.value = [id!];
@@ -879,6 +902,16 @@ function persistSketchProgress(resetAfter: boolean) {
         refreshSketch();
         activateSketchSelectionTool();
     }
+}
+function ensureShapeConstraints(entity: ModelEntity) {
+    if (entity.trimmed) return;
+    if (entity.profileType === 'rectangle') {
+        if (!entity.shapeConstraint) {
+            entity.shapeConstraint = 'orthogonal';
+            const constraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, { type: 'perpendicular', reference: { entityId: entity.id, index: (index + 3) % 4 } }]));
+            entity.edgeConstraints = { ...constraints, ...(entity.edgeConstraints || {}) };
+        }
+    } else if (entity.profileType === 'regular') entity.shapeConstraint = 'equal';
 }
 function refreshSketch() {
     if (transforming) {
@@ -988,6 +1021,7 @@ function selectTrimmedBorder(entityId: string, index: number, additive = false) 
 function selectSketchEntity(id: string, additive = false) {
     const entity = document.value.entities.find((item) => item.id === id && item.kind === 'sketch');
     if (!entity) return;
+    ensureShapeConstraints(entity);
     selectedEdges.value = [];
     selectedPoints.value = [];
     selectedShapes.value = additive
@@ -1032,6 +1066,7 @@ function deleteSketchFromContext() {
         sketchContextMenu.value = null;
         return message.warning(`请先删除引用此草图的「${dependent.name}」`);
     }
+    removeConstraintsForEntity(id);
     pushHistory();
     document.value.entities = document.value.entities.filter((item) => item.id !== id);
     clearSketchSelection();
@@ -1259,6 +1294,8 @@ function moveSketchCenter(point: Point2, phase: EditPhase) {
 function deleteSketchPoint(index: number) {
     if (sketchType.value !== 'polygon' || !sketchPoints.value[index]) return;
     if (sketchPoints.value.length <= 2) return message.warning('线条至少保留两个点');
+    removeConstraintsForEdge(editingSketchId.value!, Math.max(0, index - 1));
+    removeConstraintsForEdge(editingSketchId.value!, index);
     if (editingSketchId.value) pushHistory();
     sketchPoints.value.splice(index, 1);
     const edited = document.value.entities.find((entity) => entity.id === editingSketchId.value);
@@ -1283,6 +1320,7 @@ function deleteSketchBorder(entityId: string, index: number, start: number, end:
     if (!entity) return;
     const dependent = document.value.entities.find((item) => item.profileId === entityId);
     if (dependent) return message.warning(`请先删除引用此草图的「${dependent.name}」`);
+    removeConstraintsForEdge(entityId, index);
     const type = entity.profileType || 'polygon';
     pushHistory();
     if (type === 'circle' || type === 'ellipse') {
@@ -1344,6 +1382,7 @@ function recloseProfiles(planeId: string) {
         && (item.open || ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'))
         && !document.value.entities.some((entity) => entity.profileId === item.id));
     if (!candidates.length) return;
+    candidates.forEach((entity) => removeConstraintsForEntity(entity.id));
     const edges: RestitchEdge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({
         a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points.map((point) => [...point] as Point2),
         c1: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c1 : undefined,
@@ -1546,6 +1585,19 @@ function syncEditingSketch() {
 function applySketchConstraint(type: SketchConstraintType) {
     const selected = selectedEdges.value;
     if (!selected.length) return;
+    const cancel = selected.every(({ entityId, index }) => {
+        const constraint = document.value.entities.find((entity) => entity.id === entityId)?.edgeConstraints?.[index];
+        return constraint?.type === type || (type === 'auto' && ['horizontal', 'vertical'].includes(constraint?.type || ''));
+    });
+    if (cancel) {
+        pushHistory();
+        selected.forEach(({ entityId, index }) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            if (entity?.edgeConstraints) delete entity.edgeConstraints[index];
+        });
+        refreshSketch();
+        return;
+    }
     const reference = selected[0];
     const referenceEntity = document.value.entities.find((entity) => entity.id === reference.entityId);
     if (!referenceEntity?.points) return;
