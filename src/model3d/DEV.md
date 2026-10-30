@@ -126,3 +126,10 @@
 - 平行线颜色使用 `SKETCH_COLORS.line`；线宽、间距和不透明度在 `config/const.ts` 的 `SKETCH_STYLE.hatchLineWidth / hatchSpacing / hatchOpacity` 调整，单位与草图平面坐标一致。
 - 扇形磁吸阈值在 `INTERACTION.sectorQuarterSnapThresholdDeg` 调整；默认在 90° 倍数前后 4° 内吸附。
 - 草图参考线及参考对象使用 `SKETCH_COLORS.reference`（参考色）；统一屏幕磁吸距离在 `INTERACTION.sketchGuideSnapPx` 调整，默认 8px。
+
+## 草图高级工具与复合形状
+
+- 对称使用独立二维临时画布，禁止把临时副本或不同 id 的复制实体写入 document；退出不得改动源草图，完成只新增一个含 `parts` 的草图实体。
+- 扇区以正上方为 0°、顺时针增加。裁剪必须使用两条无限分界线，轴对称采用相邻扇区镜像，旋转对称采用顺时针旋转；相关边界修改必须更新 `sketchAdvanced.spec.ts`。
+- 草图平移/旋转/缩放不得调用三维 `TransformControls`，也不得退出草图。二维手柄与输入直接修改语义点或 `parts`，支持工具优先和形状优先两种选择顺序。
+- `parts` 是同一草图实体的多个独立轮廓，border、面、显示、拉伸和选择逻辑必须保持实体级聚合；不得退化为多个临时 Items。

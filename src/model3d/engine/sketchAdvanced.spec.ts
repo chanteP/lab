@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+    clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
+    radialSymmetry, reflection, sectorAtPoint, symmetryTransform,
+} from './sketchAdvanced';
+import type { Point2, SketchProfilePart } from '../types';
+
+const closePoint = (actual: Point2, expected: Point2) => {
+    assert.ok(Math.hypot(actual[0] - expected[0], actual[1] - expected[1]) < 1e-7, `${actual} != ${expected}`);
+};
+
+test('clockwise sectors start at the positive Y axis and honor offset', () => {
+    assert.equal(sectorAtPoint([1, 1], 4, 0), 0);
+    assert.equal(sectorAtPoint([1, -1], 4, 0), 1);
+    assert.equal(sectorAtPoint([0, 1], 4, 45), 3);
+    closePoint(clockwiseRotation(90)([0, 1]), [1, 0]);
+    closePoint(reflection(0)([1, 2]), [-1, 2]);
+});
+
+test('alternating axial transforms make every divider a mirror', () => {
+    const source: Point2 = [0.2, 1];
+    const first = symmetryTransform(0, 4, 'mirror')(source);
+    const second = symmetryTransform(1, 4, 'mirror')(source);
+    closePoint(second, [0.2, -1]);
+    const reflectedBack = reflection(90)(second);
+    closePoint(reflectedBack, first);
+});
+
+test('closed and open profiles are clipped to the selected infinite wedge', () => {
+    const square: SketchProfilePart = { points: [[-2, -2], [2, -2], [2, 2], [-2, 2]], closed: true };
+    const clipped = clipProfileToSector(square, 4, 0, 0);
+    assert.equal(clipped.length, 1);
+    assert.ok(clipped[0].points.every(([x, y]) => x >= -1e-7 && y >= -1e-7));
+    const line: SketchProfilePart = { points: [[-2, 1], [2, 1]], closed: false };
+    const segment = clipProfileToSector(line, 4, 0, 0);
+    assert.equal(segment.length, 1);
+    closePoint(segment[0].points[0], [0, 1]);
+    closePoint(segment[0].points[1], [2, 1]);
+});
+
+test('radial result contains only transformed copies of selected-sector content', () => {
+    const source: SketchProfilePart = { points: [[1, 1], [2, 1], [2, 2], [-2, 2]], closed: true };
+    const rotated = radialSymmetry([source], 4, 0, 0, 'rotate');
+    assert.equal(rotated.length, 4);
+    assert.ok(rotated[0].points.every(([x, y]) => x >= -1e-7 && y >= -1e-7));
+    assert.ok(rotated[1].points.every(([x, y]) => x >= -1e-7 && y <= 1e-7));
+    const mirrored = radialSymmetry([source], 4, 0, 0, 'mirror');
+    assert.equal(mirrored.length, 4);
+});
+
+test('compound profiles stay independent and remain hit-testable', () => {
+    const parts = entityProfileParts({ parts: [{ points: [[0, 0], [2, 0], [2, 2]], closed: true }] } as any);
+    assert.equal(parts.length, 1);
+    assert.equal(hitProfilePart(parts[0], [1.5, 0.5]), true);
+    assert.equal(hitProfilePart(parts[0], [-1, -1]), false);
+    parts[0].points[0][0] = 9;
+    assert.equal(hitProfilePart(parts[0], [1.5, 0.5]), true);
+});

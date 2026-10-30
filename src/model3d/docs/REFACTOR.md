@@ -27,6 +27,7 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 - `useModelingOperations` 持有拉伸/布尔操作草稿，处理直接编辑与历史回改。
 - `composables/sketch/useSketchState` 持有草图草稿、选择与派生状态；`useSketchSession` 负责草图生命周期、持久化和尺寸操作；`useSketchEditing` 负责点边选择、拖拽、裁剪和控制柄。
 - `useSketchConstraints` 负责约束交互、历史与回滚；`engine/sketchConstraintChain` 只负责无 Vue 依赖的关联约束求解。
+- `useSketchAdvanced` 负责三步对称临时状态和草图二维变换；`engine/sketchAdvanced` 负责扇区裁剪、径向变换和复合轮廓几何，`SketchAdvancedOverlay.vue` 只负责画布与操作条。
 - App 保留共享文档状态、跨模块命令和 Viewport 回调编排。跨域能力通过窄接口或延迟回调注入，避免项目、建模与草图模块循环引用。
 
 ## Viewport 分层
@@ -45,6 +46,8 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 新增组件使用 scoped SCSS、原生 button、可见焦点样式和 aria-label。既有全局样式逐步收敛，不在一次重构中做无关视觉重排。
 
 ## Changelog
+
+- 2026-10-31：草图新增三步高级对称与平移/旋转/缩放工具；引入单实体复合轮廓 `parts`，支持扇区裁剪、镜像/旋转副本、二维手柄和数值输入，并新增对称几何回归测试。
 
 - 2026-10-31：修复拖动后的文档同步再次把三次贝塞尔草稿恢复为渲染采样点，选择与同步统一使用 borderEditingPoints，避免后续写回端点重合。
 

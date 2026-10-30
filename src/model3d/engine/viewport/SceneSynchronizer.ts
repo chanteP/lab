@@ -54,6 +54,7 @@ export class SceneSynchronizer {
                 edges.userData.displayEdge = true;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.options.isSketchMode()) {
+                child.traverse((object) => { if (object.userData.compoundOutline) object.visible = false; });
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
                 if (material) { material.transparent = true; material.opacity = 0; }
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;

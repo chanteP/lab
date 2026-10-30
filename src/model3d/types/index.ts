@@ -2,6 +2,12 @@ import { ENTITY_COLORS } from '../config/colors';
 
 export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
+
+/** A disconnected polygon/polyline owned by one compound sketch entity. */
+export interface SketchProfilePart {
+    points: Point2[];
+    closed: boolean;
+}
 export type SketchElementRef = { entityId: string; index: number };
 export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
 export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number };
@@ -43,6 +49,7 @@ export interface ModelEntity {
     depth?: number;
     radius?: number;
     points?: Point2[];
+    parts?: SketchProfilePart[];
     controlPoints?: number[];
     trimmed?: boolean;
     shapeConstraint?: 'orthogonal' | 'equal';

@@ -53,6 +53,19 @@ function analyticProfileCurve(entity: ModelEntity): SketchCurve | null {
 }
 
 export function borderSegments(entity: ModelEntity): BorderSegment[] {
+    if (entity.parts?.length) {
+        let borderIndex = 0;
+        return entity.parts.flatMap((part) => {
+            const count = part.closed ? part.points.length : part.points.length - 1;
+            return Array.from({ length: Math.max(0, count) }, (_, index) => ({
+                entityId: entity.id,
+                index: borderIndex++,
+                sourceCount: 1,
+                points: [[...part.points[index]], [...part.points[(index + 1) % part.points.length]]] as Point2[],
+                closed: false,
+            }));
+        });
+    }
     const type = entity.profileType || 'polygon';
     const source = entity.points || [];
     const closed = entityProfileClosed(entity) && (entity.sectorAngle ?? 360) >= 359.999;
