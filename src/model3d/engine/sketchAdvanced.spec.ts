@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
-    radialSymmetry, reflection, sectorAtPoint, supportsMirrorSymmetry, symmetryRayAngles, symmetryTransform,
+    radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, supportsMirrorSymmetry, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
 import type { ModelEntity, Point2, SketchProfilePart } from '../types';
 import { computeSketchFaces } from './sketchFaces';
@@ -86,4 +86,18 @@ test('only even wedge counts support mirror symmetry on every divider', () => {
     assert.equal(supportsMirrorSymmetry(24), true);
     const part: SketchProfilePart = { points: [[1, 1], [2, 1], [1, 2]], closed: true };
     assert.deepEqual(radialSymmetry([part], 3, 0, 0, 'mirror'), radialSymmetry([part], 3, 0, 0, 'rotate'));
+});
+
+test('selection editing retains semantic center and radius handles', () => {
+    const entity = {
+        id: 'circle', kind: 'sketch', profileType: 'circle', points: [[0, 0], [10, 0]], open: false,
+    } as ModelEntity;
+    const part = entityProfileParts(entity)[0];
+    assert.equal(part.editor?.type, 'circle');
+    const scaled = scaleProfilePart(part, [0, 0], 1.5);
+    assert.deepEqual(scaled.editor?.source, [[0, 0], [15, 0]]);
+    scaled.editor!.source[1] = [0, 20];
+    const regenerated = regenerateProfilePart(scaled.editor!, true);
+    assert.equal(regenerated.points.length, 64);
+    assert.ok(regenerated.points.every(([x, y]) => Math.abs(Math.hypot(x, y) - 20) < 1e-7));
 });

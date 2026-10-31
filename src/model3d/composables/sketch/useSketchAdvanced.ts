@@ -3,8 +3,8 @@ import { useMessage } from 'naive-ui';
 import type { ViewTool, Viewport } from '../../engine/Viewport';
 import type { ProfileType } from '../../engine/profiles';
 import {
-    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
-    rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
+    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
+    regenerateProfilePart, rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
@@ -73,6 +73,8 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     const hoverSector = ref<number | null>(null);
     const altTarget = ref<{ partIndex: number; start: number; end: number; points: Point2[] } | null>(null);
     let gesture: Gesture | null = null;
+    let editGesture: { pointerId: number; partIndex: number; pointIndex: number; startPoint: Point2; before: SketchProfilePart } | null = null;
+    const editHandles: { center: { x: number; y: number } | null; points: { index: number; x: number; y: number }[] } = { center: null, points: [] };
     let viewGesture = false;
     let pendingShape = false;
 
@@ -120,6 +122,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     }
     function cancelSymmetry() {
         gesture = null;
+        editGesture = null;
         draft.value = null;
         draftStart.value = null;
         pendingShape = false;
@@ -133,6 +136,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const session = symmetry.value;
         if (!session) return;
         if (session.step < 3) {
+            editGesture = null;
             session.step = session.step === 1 ? 2 : 3;
             draft.value = null;
             draftStart.value = null;
@@ -313,16 +317,20 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     }
 
     function shapePoints(type: ProfileType, start: Point2, point: Point2): SketchProfilePart {
-        if (type === 'rectangle') return { points: [start, [point[0], start[1]], point, [start[0], point[1]]], closed: true };
+        if (type === 'rectangle') {
+            const source: Point2[] = [start, [point[0], start[1]], point, [start[0], point[1]]];
+            return { points: source, closed: true, editor: { type, source } };
+        }
         if (type === 'circle' || type === 'ellipse' || type === 'regular') {
             const vertical: Point2 = [start[0], start[1] + Math.abs(point[1] - start[1]) || start[1] + Math.abs(point[0] - start[0])];
             const source = type === 'ellipse' ? [start, point, vertical] : [start, point];
-            return { points: profilePoints(type, source, 64, undefined, sketchSides.value), closed: true };
+            return { points: profilePoints(type, source, 64, undefined, sketchSides.value), closed: true, editor: { type, source, sides: sketchSides.value } };
         }
-        return { points: [start, point], closed: false };
+        return { points: [start, point], closed: false, editor: { type, source: [start, point] } };
     }
     function commitDraft() {
         if (!symmetry.value || !draft.value || draft.value.points.length < 2) return;
+        if (['polygon', 'line'].includes(sketchType.value)) draft.value.editor = { type: sketchType.value, source: draft.value.points.map((point) => [...point]) };
         symmetry.value.drawings.push(cloneProfilePart(draft.value));
         draft.value = null;
         draftStart.value = null;
@@ -349,6 +357,42 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         return null;
     }
 
+    function setWorkingPart(index: number, part: SketchProfilePart) {
+        const session = symmetry.value;
+        if (!session) return;
+        if (index < session.source.length) session.source.splice(index, 1, part);
+        else session.drawings.splice(index - session.source.length, 1, part);
+    }
+    function hitEditHandle(screen: { x: number; y: number }) {
+        const near = (point: { x: number; y: number }, radius = 10) => Math.hypot(screen.x - point.x, screen.y - point.y) <= radius;
+        const point = editHandles.points.find((handle) => near(handle));
+        if (point) return point.index;
+        if (editHandles.center && near(editHandles.center, 12)) return -1;
+        return null;
+    }
+    function beginEditGesture(partIndex: number, pointIndex: number, point: Point2, event: PointerEvent) {
+        const part = workingParts.value[partIndex];
+        if (!part) return;
+        editGesture = { pointerId: event.pointerId, partIndex, pointIndex, startPoint: point, before: cloneProfilePart(part) };
+        (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
+    }
+    function updateEditGesture(point: Point2) {
+        const current = editGesture;
+        if (!current) return;
+        if (current.pointIndex < 0) {
+            const delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
+            setWorkingPart(current.partIndex, translateProfilePart(current.before, delta));
+            return;
+        }
+        const editor = current.before.editor;
+        if (!editor) return;
+        const nextEditor = { ...editor, source: editor.source.map((value) => [...value]) };
+        if (editor.type === 'rectangle') {
+            const opposite = editor.source[(current.pointIndex + 2) % 4];
+            nextEditor.source = [opposite, [point[0], opposite[1]], point, [opposite[0], point[1]]];
+        } else nextEditor.source[current.pointIndex] = point;
+        setWorkingPart(current.partIndex, regenerateProfilePart(nextEditor, current.before.closed));
+    }
     function workingBorders(): BorderSegment[] {
         return workingParts.value.map((part, partIndex) => ({
             entityId: String(partIndex), index: 0, sourceCount: part.points.length,
@@ -425,6 +469,14 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const canvas = event.currentTarget as HTMLCanvasElement;
         const rect = canvas.getBoundingClientRect();
         const screen = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        if (session?.step === 3 && sketchSelectionTool.value && activeTool.value === 'select') {
+            const pointIndex = hitEditHandle(screen);
+            if (pointIndex !== null && workingSelection.value.length === 1) {
+                beginEditGesture(workingSelection.value[0], pointIndex, point, event);
+                event.preventDefault();
+                return;
+            }
+        }
         if (['translate', 'rotate', 'scale'].includes(activeTool.value)) {
             const gizmo = hitGizmo(screen);
             if (gizmo && beginTransform(gizmo, point, event)) {
@@ -474,7 +526,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             return;
         }
         draftStart.value = point;
-        draft.value = ['polygon', 'line'].includes(sketchType.value) ? { points: [point], closed: false } : shapePoints(sketchType.value, point, point);
+        draft.value = ['polygon', 'line'].includes(sketchType.value) ? { points: [point], closed: false, editor: { type: sketchType.value, source: [point] } } : shapePoints(sketchType.value, point, point);
         gesture = { kind: 'draw', pointerId: event.pointerId, startClient: [event.clientX, event.clientY], startPoint: point, moved: false };
         canvas.setPointerCapture(event.pointerId);
         event.preventDefault();
@@ -488,6 +540,11 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
         const point = eventPoint(event);
         if (!point) { hoverSector.value = null; altTarget.value = null; return; }
+        if (editGesture) {
+            updateEditGesture(point);
+            event.preventDefault();
+            return;
+        }
         if (!gesture && symmetry.value?.step === 2) hoverSector.value = sectorAtPoint(point, symmetry.value.count, symmetry.value.offset);
         if (!gesture && symmetry.value?.step === 3 && event.altKey) updateAltTarget(point);
         else altTarget.value = null;
@@ -506,6 +563,11 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         if (viewGesture) {
             viewGesture = false;
             viewport()?.forwardSketchPointer(event, 'up');
+            event.preventDefault();
+            return;
+        }
+        if (editGesture) {
+            if (event.pointerId === editGesture.pointerId) editGesture = null;
             event.preventDefault();
             return;
         }
@@ -715,10 +777,34 @@ export function useSketchAdvanced(options: AdvancedOptions) {
                 inputPositions.value = next;
             }
         }
+        editHandles.center = null;
+        editHandles.points = [];
+        if (session?.step === 3 && sketchSelectionTool.value && activeTool.value === 'select' && workingSelection.value.length === 1) {
+            const part = workingParts.value[workingSelection.value[0]];
+            if (part) {
+                drawParts(context, [part], project, true);
+                const center = project(profilePartCenter(part));
+                editHandles.center = center;
+                context.fillStyle = SKETCH_COLORS.point;
+                context.strokeStyle = SKETCH_COLORS.pointActive;
+                context.lineWidth = 2;
+                context.beginPath(); context.arc(center.x, center.y, 7, 0, Math.PI * 2); context.fill(); context.stroke();
+                const centerIsSemantic = ['circle', 'ellipse', 'regular'].includes(part.editor?.type || '');
+                part.editor?.source.forEach((source, index) => {
+                    if (centerIsSemantic && index === 0) return;
+                    const handle = project(source);
+                    editHandles.points.push({ index, x: handle.x, y: handle.y });
+                    context.fillStyle = SKETCH_COLORS.point;
+                    context.strokeStyle = SKETCH_COLORS.planeBlue;
+                    context.beginPath(); context.arc(handle.x, handle.y, 5, 0, Math.PI * 2); context.fill(); context.stroke();
+                });
+            }
+        }
     }
 
     watch([selectedShapes, activeTool], () => {
         if (gesture) return;
+        editGesture = null;
         draft.value = null;
         draftStart.value = null;
         pendingShape = false;

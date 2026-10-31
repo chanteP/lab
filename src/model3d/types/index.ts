@@ -4,9 +4,17 @@ export type Vec3 = [number, number, number];
 export type Point2 = [number, number];
 
 /** A disconnected polygon/polyline owned by one compound sketch entity. */
+export interface SketchProfileEditor {
+    type: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';
+    source: Point2[];
+    sides?: number;
+    sectorAngle?: number;
+    startAngle?: number;
+}
 export interface SketchProfilePart {
     points: Point2[];
     closed: boolean;
+    editor?: SketchProfileEditor;
 }
 export type SketchElementRef = { entityId: string; index: number };
 export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';

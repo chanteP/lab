@@ -1,5 +1,5 @@
 import { entityProfileClosed, profilePoints } from './profiles';
-import type { ModelEntity, Point2, SketchProfilePart } from '../types';
+import type { ModelEntity, Point2, SketchProfileEditor, SketchProfilePart } from '../types';
 
 export type SymmetryMode = 'mirror' | 'rotate';
 export type PointTransform = (point: Point2) => Point2;
@@ -17,7 +17,18 @@ export function supportsMirrorSymmetry(count: number): boolean {
 const EPSILON = 1e-7;
 
 export function cloneProfilePart(part: SketchProfilePart): SketchProfilePart {
-    return { points: part.points.map((point) => [...point]), closed: part.closed };
+    return {
+        points: part.points.map((point) => [...point]), closed: part.closed,
+        editor: part.editor ? { ...part.editor, source: part.editor.source.map((point) => [...point]) } : undefined,
+    };
+}
+
+export function regenerateProfilePart(editor: SketchProfileEditor, closed: boolean): SketchProfilePart {
+    return {
+        points: profilePoints(editor.type, editor.source, 64, undefined, editor.sides, editor.sectorAngle, !closed, editor.startAngle),
+        closed,
+        editor: { ...editor, source: editor.source.map((point) => [...point]) },
+    };
 }
 
 /** Convert semantic circles/curves to render polygons before clipping and radial transforms. */
@@ -27,7 +38,12 @@ export function entityProfileParts(entity: ModelEntity): SketchProfilePart[] {
         entity.profileType || 'polygon', entity.points || [], 64, entity.curves, entity.sides,
         entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves,
     );
-    return points.length >= 2 ? [{ points: points.map((point) => [...point]), closed: entityProfileClosed(entity) }] : [];
+    const editable = !entity.curves && !entity.analyticCurves && entity.points?.length;
+    const editor = editable ? {
+        type: entity.profileType || 'polygon', source: entity.points!.map((point) => [...point]),
+        sides: entity.sides, sectorAngle: entity.sectorAngle, startAngle: entity.profileStartAngle,
+    } : undefined;
+    return points.length >= 2 ? [{ points: points.map((point) => [...point]), closed: entityProfileClosed(entity), editor }] : [];
 }
 
 export function profilePartCenter(part: SketchProfilePart): Point2 {
@@ -46,7 +62,10 @@ export function profilePartsCenter(parts: SketchProfilePart[]): Point2 {
 }
 
 export function mapProfilePart(part: SketchProfilePart, transform: PointTransform): SketchProfilePart {
-    return { points: part.points.map(transform), closed: part.closed };
+    return {
+        points: part.points.map(transform), closed: part.closed,
+        editor: part.editor ? { ...part.editor, source: part.editor.source.map(transform) } : undefined,
+    };
 }
 
 export function translateProfilePart(part: SketchProfilePart, delta: Point2): SketchProfilePart {
