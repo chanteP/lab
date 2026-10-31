@@ -158,7 +158,7 @@ const {
     cancelSketch, cancelSketchRefresh,
 } = sketchSession;
 const sketchAdvanced = useSketchAdvanced({
-    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, selectedShapes, selectedIds, lengthUnit, setLengthUnit,
+    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedIds, lengthUnit, setLengthUnit,
     viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
     refreshSketch, syncSketchFromDocument: sketchConstraints.syncLocalSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
 });

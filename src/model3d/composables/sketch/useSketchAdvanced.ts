@@ -13,6 +13,7 @@ import { uid } from '../../utils/id';
 import { uniqueEntityName } from '../../utils/entity';
 import { profilePoints } from '../../engine/profiles';
 import { borderInterval, sliceBorder, type BorderSegment } from '../../engine/sketchBorders';
+import { matchSketchGuide, type SketchGuideMatch } from '../../engine/sketchGuides';
 
 export type SymmetrySession = {
     step: 1 | 2 | 3;
@@ -45,6 +46,7 @@ interface AdvancedOptions {
     sketchType: Ref<ProfileType>;
     sketchSides: Ref<number>;
     sketchSelectionTool: Ref<boolean>;
+    sketchGuideSnapEnabled: Ref<boolean>;
     selectedShapes: Ref<string[]>;
     selectedIds: Ref<string[]>;
     lengthUnit: Ref<LengthUnit>;
@@ -64,7 +66,7 @@ interface AdvancedOptions {
 export function useSketchAdvanced(options: AdvancedOptions) {
     const {
         document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool,
-        selectedShapes, selectedIds, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
+        sketchGuideSnapEnabled, selectedShapes, selectedIds, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
         refreshSketch, syncSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
     } = options;
     const symmetry = ref<SymmetrySession | null>(null);
@@ -76,6 +78,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     const inputPositions = ref<Record<string, { x: number; y: number }>>({});
     const hoverSector = ref<number | null>(null);
     const altTarget = ref<{ partIndex: number; start: number; end: number; points: Point2[] } | null>(null);
+    const centerSnapMatches = ref<SketchGuideMatch[]>([]);
     let gesture: Gesture | null = null;
     let editGesture: { pointerId: number; partIndex: number; pointIndex: number; startPoint: Point2; before: SketchProfilePart } | null = null;
     const editHandles: { center: { x: number; y: number } | null; points: { index: number; x: number; y: number }[] } = { center: null, points: [] };
@@ -246,11 +249,41 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             curve.c2 = mapPoint(curve.c2);
         });
     }
+    function snapCenterPoint(point: Point2, excludeWorkingIndex?: number): Point2 {
+        centerSnapMatches.value = [];
+        if (!sketchGuideSnapEnabled.value) return point;
+        const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
+        if (!plane) return point;
+        const excluded = new Set(selectedShapes.value);
+        const entities = document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id && !excluded.has(entity.id));
+        if (symmetry.value) {
+            workingParts.value.forEach((part, index) => {
+                if (index === excludeWorkingIndex || workingSelection.value.includes(index) || !part.editor) return;
+                entities.push({
+                    id: `advanced:${index}`, parentId: null, kind: 'sketch', name: '', color: '', visible: true,
+                    position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], planeId: plane.id,
+                    profileType: part.editor.type, points: part.editor.source, sides: part.editor.sides,
+                });
+            });
+        }
+        const offset = [-plane.origin[0], -plane.origin[1], -plane.origin[2]];
+        const origins = [
+            { id: 'plane' as const, point: [0, 0] as Point2 },
+            { id: 'world' as const, point: [
+                offset[0] * plane.u[0] + offset[1] * plane.u[1] + offset[2] * plane.u[2],
+                offset[0] * plane.v[0] + offset[1] * plane.v[1] + offset[2] * plane.v[2],
+            ] as Point2 },
+        ];
+        const match = matchSketchGuide({ entities, point, origins, threshold: (viewport()?.sketchUnitsPerPixel() || 0.1) * 8 });
+        if (!match) return point;
+        centerSnapMatches.value = match.matches;
+        return match.point;
+    }
     function transformAt(point: Point2, final = false) {
         const current = gesture;
         if (!current || current.kind === 'draw') return;
         if (current.kind === 'center') {
-            transformCenter.value = point;
+            transformCenter.value = snapCenterPoint(point);
             return;
         }
         const center = current.center!;
@@ -289,6 +322,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     function endTransform() {
         if (!gesture || gesture.kind === 'draw') return;
         gesture = null;
+        centerSnapMatches.value = [];
         setTransforming(false);
         viewport()?.sync(document.value);
         refreshSketch();
@@ -394,10 +428,12 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const current = editGesture;
         if (!current) return;
         if (current.pointIndex < 0) {
-            const delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
+            const snapped = snapCenterPoint(point, current.partIndex);
+            const delta: Point2 = [snapped[0] - current.startPoint[0], snapped[1] - current.startPoint[1]];
             setWorkingPart(current.partIndex, translateProfilePart(current.before, delta));
             return;
         }
+        centerSnapMatches.value = [];
         const editor = current.before.editor;
         if (!editor) return;
         const nextEditor = { ...editor, source: editor.source.map((value) => [...value]) };
@@ -582,6 +618,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
         if (editGesture) {
             if (event.pointerId === editGesture.pointerId) editGesture = null;
+            centerSnapMatches.value = [];
             event.preventDefault();
             return;
         }
@@ -608,6 +645,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     function pointerLeave() {
         hoverSector.value = null;
         altTarget.value = null;
+        centerSnapMatches.value = [];
     }
     function doubleClick(event: MouseEvent) {
         if (draft.value && ['polygon', 'line'].includes(sketchType.value)) {
@@ -760,6 +798,24 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         } else drawParts(context, currentParts(), project, true);
 
         inputPositions.value = {};
+        if (centerSnapMatches.value.length) {
+            const radius = Math.hypot(width, height) * 2;
+            centerSnapMatches.value.forEach((match) => {
+                const direction: Point2 = [match.b[0] - match.a[0], match.b[1] - match.a[1]];
+                const length = Math.hypot(direction[0], direction[1]) || 1;
+                const unit: Point2 = [direction[0] / length, direction[1] / length];
+                const a = project([match.a[0] - unit[0] * radius, match.a[1] - unit[1] * radius]);
+                const b = project([match.a[0] + unit[0] * radius, match.a[1] + unit[1] * radius]);
+                context.strokeStyle = match.reference.kind === 'origin' ? SKETCH_COLORS.guide : SKETCH_COLORS.reference;
+                context.globalAlpha = 0.8;
+                context.lineWidth = 1.5;
+                context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
+                const reference = project(match.a);
+                context.fillStyle = context.strokeStyle;
+                context.beginPath(); context.arc(reference.x, reference.y, 4, 0, Math.PI * 2); context.fill();
+            });
+            context.globalAlpha = 1;
+        }
         if (!session || session.step === 3) {
             if (['translate', 'rotate', 'scale'].includes(activeTool.value) && currentParts().length) {
                 const center = project(transformCenter.value);
