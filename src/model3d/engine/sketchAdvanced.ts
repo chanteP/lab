@@ -4,6 +4,11 @@ import type { ModelEntity, Point2, SketchProfilePart } from '../types';
 export type SymmetryMode = 'mirror' | 'rotate';
 export type PointTransform = (point: Point2) => Point2;
 
+/** One ray per sector; opposite rays naturally form a cross for even counts. */
+export function symmetryRayAngles(count: number, offset: number): number[] {
+    return Array.from({ length: count }, (_, index) => offset + index * 360 / count);
+}
+
 const EPSILON = 1e-7;
 
 export function cloneProfilePart(part: SketchProfilePart): SketchProfilePart {

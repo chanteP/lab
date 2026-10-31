@@ -193,6 +193,12 @@ export class InteractionController {
         this.controls.enableRotate = ['select', 'offsetFace', 'fillet', 'chamfer', 'extrude'].includes(this.tool) && !this.sketchMode && !this.measureMode;
     }
 
+    forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') {
+        if (phase === 'down') this.onPointerDown(event);
+        else if (phase === 'move') this.onPointerMove(event);
+        else this.onPointerUp(event);
+    }
+
     private onContextMenu(event: MouseEvent) {
         event.preventDefault();
         event.stopPropagation();
@@ -435,7 +441,8 @@ export class InteractionController {
                     this.shapeDrag = null;
                     this.sketchDrag = null;
                     const additive = event.metaKey || event.ctrlKey;
-                    this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex, additive);
+                    if (borderHit.object.userData.borderWholeOnly) this.callbacks.onSketchEntitySelect(entityId, additive);
+                    else this.callbacks.onSketchBorderSelect(entityId, borderHit.object.userData.borderSegmentIndex, additive);
                     return;
                 }
             }

@@ -3,7 +3,7 @@ import { useMessage } from 'naive-ui';
 import type { ViewTool, Viewport } from '../../engine/Viewport';
 import type { ProfileType } from '../../engine/profiles';
 import {
-    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartsCenter, radialSymmetry,
+    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartsCenter, radialSymmetry, symmetryRayAngles,
     rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
@@ -12,6 +12,7 @@ import { createEntity, type ModelDocument, type ModelEntity, type Point2, type S
 import { uid } from '../../utils/id';
 import { uniqueEntityName } from '../../utils/entity';
 import { profilePoints } from '../../engine/profiles';
+import { borderInterval, sliceBorder, type BorderSegment } from '../../engine/sketchBorders';
 
 export type SymmetrySession = {
     step: 1 | 2 | 3;
@@ -69,7 +70,10 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     const transformCenter = ref<Point2>([0, 0]);
     const transformInput = ref({ x: 0, y: 0, angle: 0, scale: 1 });
     const inputPositions = ref<Record<string, { x: number; y: number }>>({});
+    const hoverSector = ref<number | null>(null);
+    const altTarget = ref<{ partIndex: number; start: number; end: number; points: Point2[] } | null>(null);
     let gesture: Gesture | null = null;
+    let viewGesture = false;
     let pendingShape = false;
 
     const symmetryActive = computed(() => !!symmetry.value);
@@ -344,11 +348,73 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         return null;
     }
 
+    function workingBorders(): BorderSegment[] {
+        return workingParts.value.map((part, partIndex) => ({
+            entityId: String(partIndex), index: 0, sourceCount: part.points.length,
+            points: part.closed ? [...part.points, part.points[0]] : part.points,
+            closed: part.closed,
+        }));
+    }
+    function updateAltTarget(point: Point2) {
+        const borders = workingBorders();
+        const tolerance = (viewport()?.sketchUnitsPerPixel() || 0.1) * 7;
+        let closest: { partIndex: number; segmentIndex: number; distance: number } | null = null;
+        borders.forEach((border, partIndex) => {
+            for (let segmentIndex = 0; segmentIndex < border.points.length - 1; segmentIndex++) {
+                const a = border.points[segmentIndex], b = border.points[segmentIndex + 1];
+                const dx = b[0] - a[0], dy = b[1] - a[1];
+                const lengthSquared = dx * dx + dy * dy;
+                const t = lengthSquared ? Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared)) : 0;
+                const distance = Math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dy);
+                if (!closest || distance < closest.distance) closest = { partIndex, segmentIndex, distance };
+            }
+        });
+        if (!closest || closest.distance > tolerance) { altTarget.value = null; return; }
+        const target = closest as { partIndex: number; segmentIndex: number; distance: number };
+        const border = borders[target.partIndex];
+        const interval = borderInterval(border, borders, point);
+        altTarget.value = { partIndex: target.partIndex, ...interval, points: sliceBorder(border, interval.start, interval.end) };
+    }
+    function replaceWorkingPart(index: number, replacements: SketchProfilePart[]) {
+        const session = symmetry.value;
+        if (!session) return;
+        if (index < session.source.length) session.source.splice(index, 1, ...replacements);
+        else session.drawings.splice(index - session.source.length, 1, ...replacements);
+        workingSelection.value = [];
+        altTarget.value = null;
+    }
+    function deleteAltTarget() {
+        const target = altTarget.value;
+        const part = target && workingParts.value[target.partIndex];
+        if (!target || !part) return;
+        if (target.start <= 0 && target.end >= 1) { replaceWorkingPart(target.partIndex, []); return; }
+        const border = workingBorders()[target.partIndex];
+        if (part.closed) {
+            const remaining = sliceBorder(border, target.end, target.start + 1);
+            replaceWorkingPart(target.partIndex, remaining.length >= 2 ? [{ points: remaining, closed: false }] : []);
+            return;
+        }
+        const left = sliceBorder(border, 0, target.start), right = sliceBorder(border, target.end, 1);
+        replaceWorkingPart(target.partIndex, [left, right].filter((points) => points.length >= 2).map((points) => ({ points, closed: false })));
+    }
     function pointerDown(event: PointerEvent) {
-        if (!overlayActive.value || event.button !== 0) return;
+        if (!overlayActive.value) return;
+        const session = symmetry.value;
+        if (session?.step === 3 && event.button === 2) {
+            viewGesture = true;
+            (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
+            viewport()?.forwardSketchPointer(event, 'down');
+            event.preventDefault();
+            return;
+        }
+        if (event.button !== 0) return;
+        if (session?.step === 3 && event.altKey && altTarget.value) {
+            deleteAltTarget();
+            event.preventDefault();
+            return;
+        }
         const point = eventPoint(event);
         if (!point) return;
-        const session = symmetry.value;
         if (session?.step === 2) {
             session.selectedSector = sectorAtPoint(point, session.count, session.offset);
             event.preventDefault();
@@ -414,8 +480,16 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     }
 
     function pointerMove(event: PointerEvent) {
+        if (viewGesture) {
+            viewport()?.forwardSketchPointer(event, 'move');
+            event.preventDefault();
+            return;
+        }
         const point = eventPoint(event);
-        if (!point) return;
+        if (!point) { hoverSector.value = null; altTarget.value = null; return; }
+        if (!gesture && symmetry.value?.step === 2) hoverSector.value = sectorAtPoint(point, symmetry.value.count, symmetry.value.offset);
+        if (!gesture && symmetry.value?.step === 3 && event.altKey) updateAltTarget(point);
+        else altTarget.value = null;
         if (!gesture) {
             if (pendingShape && draftStart.value) draft.value = shapePoints(sketchType.value, draftStart.value, point);
             return;
@@ -428,6 +502,12 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         event.preventDefault();
     }
     function pointerUp(event: PointerEvent) {
+        if (viewGesture) {
+            viewGesture = false;
+            viewport()?.forwardSketchPointer(event, 'up');
+            event.preventDefault();
+            return;
+        }
         if (!gesture || event.pointerId !== gesture.pointerId) return;
         const point = eventPoint(event);
         if (gesture.kind === 'draw') {
@@ -441,6 +521,10 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             endTransform();
         }
         event.preventDefault();
+    }
+    function pointerLeave() {
+        hoverSector.value = null;
+        altTarget.value = null;
     }
     function doubleClick(event: MouseEvent) {
         if (draft.value && ['polygon', 'line'].includes(sketchType.value)) {
@@ -495,6 +579,38 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         context.beginPath(); context.moveTo(center.x, center.y); context.lineTo(a.x, a.y); context.lineTo(b.x, b.y); context.closePath();
     }
 
+    function drawSketchGrid(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, project: (point: Point2) => { x: number; y: number }) {
+        const view = viewport();
+        if (!view) return;
+        const rect = canvas.getBoundingClientRect();
+        const corners = [
+            view.sketchPointAt(rect.left, rect.top), view.sketchPointAt(rect.right, rect.top),
+            view.sketchPointAt(rect.left, rect.bottom), view.sketchPointAt(rect.right, rect.bottom),
+        ].filter(Boolean) as Point2[];
+        if (corners.length !== 4) return;
+        const xs = corners.map((point) => point[0]), ys = corners.map((point) => point[1]);
+        const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const spacing = 10;
+        if ((maxX - minX + maxY - minY) / spacing > 500) return;
+        context.strokeStyle = VIEWPORT_COLORS.gridMajor;
+        context.globalAlpha = 0.48;
+        context.lineWidth = 1;
+        for (let x = Math.floor(minX / spacing) * spacing; x <= maxX; x += spacing) {
+            const a = project([x, minY]), b = project([x, maxY]);
+            context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
+        }
+        for (let y = Math.floor(minY / spacing) * spacing; y <= maxY; y += spacing) {
+            const a = project([minX, y]), b = project([maxX, y]);
+            context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
+        }
+        context.globalAlpha = 0.8;
+        [[project([minX, 0]), project([maxX, 0]), SKETCH_COLORS.pointActive], [project([0, minY]), project([0, maxY]), SKETCH_COLORS.planeBlue]].forEach(([a, b, color]) => {
+            const start = a as { x: number; y: number }, end = b as { x: number; y: number };
+            context.strokeStyle = color as string;
+            context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(end.x, end.y); context.stroke();
+        });
+        context.globalAlpha = 1;
+    }
     function render(canvas: HTMLCanvasElement) {
         const view = viewport();
         if (!view || !overlayActive.value) return;
@@ -514,10 +630,11 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             context.fillStyle = VIEWPORT_COLORS.sketchBackground;
             context.fillRect(0, 0, width, height);
             const radius = Math.hypot(width, height) * 2;
+            if (session.step === 3) drawSketchGrid(context, canvas, project);
             drawParts(context, renderedParts.value, project);
             if (session.step >= 2) {
                 // Mask both the temporary plane and source copies outside the single active wedge.
-                context.fillStyle = SKETCH_COLORS.edge;
+                context.fillStyle = SKETCH_COLORS.point;
                 context.globalAlpha = 0.5;
                 context.fillRect(0, 0, width, height);
                 context.save();
@@ -531,15 +648,29 @@ export function useSketchAdvanced(options: AdvancedOptions) {
                 context.restore();
                 context.globalAlpha = 1;
             }
+            if (session.step === 2 && hoverSector.value !== null) {
+                wedgePath(context, origin, session.offset + hoverSector.value * 360 / session.count, session.offset + (hoverSector.value + 1) * 360 / session.count, radius);
+                context.fillStyle = SKETCH_COLORS.active;
+                context.globalAlpha = hoverSector.value === session.selectedSector ? 0.12 : 0.22;
+                context.fill();
+                context.globalAlpha = 1;
+            }
+            if (altTarget.value?.points.length) {
+                const points = altTarget.value.points.map(project);
+                context.strokeStyle = SKETCH_COLORS.deletePoint;
+                context.lineWidth = 4;
+                context.beginPath(); context.moveTo(points[0].x, points[0].y);
+                points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+                context.stroke();
+            }
             context.strokeStyle = SKETCH_COLORS.planeBlue;
             context.globalAlpha = 0.65;
             context.lineWidth = 1.2;
-            for (let index = 0; index < session.count; index++) {
-                const angle = (session.offset + index * 360 / session.count) * Math.PI / 180;
-                const a = project([Math.sin(angle) * radius, Math.cos(angle) * radius]);
-                const b = project([-Math.sin(angle) * radius, -Math.cos(angle) * radius]);
-                context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
-            }
+            symmetryRayAngles(session.count, session.offset).forEach((degrees) => {
+                const angle = degrees * Math.PI / 180;
+                const end = project([Math.sin(angle) * radius, Math.cos(angle) * radius]);
+                context.beginPath(); context.moveTo(origin.x, origin.y); context.lineTo(end.x, end.y); context.stroke();
+            });
             context.globalAlpha = 1;
             context.fillStyle = SKETCH_COLORS.planeBlue;
             context.beginPath(); context.arc(origin.x, origin.y, 4, 0, Math.PI * 2); context.fill();
@@ -597,7 +728,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     return {
         symmetry, symmetryActive, transformActive, overlayActive, transformInput, inputPositions,
         startSymmetry, cancelSymmetry, nextSymmetryStep, updateSymmetry, setTransformInput,
-        pointerDown, pointerMove, pointerUp, doubleClick, contextMenu, render,
+        pointerDown, pointerMove, pointerUp, pointerLeave, doubleClick, contextMenu, render,
     };
 }
 

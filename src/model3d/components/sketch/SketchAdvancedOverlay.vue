@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { SketchAdvanced } from '../../composables/sketch/useSketchAdvanced';
+import { integerStep } from '../../utils/number';
 
 const props = defineProps<{ advanced: SketchAdvanced }>();
 const canvas = ref<HTMLCanvasElement>();
@@ -11,6 +12,13 @@ let frame = 0;
 
 function numberValue(event: Event) {
     return Number((event.target as HTMLInputElement).value);
+}
+function wheelValue(event: WheelEvent, value: number, step = 1) {
+    event.preventDefault();
+    event.stopPropagation();
+    const direction = event.deltaY < 0 ? 1 : -1;
+    if (step >= 1) return integerStep(value, direction, step);
+    return Math.max(0.01, Math.round((value + direction * step) / step) * step);
 }
 function positionStyle(key: string) {
     const point = positions.value[key];
@@ -37,6 +45,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             @pointermove="advanced.pointerMove"
             @pointerup="advanced.pointerUp"
             @pointercancel="advanced.pointerUp"
+            @pointerleave="advanced.pointerLeave"
             @dblclick="advanced.doubleClick"
         />
 
@@ -44,8 +53,8 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             <span class="step-badge">{{ session.step }}/3</span>
             <strong>{{ session.step === 1 ? '设置对称属性' : session.step === 2 ? '选择素材区域' : '绘制对称' }}</strong>
             <template v-if="session.step === 1">
-                <label>数量<input type="number" min="2" max="24" step="1" :value="session.count" aria-label="对称数量" @input="advanced.updateSymmetry('count', numberValue($event))" /></label>
-                <label>偏移角度<input type="number" min="0" max="360" step="1" :value="session.offset" aria-label="对称偏移角度" @input="advanced.updateSymmetry('offset', numberValue($event))" /><span>deg</span></label>
+                <label>数量<input type="number" min="2" max="24" step="1" :value="session.count" aria-label="对称数量" @wheel="advanced.updateSymmetry('count', wheelValue($event, session.count))" @input="advanced.updateSymmetry('count', numberValue($event))" /></label>
+                <label>偏移角度<input type="number" min="0" max="360" step="1" :value="session.offset" aria-label="对称偏移角度" @wheel="advanced.updateSymmetry('offset', wheelValue($event, session.offset))" @input="advanced.updateSymmetry('offset', numberValue($event))" /><span>deg</span></label>
             </template>
             <span v-else-if="session.step === 2" class="operation-hint">点击平分线之间的区域，仅保留一个选中区</span>
             <label v-else>对称方式
@@ -58,10 +67,10 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             <button type="button" class="exit-command" aria-label="退出对称" @click="advanced.cancelSymmetry">×</button>
         </section>
 
-        <label v-if="positions.x" class="gizmo-input" :style="positionStyle('x')"><span>X</span><input type="number" step="1" :value="values.x.toFixed(2)" aria-label="平移 X 坐标" @input="advanced.setTransformInput('x', numberValue($event))" /></label>
-        <label v-if="positions.y" class="gizmo-input" :style="positionStyle('y')"><span>Y</span><input type="number" step="1" :value="values.y.toFixed(2)" aria-label="平移 Y 坐标" @input="advanced.setTransformInput('y', numberValue($event))" /></label>
-        <label v-if="positions.angle" class="gizmo-input" :style="positionStyle('angle')"><span>角度</span><input type="number" step="1" :value="values.angle.toFixed(2)" aria-label="旋转角度" @input="advanced.setTransformInput('angle', numberValue($event))" /></label>
-        <label v-if="positions.scale" class="gizmo-input" :style="positionStyle('scale')"><span>缩放</span><input type="number" min="0.01" step="0.1" :value="values.scale.toFixed(2)" aria-label="缩放比例" @input="advanced.setTransformInput('scale', numberValue($event))" /></label>
+        <label v-if="positions.x" class="gizmo-input" :style="positionStyle('x')"><span>X</span><input type="number" step="1" :value="values.x.toFixed(2)" aria-label="平移 X 坐标" @wheel="advanced.setTransformInput('x', wheelValue($event, values.x))" @input="advanced.setTransformInput('x', numberValue($event))" /></label>
+        <label v-if="positions.y" class="gizmo-input" :style="positionStyle('y')"><span>Y</span><input type="number" step="1" :value="values.y.toFixed(2)" aria-label="平移 Y 坐标" @wheel="advanced.setTransformInput('y', wheelValue($event, values.y))" @input="advanced.setTransformInput('y', numberValue($event))" /></label>
+        <label v-if="positions.angle" class="gizmo-input" :style="positionStyle('angle')"><span>角度</span><input type="number" step="1" :value="values.angle.toFixed(2)" aria-label="旋转角度" @wheel="advanced.setTransformInput('angle', wheelValue($event, values.angle))" @input="advanced.setTransformInput('angle', numberValue($event))" /></label>
+        <label v-if="positions.scale" class="gizmo-input" :style="positionStyle('scale')"><span>缩放</span><input type="number" min="0.01" step="0.1" :value="values.scale.toFixed(2)" aria-label="缩放比例" @wheel="advanced.setTransformInput('scale', wheelValue($event, values.scale, 0.1))" @input="advanced.setTransformInput('scale', numberValue($event))" /></label>
     </div>
 </template>
 

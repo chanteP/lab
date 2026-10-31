@@ -299,6 +299,7 @@ export class Viewport {
         return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent);
     }
     sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
+    forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     setMeasureMode(active: boolean) { this.interaction.setMeasureMode(active); }
     setGridVisible(visible: boolean) { this.engine.setGridVisible(visible); }
     setShadowsVisible(visible: boolean) { this.engine.setShadowsVisible(visible); }

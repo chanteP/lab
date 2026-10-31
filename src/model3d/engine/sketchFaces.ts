@@ -59,7 +59,13 @@ function splitEdges(source: Edge[]) {
 
 /** Find bounded faces with directed half-edges; negative-area walks are the unbounded exterior. */
 export function computeSketchFaces(entities: ModelEntity[], planeId: string): SketchFace[] {
-    const source = entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === planeId).flatMap((entity) => borderSegments(entity).map((segment) => ({
+    const sketches = entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === planeId);
+    // Compound radial copies are independent whole shapes. Do not run pairwise intersection/restitching
+    // between every copied segment; that quadratic work previously froze high-count symmetry completion.
+    const compoundFaces = sketches.filter((entity) => entity.parts?.length).flatMap((entity) =>
+        entity.parts!.filter((part) => part.closed && part.points.length >= 3).map((part) => ({ points: part.points.map((point) => [...point]) })),
+    );
+    const source = sketches.filter((entity) => !entity.parts?.length).flatMap((entity) => borderSegments(entity).map((segment) => ({
         a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points, closed: segment.closed,
     })));
     const split = splitEdges(source);
@@ -137,5 +143,5 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
         }, 0) / 2;
         if (area > 0.0001) faces.push({ points });
     });
-    return faces;
+    return [...compoundFaces, ...faces];
 }

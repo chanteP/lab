@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
-    radialSymmetry, reflection, sectorAtPoint, symmetryTransform,
+    radialSymmetry, reflection, sectorAtPoint, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
-import type { Point2, SketchProfilePart } from '../types';
+import type { ModelEntity, Point2, SketchProfilePart } from '../types';
+import { computeSketchFaces } from './sketchFaces';
 
 const closePoint = (actual: Point2, expected: Point2) => {
     assert.ok(Math.hypot(actual[0] - expected[0], actual[1] - expected[1]) < 1e-7, `${actual} != ${expected}`);
@@ -56,4 +57,24 @@ test('compound profiles stay independent and remain hit-testable', () => {
     assert.equal(hitProfilePart(parts[0], [-1, -1]), false);
     parts[0].points[0][0] = 9;
     assert.equal(hitProfilePart(parts[0], [1.5, 0.5]), true);
+});
+
+test('ray count matches symmetry count without opposite duplicates', () => {
+    assert.deepEqual(symmetryRayAngles(2, 0), [0, 180]);
+    assert.deepEqual(symmetryRayAngles(3, 0), [0, 120, 240]);
+    assert.deepEqual(symmetryRayAngles(4, 0), [0, 90, 180, 270]);
+    assert.deepEqual(symmetryRayAngles(3, 30), [30, 150, 270]);
+});
+
+test('compound closed parts become direct faces without pairwise restitching', () => {
+    const entity = {
+        id: 'compound', kind: 'sketch', planeId: 'plane', profileType: 'polygon', points: [],
+        parts: Array.from({ length: 3 }, (_, index) => ({
+            closed: true,
+            points: [[index * 10, 0], [index * 10 + 2, 0], [index * 10 + 2, 2], [index * 10, 2]],
+        })),
+    } as ModelEntity;
+    const faces = computeSketchFaces([entity], 'plane');
+    assert.equal(faces.length, 3);
+    assert.deepEqual(faces[0].points[0], [0, 0]);
 });
