@@ -249,16 +249,16 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             curve.c2 = mapPoint(curve.c2);
         });
     }
-    function snapCenterPoint(point: Point2, excludeWorkingIndex?: number): Point2 {
+    function snapCenterPoint(point: Point2): Point2 {
         centerSnapMatches.value = [];
         if (!sketchGuideSnapEnabled.value) return point;
         const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
         if (!plane) return point;
-        const excluded = new Set(selectedShapes.value);
-        const entities = document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id && !excluded.has(entity.id));
+        // A transform pivot may intentionally snap to its own rectangle corner or circle radius point.
+        const entities = document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id);
         if (symmetry.value) {
             workingParts.value.forEach((part, index) => {
-                if (index === excludeWorkingIndex || workingSelection.value.includes(index) || !part.editor) return;
+                if (!part.editor) return;
                 entities.push({
                     id: `advanced:${index}`, parentId: null, kind: 'sketch', name: '', color: '', visible: true,
                     position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], planeId: plane.id,
@@ -428,7 +428,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const current = editGesture;
         if (!current) return;
         if (current.pointIndex < 0) {
-            const snapped = snapCenterPoint(point, current.partIndex);
+            const snapped = snapCenterPoint(point);
             const delta: Point2 = [snapped[0] - current.startPoint[0], snapped[1] - current.startPoint[1]];
             setWorkingPart(current.partIndex, translateProfilePart(current.before, delta));
             return;
