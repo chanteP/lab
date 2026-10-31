@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
-    radialSymmetry, reflection, sectorAtPoint, symmetryRayAngles, symmetryTransform,
+    radialSymmetry, reflection, sectorAtPoint, supportsMirrorSymmetry, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
 import type { ModelEntity, Point2, SketchProfilePart } from '../types';
 import { computeSketchFaces } from './sketchFaces';
@@ -77,4 +77,13 @@ test('compound closed parts become direct faces without pairwise restitching', (
     const faces = computeSketchFaces([entity], 'plane');
     assert.equal(faces.length, 3);
     assert.deepEqual(faces[0].points[0], [0, 0]);
+});
+
+test('only even wedge counts support mirror symmetry on every divider', () => {
+    assert.equal(supportsMirrorSymmetry(2), true);
+    assert.equal(supportsMirrorSymmetry(3), false);
+    assert.equal(supportsMirrorSymmetry(4), true);
+    assert.equal(supportsMirrorSymmetry(24), true);
+    const part: SketchProfilePart = { points: [[1, 1], [2, 1], [1, 2]], closed: true };
+    assert.deepEqual(radialSymmetry([part], 3, 0, 0, 'mirror'), radialSymmetry([part], 3, 0, 0, 'rotate'));
 });

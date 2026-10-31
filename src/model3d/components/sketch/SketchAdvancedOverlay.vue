@@ -59,7 +59,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             <span v-else-if="session.step === 2" class="operation-hint">点击平分线之间的区域，仅保留一个选中区</span>
             <label v-else>对称方式
                 <select :value="session.mode" aria-label="对称方式" @change="advanced.updateSymmetry('mode', ($event.target as HTMLSelectElement).value as 'mirror' | 'rotate')">
-                    <option value="mirror">轴对称</option>
+                    <option value="mirror" :disabled="session.count % 2 !== 0">轴对称</option>
                     <option value="rotate">旋转对称</option>
                 </select>
             </label>

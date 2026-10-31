@@ -3,7 +3,7 @@ import { useMessage } from 'naive-ui';
 import type { ViewTool, Viewport } from '../../engine/Viewport';
 import type { ProfileType } from '../../engine/profiles';
 import {
-    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartsCenter, radialSymmetry, symmetryRayAngles,
+    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
     rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
@@ -180,9 +180,10 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         if (key === 'count') {
             session.count = Math.max(2, Math.min(24, Math.round(Number(value))));
             session.selectedSector = Math.min(session.selectedSector, session.count - 1);
+            if (!supportsMirrorSymmetry(session.count)) session.mode = 'rotate';
         } else if (key === 'offset') session.offset = Math.max(0, Math.min(360, Number(value)));
         else if (key === 'selectedSector') session.selectedSector = Number(value);
-        else session.mode = value as SymmetryMode;
+        else session.mode = value === 'mirror' && !supportsMirrorSymmetry(session.count) ? 'rotate' : value as SymmetryMode;
     }
 
     function applyParts(parts: SketchProfilePart[], mapper: (part: SketchProfilePart) => SketchProfilePart) {

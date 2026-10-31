@@ -9,6 +9,11 @@ export function symmetryRayAngles(count: number, offset: number): number[] {
     return Array.from({ length: count }, (_, index) => offset + index * 360 / count);
 }
 
+/** Odd wedge counts cannot make every divider a mirror; their fundamental dihedral domain has 2N wedges. */
+export function supportsMirrorSymmetry(count: number): boolean {
+    return count % 2 === 0;
+}
+
 const EPSILON = 1e-7;
 
 export function cloneProfilePart(part: SketchProfilePart): SketchProfilePart {
@@ -161,11 +166,12 @@ export function clipProfileToSector(part: SketchProfilePart, count: number, offs
 }
 
 export function radialSymmetry(parts: SketchProfilePart[], count: number, offset: number, selected: number, mode: SymmetryMode): SketchProfilePart[] {
+    const effectiveMode = supportsMirrorSymmetry(count) ? mode : 'rotate';
     const clipped = parts.flatMap((part) => clipProfileToSector(part, count, offset, selected));
-    const normalize = inverseMatrixTransform(symmetryTransform(selected, count, mode));
+    const normalize = inverseMatrixTransform(symmetryTransform(selected, count, effectiveMode));
     const source = clipped.map((part) => mapProfilePart(part, normalize));
     return Array.from({ length: count }, (_, index) => {
-        const transform = symmetryTransform(index, count, mode);
+        const transform = symmetryTransform(index, count, effectiveMode);
         return source.map((part) => mapProfilePart(part, transform));
     }).flat();
 }
