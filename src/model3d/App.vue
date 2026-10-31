@@ -158,9 +158,9 @@ const {
     cancelSketch, cancelSketchRefresh,
 } = sketchSession;
 const sketchAdvanced = useSketchAdvanced({
-    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, selectedShapes, selectedIds,
+    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, selectedShapes, selectedIds, lengthUnit, setLengthUnit,
     viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
-    refreshSketch, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
+    refreshSketch, syncSketchFromDocument: sketchConstraints.syncLocalSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
 });
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
                 @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
-                <ViewportView :callbacks="viewportCallbacks" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
                     :measure-mode="measureMode" :items-visible="itemsVisible" :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"

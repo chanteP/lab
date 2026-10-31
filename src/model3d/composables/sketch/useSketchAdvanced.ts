@@ -8,7 +8,7 @@ import {
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import { createEntity, type ModelDocument, type ModelEntity, type Point2, type SketchProfilePart } from '../../types';
+import { createEntity, type LengthUnit, type ModelDocument, type ModelEntity, type Point2, type SketchProfilePart } from '../../types';
 import { uid } from '../../utils/id';
 import { uniqueEntityName } from '../../utils/entity';
 import { profilePoints } from '../../engine/profiles';
@@ -31,6 +31,7 @@ type Gesture = {
     startPoint: Point2;
     moved: boolean;
     before?: Map<string, SketchProfilePart[]>;
+    sources?: Map<string, { points: Point2[]; curves: ModelEntity['curves'] }>;
     workingBefore?: SketchProfilePart[];
     center?: Point2;
     angle?: number;
@@ -46,11 +47,14 @@ interface AdvancedOptions {
     sketchSelectionTool: Ref<boolean>;
     selectedShapes: Ref<string[]>;
     selectedIds: Ref<string[]>;
+    lengthUnit: Ref<LengthUnit>;
+    setLengthUnit: (unit: LengthUnit) => void;
     viewport: () => Viewport | undefined;
     message: ReturnType<typeof useMessage>;
     pushHistory: () => void;
     setTransforming: (value: boolean) => void;
     refreshSketch: () => void;
+    syncSketchFromDocument: () => void;
     selectSketchEntity: (id: string, additive?: boolean) => void;
     clearSketchSelection: () => void;
     activateSketchSelectionTool: () => void;
@@ -60,8 +64,8 @@ interface AdvancedOptions {
 export function useSketchAdvanced(options: AdvancedOptions) {
     const {
         document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool,
-        selectedShapes, selectedIds, viewport, message, pushHistory, setTransforming,
-        refreshSketch, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
+        selectedShapes, selectedIds, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
+        refreshSketch, syncSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
     } = options;
     const symmetry = ref<SymmetrySession | null>(null);
     const draft = ref<SketchProfilePart | null>(null);
@@ -203,25 +207,29 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     }
     function beginTransform(kind: Gesture['kind'], point: Point2, event: PointerEvent) {
         const before = new Map<string, SketchProfilePart[]>();
+        const sources = new Map<string, { points: Point2[]; curves: ModelEntity['curves'] }>();
         const workingBefore = workingParts.value.map(cloneProfilePart);
         if (symmetry.value) {
             if (!workingSelection.value.length) return false;
         } else {
             if (!selectedEntities().length) return false;
-            selectedEntities().forEach((entity) => before.set(entity.id, entityProfileParts(entity)));
+            selectedEntities().forEach((entity) => {
+                before.set(entity.id, entityProfileParts(entity));
+                sources.set(entity.id, { points: (entity.points || []).map((point) => [...point]), curves: JSON.parse(JSON.stringify(entity.curves || {})) });
+            });
             if (kind !== 'center') pushHistory();
             setTransforming(kind !== 'center');
         }
         const center = [...transformCenter.value] as Point2;
         gesture = {
             kind, pointerId: event.pointerId, startClient: [event.clientX, event.clientY], startPoint: point,
-            moved: false, before, workingBefore, center,
+            moved: false, before, sources, workingBefore, center,
             angle: Math.atan2(point[1] - center[1], point[0] - center[0]),
             distance: Math.hypot(point[0] - center[0], point[1] - center[1]),
         };
         return true;
     }
-    function writeEntityParts(entity: ModelEntity, parts: SketchProfilePart[], mapper: (part: SketchProfilePart) => SketchProfilePart) {
+    function writeEntityParts(entity: ModelEntity, parts: SketchProfilePart[], mapper: (part: SketchProfilePart) => SketchProfilePart, source?: { points: Point2[]; curves: ModelEntity['curves'] }) {
         if (entity.parts?.length || entity.analyticCurves && Object.keys(entity.analyticCurves).length) {
             entity.parts = parts.map(cloneProfilePart);
             entity.points = [];
@@ -231,7 +239,8 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             return;
         }
         const mapPoint = (point: Point2) => mapper({ points: [point], closed: false }).points[0];
-        entity.points = (entity.points || []).map(mapPoint);
+        entity.points = (source?.points || entity.points || []).map(mapPoint);
+        entity.curves = source ? JSON.parse(JSON.stringify(source.curves || {})) : entity.curves;
         Object.values(entity.curves || {}).forEach((curve) => {
             curve.c1 = mapPoint(curve.c1);
             curve.c2 = mapPoint(curve.c2);
@@ -250,6 +259,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             const delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
             if (current.kind === 'translate-x') delta[1] = 0;
             else delta[0] = 0;
+            transformCenter.value = [center[0] + delta[0], center[1] + delta[1]];
             mapper = (part) => translateProfilePart(part, delta);
         } else if (current.kind === 'rotate') {
             const angle = Math.atan2(point[1] - center[1], point[0] - center[0]);
@@ -268,8 +278,10 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         } else {
             selectedEntities().forEach((entity) => {
                 const before = current.before!.get(entity.id);
-                if (before) writeEntityParts(entity, applyParts(before, mapper), mapper);
+                if (before) writeEntityParts(entity, applyParts(before, mapper), mapper, current.sources?.get(entity.id));
             });
+            syncSketchFromDocument();
+            refreshSketch();
         }
         updateTranslationInput();
         if (final) refreshSketch();
@@ -312,7 +324,9 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             const next = before.map((part, index) => workingSelection.value.includes(index) ? mapper(part) : cloneProfilePart(part));
             replaceWorkingParts(before, next);
         }
+        if (!symmetry.value) syncSketchFromDocument();
         updateTranslationInput();
+        if (kind === 'x' || kind === 'y') transformCenter.value = profilePartsCenter(currentParts());
         refreshSketch();
     }
 
@@ -339,20 +353,20 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         resetTransformValue();
     }
 
-    function eventPoint(event: PointerEvent) { return viewport()?.sketchPointAt(event.clientX, event.clientY) || null; }
+    function eventPoint(event: PointerEvent) { return viewport()?.sketchPointAt(event.clientX, event.clientY, true) || null; }
     function hitGizmo(point: { x: number; y: number }): Gesture['kind'] | null {
         const positions = inputPositions.value;
         const center = positions.center;
         if (!center) return null;
         const near = (target?: { x: number; y: number }, radius = 12) => !!target && Math.hypot(point.x - target.x, point.y - target.y) <= radius;
-        if (near(center, 10) && activeTool.value !== 'translate') return 'center';
+        if (near(center, 16) && activeTool.value !== 'translate') return 'center';
         if (activeTool.value === 'translate') {
-            if (near(positions.xArrow)) return 'translate-x';
-            if (near(positions.yArrow)) return 'translate-y';
-        } else if (activeTool.value === 'rotate' && near(positions.rotateHandle, 14)) return 'rotate';
+            if (near(positions.xArrow, 18)) return 'translate-x';
+            if (near(positions.yArrow, 18)) return 'translate-y';
+        } else if (activeTool.value === 'rotate' && near(positions.rotateHandle, 18)) return 'rotate';
         else if (activeTool.value === 'scale') {
-            if (near(positions.xArrow) || near(positions.xNegativeArrow)) return 'scale';
-            if (near(positions.yArrow) || near(positions.yNegativeArrow)) return 'scale';
+            if (near(positions.xArrow, 18) || near(positions.xNegativeArrow, 18)) return 'scale';
+            if (near(positions.yArrow, 18) || near(positions.yNegativeArrow, 18)) return 'scale';
         }
         return null;
     }
@@ -445,7 +459,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     function pointerDown(event: PointerEvent) {
         if (!overlayActive.value) return;
         const session = symmetry.value;
-        if (session?.step === 3 && event.button === 2) {
+        if ((session?.step === 3 || transformActive.value) && event.button === 2) {
             viewGesture = true;
             (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
             viewport()?.forwardSketchPointer(event, 'down');
@@ -585,6 +599,12 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
         event.preventDefault();
     }
+    function wheel(event: WheelEvent) {
+        event.preventDefault();
+        event.stopPropagation();
+        viewport()?.forwardWheel(event);
+    }
+    function changeLengthUnit(unit: LengthUnit) { setLengthUnit(unit); }
     function pointerLeave() {
         hoverSector.value = null;
         altTarget.value = null;
@@ -604,12 +624,12 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const angle = Math.atan2(to.y - from.y, to.x - from.x);
         context.strokeStyle = color;
         context.fillStyle = color;
-        context.lineWidth = 2;
+        context.lineWidth = 4;
         context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
         context.beginPath();
         context.moveTo(to.x, to.y);
-        context.lineTo(to.x - 10 * Math.cos(angle - Math.PI / 6), to.y - 10 * Math.sin(angle - Math.PI / 6));
-        context.lineTo(to.x - 10 * Math.cos(angle + Math.PI / 6), to.y - 10 * Math.sin(angle + Math.PI / 6));
+        context.lineTo(to.x - 13 * Math.cos(angle - Math.PI / 6), to.y - 13 * Math.sin(angle - Math.PI / 6));
+        context.lineTo(to.x - 13 * Math.cos(angle + Math.PI / 6), to.y - 13 * Math.sin(angle + Math.PI / 6));
         context.closePath(); context.fill();
     }
     function drawParts(context: CanvasRenderingContext2D, parts: SketchProfilePart[], project: (point: Point2) => { x: number; y: number }, active = false) {
@@ -757,23 +777,24 @@ export function useSketchAdvanced(options: AdvancedOptions) {
                 if (activeTool.value === 'translate') {
                     drawArrow(context, center, xArrow, SKETCH_COLORS.pointActive);
                     drawArrow(context, center, yArrow, SKETCH_COLORS.planeBlue);
-                    next.x = position(ux, length + 34); next.y = position(uy, length + 34);
+                    next.x = position(ux, length + 72); next.y = position(uy, length + 72);
                 } else if (activeTool.value === 'rotate') {
-                    context.strokeStyle = SKETCH_COLORS.planeBlue; context.lineWidth = 2;
+                    context.strokeStyle = SKETCH_COLORS.planeBlue; context.lineWidth = 4;
                     context.beginPath(); context.arc(center.x, center.y, 56, 0, Math.PI * 2); context.stroke();
-                    const handle = { x: center.x + 56, y: center.y };
-                    context.fillStyle = SKETCH_COLORS.pointActive; context.beginPath(); context.arc(handle.x, handle.y, 6, 0, Math.PI * 2); context.fill();
-                    next.rotateHandle = handle; next.angle = { x: center.x + 16, y: center.y - 72 };
+                    const handleAngle = -transformInput.value.angle * Math.PI / 180;
+                    const handle = { x: center.x + 56 * Math.cos(handleAngle), y: center.y + 56 * Math.sin(handleAngle) };
+                    context.fillStyle = SKETCH_COLORS.pointActive; context.beginPath(); context.arc(handle.x, handle.y, 8, 0, Math.PI * 2); context.fill();
+                    next.rotateHandle = handle; next.angle = { x: center.x, y: center.y - 96 };
                 } else {
                     const xNegative = position({ x: -ux.x, y: -ux.y }), yNegative = position({ x: -uy.x, y: -uy.y });
                     drawArrow(context, center, xArrow, SKETCH_COLORS.pointActive); drawArrow(context, center, xNegative, SKETCH_COLORS.pointActive);
                     drawArrow(context, center, yArrow, SKETCH_COLORS.planeBlue); drawArrow(context, center, yNegative, SKETCH_COLORS.planeBlue);
-                    Object.assign(next, { xNegativeArrow: xNegative, yNegativeArrow: yNegative, scale: { x: center.x + 18, y: center.y - 76 } });
+                    Object.assign(next, { xNegativeArrow: xNegative, yNegativeArrow: yNegative, scale: { x: center.x, y: center.y - 96 } });
                 }
                 context.fillStyle = SKETCH_COLORS.point;
                 context.strokeStyle = SKETCH_COLORS.pointActive;
-                context.lineWidth = 2;
-                context.beginPath(); context.arc(center.x, center.y, 6, 0, Math.PI * 2); context.fill(); context.stroke();
+                context.lineWidth = 3;
+                context.beginPath(); context.arc(center.x, center.y, 8, 0, Math.PI * 2); context.fill(); context.stroke();
                 inputPositions.value = next;
             }
         }
@@ -813,9 +834,9 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     watch(() => symmetry.value?.step, () => resetTransformValue());
 
     return {
-        symmetry, symmetryActive, transformActive, overlayActive, transformInput, inputPositions,
+        symmetry, symmetryActive, transformActive, overlayActive, transformInput, inputPositions, lengthUnit,
         startSymmetry, cancelSymmetry, nextSymmetryStep, updateSymmetry, setTransformInput,
-        pointerDown, pointerMove, pointerUp, pointerLeave, doubleClick, contextMenu, render,
+        pointerDown, pointerMove, pointerUp, pointerLeave, wheel, changeLengthUnit, doubleClick, contextMenu, render,
     };
 }
 

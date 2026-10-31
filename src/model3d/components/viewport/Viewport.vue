@@ -4,7 +4,7 @@ import { Viewport, type ViewportCallbacks } from '../../engine/Viewport';
 import ViewportOverlay from './ViewportOverlay.vue';
 import type { ProjectedViewportOverlay } from '../../engine/viewport/OverlayController';
 
-const props = defineProps<{ callbacks: ViewportCallbacks }>();
+const props = defineProps<{ callbacks: ViewportCallbacks; suspended?: boolean }>();
 const emit = defineEmits<{ ready: [viewport: Viewport] }>();
 const viewportElement = ref<HTMLElement>();
 const overlayItems = shallowRef<ProjectedViewportOverlay[]>([]);
@@ -25,6 +25,6 @@ onBeforeUnmount(() => {
 
 <template>
     <div ref="viewportElement" class="viewport">
-        <ViewportOverlay :items="overlayItems" :callbacks="callbacks" />
+        <ViewportOverlay v-if="!suspended" :items="overlayItems" :callbacks="callbacks" />
     </div>
 </template>

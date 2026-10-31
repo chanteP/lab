@@ -8,6 +8,9 @@ const canvas = ref<HTMLCanvasElement>();
 const session = computed(() => props.advanced.symmetry.value);
 const positions = computed(() => props.advanced.inputPositions.value);
 const values = computed(() => props.advanced.transformInput.value);
+const lengthUnit = computed(() => props.advanced.lengthUnit.value);
+const wheelTimers = new Map<string, ReturnType<typeof setTimeout>>();
+type TransformInputKind = 'x' | 'y' | 'angle' | 'scale';
 let frame = 0;
 
 function numberValue(event: Event) {
@@ -19,6 +22,39 @@ function wheelValue(event: WheelEvent, value: number, step = 1) {
     const direction = event.deltaY < 0 ? 1 : -1;
     if (step >= 1) return integerStep(value, direction, step);
     return Math.max(0.01, Math.round((value + direction * step) / step) * step);
+}
+function commitTransform(kind: TransformInputKind, input: HTMLInputElement) {
+    const timer = wheelTimers.get(kind);
+    if (timer) clearTimeout(timer);
+    wheelTimers.delete(kind);
+    const value = Number(input.value);
+    if (Number.isFinite(value)) window.setTimeout(() => props.advanced.setTransformInput(kind, value), 0);
+}
+function onTransformWheel(kind: TransformInputKind, event: WheelEvent, step = 1) {
+    event.preventDefault();
+    event.stopPropagation();
+    const input = event.currentTarget as HTMLInputElement;
+    const direction = event.deltaY < 0 ? 1 : -1;
+    input.value = String(step >= 1 ? integerStep(Number(input.value), direction, step) : Math.max(0.01, Math.round((Number(input.value) + direction * step) / step) * step));
+    const previous = wheelTimers.get(kind);
+    if (previous) clearTimeout(previous);
+    wheelTimers.set(kind, window.setTimeout(() => commitTransform(kind, input), 90));
+}
+function onTransformKey(kind: TransformInputKind, event: KeyboardEvent) {
+    const input = event.currentTarget as HTMLInputElement;
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        commitTransform(kind, input);
+        return;
+    }
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const direction = event.key === 'ArrowUp' ? 1 : -1;
+    const step = kind === 'scale' ? 0.1 : 1;
+    input.value = String(kind === 'scale' ? Math.max(0.01, Math.round((Number(input.value) + direction * step) / step) * step) : integerStep(Number(input.value), direction));
+    commitTransform(kind, input);
 }
 function positionStyle(key: string) {
     const point = positions.value[key];
@@ -32,7 +68,7 @@ onMounted(() => {
     };
     render();
 });
-onBeforeUnmount(() => cancelAnimationFrame(frame));
+onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTimeout); });
 </script>
 
 <template>
@@ -46,6 +82,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             @pointerup="advanced.pointerUp"
             @pointercancel="advanced.pointerUp"
             @pointerleave="advanced.pointerLeave"
+            @wheel="advanced.wheel"
             @dblclick="advanced.doubleClick"
         />
 
@@ -67,10 +104,20 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
             <button type="button" class="exit-command" aria-label="退出对称" @click="advanced.cancelSymmetry">×</button>
         </section>
 
-        <label v-if="positions.x" class="gizmo-input" :style="positionStyle('x')"><span>X</span><input type="number" step="1" :value="values.x.toFixed(2)" aria-label="平移 X 坐标" @wheel="advanced.setTransformInput('x', wheelValue($event, values.x))" @input="advanced.setTransformInput('x', numberValue($event))" /></label>
-        <label v-if="positions.y" class="gizmo-input" :style="positionStyle('y')"><span>Y</span><input type="number" step="1" :value="values.y.toFixed(2)" aria-label="平移 Y 坐标" @wheel="advanced.setTransformInput('y', wheelValue($event, values.y))" @input="advanced.setTransformInput('y', numberValue($event))" /></label>
-        <label v-if="positions.angle" class="gizmo-input" :style="positionStyle('angle')"><span>角度</span><input type="number" step="1" :value="values.angle.toFixed(2)" aria-label="旋转角度" @wheel="advanced.setTransformInput('angle', wheelValue($event, values.angle))" @input="advanced.setTransformInput('angle', numberValue($event))" /></label>
-        <label v-if="positions.scale" class="gizmo-input" :style="positionStyle('scale')"><span>缩放</span><input type="number" min="0.01" step="0.1" :value="values.scale.toFixed(2)" aria-label="缩放比例" @wheel="advanced.setTransformInput('scale', wheelValue($event, values.scale, 0.1))" @input="advanced.setTransformInput('scale', numberValue($event))" /></label>
+        <div v-if="positions.x" class="gizmo-input sketch-length-input" :style="positionStyle('x')" @pointerdown.stop>
+            <input type="number" step="1" :value="values.x.toFixed(2)" aria-label="平移 X 坐标" @blur="commitTransform('x', $event.currentTarget as HTMLInputElement)" @wheel="onTransformWheel('x', $event)" @keydown="onTransformKey('x', $event)" />
+            <select :value="lengthUnit" aria-label="长度单位" @pointerdown.stop @change="advanced.changeLengthUnit(($event.currentTarget as HTMLSelectElement).value as 'mm' | 'cm' | 'm')"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select>
+        </div>
+        <div v-if="positions.y" class="gizmo-input sketch-length-input" :style="positionStyle('y')" @pointerdown.stop>
+            <input type="number" step="1" :value="values.y.toFixed(2)" aria-label="平移 Y 坐标" @blur="commitTransform('y', $event.currentTarget as HTMLInputElement)" @wheel="onTransformWheel('y', $event)" @keydown="onTransformKey('y', $event)" />
+            <select :value="lengthUnit" aria-label="长度单位" @pointerdown.stop @change="advanced.changeLengthUnit(($event.currentTarget as HTMLSelectElement).value as 'mm' | 'cm' | 'm')"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select>
+        </div>
+        <div v-if="positions.angle" class="gizmo-input sketch-length-input" :style="positionStyle('angle')" @pointerdown.stop>
+            <input type="number" step="1" :value="values.angle.toFixed(2)" aria-label="旋转角度" @blur="commitTransform('angle', $event.currentTarget as HTMLInputElement)" @wheel="onTransformWheel('angle', $event)" @keydown="onTransformKey('angle', $event)" /><span>deg</span>
+        </div>
+        <div v-if="positions.scale" class="gizmo-input sketch-length-input" :style="positionStyle('scale')" @pointerdown.stop>
+            <input type="number" min="0.01" step="0.1" :value="values.scale.toFixed(2)" aria-label="缩放比例" @blur="commitTransform('scale', $event.currentTarget as HTMLInputElement)" @wheel="onTransformWheel('scale', $event, 0.1)" @keydown="onTransformKey('scale', $event)" /><span>x</span>
+        </div>
     </div>
 </template>
 
@@ -87,8 +134,7 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
 .next-command { height: 30px; padding: 0 14px; color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); border: 0; border-radius: 6px; cursor: pointer; }
 .exit-command { display: grid; place-items: center; width: 30px; height: 30px; padding: 0 0 2px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border: 0; border-radius: 50%; font-size: 23px; line-height: 1; cursor: pointer; }
 .next-command:focus-visible, .exit-command:focus-visible, .gizmo-input input:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
-.gizmo-input { position: absolute; z-index: 2; display: flex; align-items: center; gap: 3px; padding: 2px 4px; color: var(--model3d-ui-76501f); background: var(--model3d-ui-fffaf3); border: 1px solid var(--model3d-ui-e7a45c); border-radius: 5px; transform: translate(-50%, -50%); font-size: 10px; }
-.gizmo-input input { width: 62px; padding: 2px; color: inherit; background: transparent; border: 0; font-size: 11px; }
+.gizmo-input { position: absolute; z-index: 2; transform: translate(-50%, -50%); }
 @media (max-width: 1000px) {
     .symmetry-operation-bar { left: 196px; right: 12px; max-width: none; transform: none; gap: 7px; }
     .operation-hint { display: none; }

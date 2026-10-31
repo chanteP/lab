@@ -274,15 +274,16 @@ export class InteractionController {
     }
 
     // Sketch coordinates are local to the chosen plane; world hit points never become sketch source data.
-    sketchPoint(event: PointerEvent): Point2 | null {
+    sketchPoint(event: PointerEvent, precise = false): Point2 | null {
         if (!this.activePlane) return null;
         this.setPointer(event);
         const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(...this.activePlane.normal), new THREE.Vector3(...this.activePlane.origin));
         const point = new THREE.Vector3();
         if (!this.raycaster.ray.intersectPlane(plane, point)) return null;
         point.sub(new THREE.Vector3(...this.activePlane.origin));
-        return [Math.round(point.dot(new THREE.Vector3(...this.activePlane.u)) * 10) / 10,
-            Math.round(point.dot(new THREE.Vector3(...this.activePlane.v)) * 10) / 10];
+        const u = point.dot(new THREE.Vector3(...this.activePlane.u));
+        const v = point.dot(new THREE.Vector3(...this.activePlane.v));
+        return precise ? [u, v] : [Math.round(u * 10) / 10, Math.round(v * 10) / 10];
     }
 
     private clearSketchReferences() { this.sketchRenderer.clearReferences(); }

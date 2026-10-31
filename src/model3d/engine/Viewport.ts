@@ -295,11 +295,14 @@ export class Viewport {
         const canvas = this.engine.renderer.domElement;
         return { x: (projected.x + 1) * canvas.clientWidth / 2, y: (1 - projected.y) * canvas.clientHeight / 2 };
     }
-    sketchPointAt(clientX: number, clientY: number) {
-        return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent);
+    sketchPointAt(clientX: number, clientY: number, precise = false) {
+        return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent, precise);
     }
     sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
+    forwardWheel(event: WheelEvent) {
+        this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));
+    }
     setMeasureMode(active: boolean) { this.interaction.setMeasureMode(active); }
     setGridVisible(visible: boolean) { this.engine.setGridVisible(visible); }
     setShadowsVisible(visible: boolean) { this.engine.setShadowsVisible(visible); }
