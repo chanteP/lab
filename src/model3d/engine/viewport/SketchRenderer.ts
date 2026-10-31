@@ -271,6 +271,7 @@ export class SketchRenderer {
         const entityId = hit.object.userData.borderEntityId;
         const index = hit.object.userData.borderSegmentIndex;
         const entity = document.entities.find((item) => item.id === entityId);
+        if (entity?.parts?.length) return;
         const segment = entity && borderSegments(entity).find((item) => item.index === index);
         if (!segment) return;
         const all = document.entities.filter((item) => item.kind === 'sketch' && item.planeId === activePlane.id).flatMap((item) => borderSegments(item));

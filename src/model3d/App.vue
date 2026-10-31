@@ -21,6 +21,7 @@ import { useSketchState } from './composables/sketch/useSketchState';
 import { useSketchConstraints } from './composables/sketch/useSketchConstraints';
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
 import { useSketchSession } from './composables/sketch/useSketchSession';
+import { useSketchAdvanced } from './composables/sketch/useSketchAdvanced';
 import { storedLengthUnit, useUnits } from './composables/useUnits';
 import AppTopBar from './components/layout/AppTopBar.vue';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
@@ -28,6 +29,7 @@ import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
 import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import SketchHints from './components/sketch/SketchHints.vue';
+import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
 import MenuCommand from './components/ui/MenuCommand.vue';
 import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
 import { STORAGE_KEYS } from './config/const';
@@ -155,6 +157,12 @@ const {
     onSketchSectorMove, resetSketchSector, onSketchDimension, finishSketch, closeSketch,
     cancelSketch, cancelSketchRefresh,
 } = sketchSession;
+const sketchAdvanced = useSketchAdvanced({
+    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, selectedShapes, selectedIds,
+    viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
+    refreshSketch, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
+});
+const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
 const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
@@ -209,6 +217,29 @@ function chooseTool(tool: ViewTool) {
     parameterCardOpen.value = true;
     activePanel.value = null;
     setTool(tool);
+}
+function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
+    if (symmetry.value && symmetry.value.step !== 3) return;
+    activeTool.value = tool;
+    sketchSelectionTool.value = true;
+    viewport?.setTool(tool);
+    viewport?.setSketchSelectionTool(true);
+}
+function chooseSketchSelection() {
+    if (symmetry.value && symmetry.value.step !== 3) return;
+    activeTool.value = 'select';
+    viewport?.setTool('select');
+    activateSketchSelectionTool();
+}
+function chooseSketchType(type: typeof sketchType.value) {
+    if (symmetry.value && symmetry.value.step !== 3) return;
+    activeTool.value = 'select';
+    viewport?.setTool('select');
+    setSketchType(type);
+}
+function closeSketchMode() {
+    if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
+    closeSketch();
 }
 function beginSketch(planeId?: string) {
     if (planeId) selectPlane(planeId);
@@ -373,16 +404,17 @@ function onKeyDown(event: KeyboardEvent) {
     if (event.code === 'Enter' && operation.value) doneOperation();
     else if (event.code === 'Enter' && sketchMode.value) finishSketch();
     else if (event.code === 'Escape') {
-        if (operation.value) cancelOperation();
+        if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
+        else if (operation.value) cancelOperation();
         else if (sketchMode.value) clearSketchSelection();
         else if (activeTool.value !== 'select') setTool('select');
         else { activePanel.value = null; selectEntity(null); }
     }
-    else if (event.code === 'Delete' || event.code === 'Backspace') removeSelected();
-    else if (event.code === 'KeyV') setTool('select');
-    else if (event.code === 'KeyG') setTool('translate');
-    else if (event.code === 'KeyR') setTool('rotate');
-    else if (event.code === 'KeyS' && selectionKind.value !== 'plane') setTool('scale');
+    else if (event.code === 'Delete' || event.code === 'Backspace') { if (!symmetryActive.value) removeSelected(); }
+    else if (event.code === 'KeyV') sketchMode.value ? chooseSketchSelection() : setTool('select');
+    else if (event.code === 'KeyG') sketchMode.value ? chooseSketchTransform('translate') : setTool('translate');
+    else if (event.code === 'KeyR') sketchMode.value ? chooseSketchTransform('rotate') : setTool('rotate');
+    else if (event.code === 'KeyS' && (sketchMode.value || selectionKind.value !== 'plane')) sketchMode.value ? chooseSketchTransform('scale') : setTool('scale');
     else if (event.code === 'KeyE' && operation.value?.type === 'extrude' && extrudeBody.value) updateExtrude('sideMode', extrudeBody.value.sideMode === 'one' ? 'symmetric' : 'one');
     else if (event.code === 'KeyE' && selected.value?.kind === 'sketch') startExtrude(selected.value.id);
     else if (event.code === 'KeyF' && selectionKind.value === 'edge') chooseTool('fillet');
@@ -398,6 +430,7 @@ watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport
 watch(() => project.value.name, scheduleSave);
 watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
 watch(sketchGuideSnapEnabled, (value) => viewport?.setSketchGuideSnapEnabled(value));
+watch(sketchMode, (active) => { if (!active && symmetryActive.value) sketchAdvanced.cancelSymmetry(); });
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
@@ -547,8 +580,9 @@ onBeforeUnmount(() => {
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
                 @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
 
-            <main class="viewport-area" :class="{ 'drawing-active': sketchMode }">
+            <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
                 <ViewportView :callbacks="viewportCallbacks" @ready="onViewportReady" />
+                <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
                     :measure-mode="measureMode" :items-visible="itemsVisible" :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
@@ -601,13 +635,13 @@ onBeforeUnmount(() => {
                     <button class="more-tools" @click="togglePanel('tools')">更多工具 <span>›</span></button>
                 </aside>
 
-                <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides"
-                    :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketch() : activePanel = null" @select="activateSketchSelectionTool"
-                    @type="setSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" />
-                <SketchConstraints v-if="sketchMode" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
+                <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
+                    :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
+                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="sketchAdvanced.startSymmetry" @transform="chooseSketchTransform" />
+                <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
-                <SketchHints v-if="sketchMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
+                <SketchHints v-if="sketchMode && !overlayActive" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 
@@ -724,3 +758,7 @@ onBeforeUnmount(() => {
         <input ref="importInput" type="file" accept=".json,.model.json" hidden @change="onImportFile" />
     </div>
 </template>
+
+<style lang="scss" scoped>
+.viewport-area.symmetry-active :deep(.viewport > canvas) { opacity: .1; }
+</style>

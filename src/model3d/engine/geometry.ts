@@ -138,8 +138,11 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     }
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
     const points = entity.points || [];
-    if (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3)) return new THREE.BufferGeometry();
-    const shape = profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves);
+    if (!entity.parts?.length && (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3))) return new THREE.BufferGeometry();
+    const shape = entity.parts?.length
+        ? entity.parts.filter((part) => part.closed && part.points.length >= 3).map((part) => new THREE.Shape(part.points.map(([x, y]) => new THREE.Vector2(x, y))))
+        : profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves);
+    if (Array.isArray(shape) && !shape.length) return new THREE.BufferGeometry();
     const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: entity.depth! - size * 2,
@@ -213,18 +216,32 @@ export function buildEntityMesh(
     if (entity.kind === 'sketch') {
         const type = entity.profileType || 'polygon';
         const source = entity.points || [];
-        const closed = !entity.open && profileClosed(type);
-        const geometry = closed ? new THREE.ShapeGeometry(profileShape(type, source, 64, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source, 64, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves).map((point) => new THREE.Vector3(point[0], point[1], 0)));
+        const closed = entity.parts?.length ? entity.parts.some((part) => part.closed) : !entity.open && profileClosed(type);
+        const compoundShapes = entity.parts?.filter((part) => part.closed && part.points.length >= 3).map((part) => new THREE.Shape(part.points.map(([x, y]) => new THREE.Vector2(x, y))));
+        const geometry = entity.parts?.length
+            ? compoundShapes?.length ? new THREE.ShapeGeometry(compoundShapes) : new THREE.BufferGeometry()
+            : closed ? new THREE.ShapeGeometry(profileShape(type, source, 64, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves)) : new THREE.BufferGeometry().setFromPoints(profilePoints(type, source, 64, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves).map((point) => new THREE.Vector3(point[0], point[1], 0)));
+        const openVertices: THREE.Vector3[] = [];
+        entity.parts?.filter((part) => !part.closed).forEach((part) => {
+            for (let index = 0; index < part.points.length - 1; index++) openVertices.push(new THREE.Vector3(...part.points[index], 0), new THREE.Vector3(...part.points[index + 1], 0));
+        });
+        const openGeometry = openVertices.length ? new THREE.BufferGeometry().setFromPoints(openVertices) : null;
         const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
-        if (plane) geometry.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)));
-        else geometry.rotateX(-Math.PI / 2);
+        const matrix = plane ? new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+        geometry.applyMatrix4(matrix);
+        openGeometry?.applyMatrix4(matrix);
         const material = closed
             ? new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
             : new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line });
         mesh = closed ? new THREE.Mesh(geometry, material) : new THREE.Line(geometry, material) as unknown as THREE.Mesh;
+        if (openGeometry) {
+            const outline = new THREE.LineSegments(openGeometry, new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line }));
+            outline.userData.compoundOutline = true;
+            mesh.add(outline);
+        }
     } else if (entity.kind !== 'boolean') {
         const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : null;
-        const geometryEntity = profile ? { ...entity, points: profile.points, profileType: profile.profileType, planeId: profile.planeId, curves: profile.curves, sides: profile.sides, sectorAngle: profile.sectorAngle, open: profile.open, profileStartAngle: profile.profileStartAngle, analyticCurves: profile.analyticCurves } : entity;
+        const geometryEntity = profile ? { ...entity, points: profile.points, parts: profile.parts, profileType: profile.profileType, planeId: profile.planeId, curves: profile.curves, sides: profile.sides, sectorAngle: profile.sectorAngle, open: profile.open, profileStartAngle: profile.profileStartAngle, analyticCurves: profile.analyticCurves } : entity;
         mesh = new THREE.Mesh(baseGeometry(geometryEntity, quality, document), createMaterial(entity.color));
     } else {
         const [aId, bId] = entity.operands || [];

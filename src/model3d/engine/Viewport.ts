@@ -290,6 +290,16 @@ export class Viewport {
 
     setBooleanRoles(roles: { target: string; tool: string } | null) { this.sceneSynchronizer.setBooleanRoles(roles); }
     normalToSketch() { this.cameraController.normalToSketch(this.sceneSynchronizer.activePlane, this.transform); }
+    sketchScreen(point: Point2) {
+        const projected = this.sketchRenderer.world(point, 0.4).project(this.cameraController.camera);
+        const canvas = this.engine.renderer.domElement;
+        return { x: (projected.x + 1) * canvas.clientWidth / 2, y: (1 - projected.y) * canvas.clientHeight / 2 };
+    }
+    sketchPointAt(clientX: number, clientY: number) {
+        return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent);
+    }
+    sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
+    forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     setMeasureMode(active: boolean) { this.interaction.setMeasureMode(active); }
     setGridVisible(visible: boolean) { this.engine.setGridVisible(visible); }
     setShadowsVisible(visible: boolean) { this.engine.setShadowsVisible(visible); }

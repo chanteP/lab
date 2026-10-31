@@ -54,15 +54,26 @@ export class SceneSynchronizer {
                 edges.userData.displayEdge = true;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.options.isSketchMode()) {
+                child.traverse((object) => { if (object.userData.compoundOutline) object.visible = false; });
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
                 if (material) { material.transparent = true; material.opacity = 0; }
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-                borderSegments(entity).forEach((segment) => {
+                if (entity.parts?.length) {
+                    entity.parts.forEach((part, partIndex) => {
+                        const points = part.points.map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
+                        const border = createFatLine(points, this.options.renderer.domElement.clientWidth, this.options.renderer.domElement.clientHeight, part.closed);
+                        border.userData.borderEntityId = entity.id;
+                        border.userData.borderSegmentIndex = partIndex;
+                        border.userData.borderWholeOnly = true;
+                        child.add(border);
+                    });
+                } else borderSegments(entity).forEach((segment) => {
                     const points = segment.points.map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
                     const border = createFatLine(points, this.options.renderer.domElement.clientWidth, this.options.renderer.domElement.clientHeight, segment.closed);
                     border.userData.borderEntityId = entity.id;
                     border.userData.borderSegmentIndex = segment.index;
+                    border.userData.borderWholeOnly = false;
                     child.add(border);
                 });
             }
