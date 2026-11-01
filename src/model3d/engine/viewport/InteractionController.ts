@@ -349,6 +349,10 @@ export class InteractionController {
         this.cameraController.cancelTransitions();
         this.pointerStart.set(event.clientX, event.clientY);
         this.raycaster.params.Line.threshold = 1.5;
+        if (event.button === 2 && this.measureMode) {
+            this.setMeasureMode(false);
+            this.callbacks.onMeasureChange(false);
+        }
         if (event.button === 2 && !this.sketchMode) this.controls.mouseButtons.RIGHT = event.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
         if (!this.sketchMode && event.button === 2) {
             this.camera.up.set(0, 1, 0);
