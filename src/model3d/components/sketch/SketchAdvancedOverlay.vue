@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { SketchAdvanced } from '../../composables/sketch/useSketchAdvanced';
 import { integerStep } from '../../utils/number';
+import OperationBar from '../ui/OperationBar.vue';
 
 const props = defineProps<{ advanced: SketchAdvanced }>();
 const canvas = ref<HTMLCanvasElement>();
@@ -86,7 +87,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
             @dblclick="advanced.doubleClick"
         />
 
-        <section v-if="session" class="symmetry-operation-bar" aria-label="对称操作" @pointerdown.stop>
+        <OperationBar v-if="session" label="对称操作" close-label="退出对称" @close="advanced.cancelSymmetry">
             <span class="step-badge">{{ session.step }}/3</span>
             <strong>{{ session.step === 1 ? '设置对称属性' : session.step === 2 ? '选择素材区域' : '绘制对称' }}</strong>
             <template v-if="session.step === 1">
@@ -101,8 +102,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
                 </select>
             </label>
             <button type="button" class="next-command" @click="advanced.nextSymmetryStep">{{ session.step === 3 ? '完成' : '下一步' }}</button>
-            <button type="button" class="exit-command" aria-label="退出对称" @click="advanced.cancelSymmetry">×</button>
-        </section>
+        </OperationBar>
 
         <div v-if="positions.x" class="gizmo-input sketch-length-input" :style="positionStyle('x')" @pointerdown.stop>
             <input type="number" step="1" :value="values.x.toFixed(2)" aria-label="平移 X 坐标" @blur="commitTransform('x', $event.currentTarget as HTMLInputElement)" @wheel="onTransformWheel('x', $event)" @keydown="onTransformKey('x', $event)" />
@@ -124,19 +124,17 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
 <style lang="scss" scoped>
 .advanced-surface { position: absolute; z-index: 5; inset: 0; overflow: hidden; }
 .advanced-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
-.symmetry-operation-bar { position: absolute; z-index: 3; top: 12px; left: 50%; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 400px); min-height: 46px; padding: 7px 8px 7px 12px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-surface98); border: 1px solid var(--model3d-ui-dfe6e1); border-radius: 12px; box-shadow: 0 6px 24px var(--model3d-ui-24302d14); transform: translateX(-50%); white-space: nowrap; }
-.symmetry-operation-bar strong { font-size: 12px; }
+:deep(.operation-bar__content) { gap: 12px; white-space: nowrap; }
+:deep(.operation-bar__content) strong { font-size: 12px; }
 .step-badge { display: grid; place-items: center; width: 32px; height: 24px; color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); border-radius: 12px; font-size: 11px; }
-.symmetry-operation-bar label { display: flex; align-items: center; gap: 5px; font-size: 11px; }
-.symmetry-operation-bar input { width: 66px; height: 28px; padding: 3px 6px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
-.symmetry-operation-bar select { height: 28px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
+:deep(.operation-bar__content) label { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+:deep(.operation-bar__content) input { width: 66px; height: 28px; padding: 3px 6px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
+:deep(.operation-bar__content) select { height: 28px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
 .operation-hint { max-width: 250px; overflow: hidden; color: var(--model3d-ui-7e8b83); font-size: 11px; text-overflow: ellipsis; }
 .next-command { height: 30px; padding: 0 14px; color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); border: 0; border-radius: 6px; cursor: pointer; }
-.exit-command { display: grid; place-items: center; width: 30px; height: 30px; padding: 0 0 2px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border: 0; border-radius: 50%; font-size: 23px; line-height: 1; cursor: pointer; }
-.next-command:focus-visible, .exit-command:focus-visible, .gizmo-input input:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
+.next-command:focus-visible, .gizmo-input input:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
 .gizmo-input { position: absolute; z-index: 2; transform: translate(-50%, -50%); }
 @media (max-width: 1000px) {
-    .symmetry-operation-bar { left: 196px; right: 12px; max-width: none; transform: none; gap: 7px; }
     .operation-hint { display: none; }
 }
 </style>

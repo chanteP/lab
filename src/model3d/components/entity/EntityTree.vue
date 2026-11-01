@@ -11,7 +11,7 @@ export interface OutlinerNode {
     children: OutlinerNode[];
 }
 
-const props = defineProps<{ nodes: OutlinerNode[]; selectedIds: string[] }>();
+const props = withDefaults(defineProps<{ nodes: OutlinerNode[]; selectedIds: string[]; depth?: number }>(), { depth: 0 });
 const emit = defineEmits<{
     select: [id: string, additive: boolean];
     activate: [id: string];
@@ -52,16 +52,23 @@ function drop(event: DragEvent, targetId: string | null) {
                 draggable="true" @click="emit('select', node.id, $event.metaKey || $event.ctrlKey || $event.shiftKey)"
                 @contextmenu.prevent.stop="emit('context', node, $event)" @dblclick.stop="emit('activate', node.id)" @dragstart="dragStart(node, $event)"
                 @dragover.prevent.stop="dropTarget = node.id" @dragleave="dropTarget = null" @drop.stop="drop($event, node.id)">
+                <span v-if="depth" class="tree-branch" aria-hidden="true"></span>
                 <button v-if="node.children.length" class="tree-disclosure" @click.stop="toggleExpanded(node.id)"><NIcon><component :is="expanded.has(node.id) ? ChevronDownOutline : ChevronForwardOutline" /></NIcon></button>
                 <span v-else class="tree-disclosure-spacer"></span>
                 <NIcon class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : CubeOutline" /></NIcon>
                 <span>{{ node.name }}</span>
                 <button class="visibility" @click.stop="emit('toggle', node.id)"><NIcon><component :is="node.visible ? EyeOutline : EyeOffOutline" /></NIcon></button>
             </div>
-            <EntityTree v-if="node.children.length && expanded.has(node.id)" class="tree-children" :nodes="node.children" :selected-ids="selectedIds"
+            <EntityTree v-if="node.children.length && expanded.has(node.id)" class="tree-children" :nodes="node.children" :selected-ids="selectedIds" :depth="depth + 1"
                 @select="(id, additive) => emit('select', id, additive)" @toggle="(id) => emit('toggle', id)"
                 @activate="(id) => emit('activate', id)"
                 @context="(child, event) => emit('context', child, event)" @drop="(ids, targetId) => emit('drop', ids, targetId)" />
         </div>
     </div>
 </template>
+
+<style lang="scss" scoped>
+.object-row > span.tree-branch { width: 10px; height: 17px; flex: 0 0 10px; min-width: 10px; margin-left: -7px; border-bottom: 1px solid var(--model3d-ui-d5dfd9); transform: translateY(-1px); }
+.tree-branch::before { content: ''; display: block; width: 1px; height: 34px; margin-top: -17px; background: var(--model3d-ui-d5dfd9); transform: translateY(-1px); }
+.tree-node:last-child > .object-row .tree-branch::before { height: 17px; }
+</style>

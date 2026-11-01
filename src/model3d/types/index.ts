@@ -158,7 +158,7 @@ export function isDocument(value: any): value is ModelDocument {
     return value?.version === 1 && value?.unit === 'mm' && Array.isArray(value?.entities);
 }
 
-export type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'tools' | 'display';
+export type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'tools';
 export type SelectionKind = 'face' | 'edge' | 'body' | 'plane' | 'sketch' | 'mixed' | null;
 export type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
 export type ConstraintRuleListItem = { id: string; label: string; entityId: string; index: number; ruleId?: string; lock?: 'point' | 'edge' };

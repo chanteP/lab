@@ -182,8 +182,6 @@ button { color: inherit; }
 .sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 172px; padding: 10px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
 .sketch-toolbar.toolbar-enter { transform: translateX(0); opacity: 1; pointer-events: auto; }
 .sketch-toolbar button { font: inherit; }
-.drawing-active .measure-actions, .drawing-active .gizmo-label { display: none; }
-.drawing-active .viewport-utilities { right: 18px; }
 .drawing-active .viewport-status { background: var(--model3d-ui-drawing90); }
 .svg-icon { width: 21px; height: 21px; display: block; flex: 0 0 auto; }
 

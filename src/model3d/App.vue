@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as THREE from 'three';
-import { NButton, NCheckbox, NIcon, NInput, NModal, NSelect, NTooltip, useMessage } from 'naive-ui';
+import { NButton, NIcon, NInput, NModal, useMessage } from 'naive-ui';
 import {
-    AnalyticsOutline, ArrowUpOutline, CameraOutline, ChevronDownOutline, CloseOutline, CreateOutline, CubeOutline,
-    CutOutline, EllipseOutline, EyeOutline, FolderOpenOutline, GridOutline, LayersOutline, MoveOutline,
-    RepeatOutline, ResizeOutline, ShapesOutline, TrashOutline, PencilOutline, ScanOutline,
+    AnalyticsOutline, CloseOutline, CubeOutline, EllipseOutline, EyeOutline, LayersOutline,
+    ShapesOutline, TrashOutline, PencilOutline, ScanOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type ViewTool, type ViewportCallbacks } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
@@ -30,13 +29,14 @@ import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import SketchHints from './components/sketch/SketchHints.vue';
 import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
-import MenuCommand from './components/ui/MenuCommand.vue';
-import IntegerInputNumber from './components/ui/IntegerInputNumber.vue';
+import ToolPanels from './components/modeling/ToolPanels.vue';
+import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
+import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import { STORAGE_KEYS } from './config/const';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
-    createDocument, ENTITY_NAMES,
-    type ModelDocument, type ModelEntity, type Vec3, type PrimaryPanel, type SelectionKind,
+    createDocument,
+    type BooleanOperation, type ModelDocument, type ModelEntity, type Vec3, type PrimaryPanel, type SelectionKind,
 } from './types';
 
 const message = useMessage();
@@ -59,8 +59,6 @@ const viewportMenu = ref<{ x: number; y: number; id: string | null } | null>(nul
 const activePanel = ref<PrimaryPanel | null>(null);
 const selectionKind = ref<SelectionKind>(null);
 const parameterCardOpen = ref(true);
-const itemsVisible = ref(true);
-const commandSearch = ref('');
 const isolateActive = ref(false);
 const sectionActive = ref(false);
 const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
@@ -164,42 +162,8 @@ const sketchAdvanced = useSketchAdvanced({
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
+const contextVisible = computed(() => parameterCardOpen.value && !(sketchMode.value && overlayActive.value) && (sketchMode.value || (!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
-const commandResults = computed(() => {
-    const commands = [
-        { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
-        { id: 'extrude', label: '拉伸', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
-        { id: 'offsetFace', label: '偏移面', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
-        { id: 'translate', label: '移动 / 旋转', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
-        { id: 'scale', label: '缩放', hint: '缩放所选实体', keys: '缩放 scale' },
-        { id: 'plane', label: '构造平面', hint: '添加构造平面', keys: '平面 构造 plane' },
-        { id: 'box', label: '立方体', hint: '插入立方体', keys: '立方体 box' },
-        { id: 'cylinder', label: '圆柱体', hint: '插入圆柱体', keys: '圆柱 cylinder' },
-        { id: 'sphere', label: '球体', hint: '插入球体', keys: '球体 sphere' },
-        { id: 'measure', label: '测量', hint: '测量两个点之间的距离与 XYZ 分量', keys: '测量 measure' },
-    ];
-    const query = commandSearch.value.trim().toLowerCase();
-    return query ? commands.filter((item) => `${item.label} ${item.keys}`.toLowerCase().includes(query)) : commands;
-});
-const dimensionFields = computed(() => {
-    const item = selected.value;
-    if (!item) return [];
-    if (item.kind === 'box') return [
-        { key: 'width', label: '宽', value: item.width! }, { key: 'height', label: '高', value: item.height! }, { key: 'depth', label: '深', value: item.depth! },
-    ];
-    if (item.kind === 'cylinder') return [{ key: 'radius', label: '半径', value: item.radius! }, { key: 'height', label: '高', value: item.height! }];
-    if (item.kind === 'sphere') return [{ key: 'radius', label: '半径', value: item.radius! }];
-    if (item.kind === 'extrude') return [{ key: 'depth', label: '厚度', value: item.depth! }];
-    return [];
-});
-const activeVector = computed(() => {
-    if (!selected.value) return null;
-    if (activeTool.value === 'translate') return { key: 'position' as const, label: '位置', value: selected.value.position, step: displayLength(1) };
-    if (activeTool.value === 'rotate') return { key: 'rotation' as const, label: '旋转', value: selected.value.rotation, step: 15 };
-    if (activeTool.value === 'scale') return { key: 'scale' as const, label: '缩放', value: selected.value.scale, step: 0.1 };
-    return null;
-});
 
 function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
@@ -217,6 +181,7 @@ function chooseTool(tool: ViewTool) {
 }
 function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
     if (symmetry.value && symmetry.value.step !== 3) return;
+    stopMeasure();
     activeTool.value = tool;
     sketchSelectionTool.value = true;
     viewport?.setTool(tool);
@@ -224,17 +189,20 @@ function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
 }
 function chooseSketchSelection() {
     if (symmetry.value && symmetry.value.step !== 3) return;
+    stopMeasure();
     activeTool.value = 'select';
     viewport?.setTool('select');
     activateSketchSelectionTool();
 }
 function chooseSketchType(type: typeof sketchType.value) {
     if (symmetry.value && symmetry.value.step !== 3) return;
+    stopMeasure();
     activeTool.value = 'select';
     viewport?.setTool('select');
     setSketchType(type);
 }
 function closeSketchMode() {
+    stopMeasure();
     if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
     closeSketch();
 }
@@ -248,7 +216,7 @@ function beginSketch(planeId?: string) {
     startSketch();
 }
 function runCommand(id: string) {
-    commandSearch.value = '';
+    if (id === 'tools') return togglePanel('tools');
     activePanel.value = null;
     if (id === 'sketch') return beginSketch();
     if (id === 'extrude' && selected.value?.kind === 'sketch') return startExtrude(selected.value.id);
@@ -256,7 +224,6 @@ function runCommand(id: string) {
     if (['offsetFace', 'translate', 'scale'].includes(id)) return chooseTool(id as ViewTool);
     if (id === 'plane') return createPlane();
     if (['box', 'cylinder', 'sphere'].includes(id)) return createPrimitive(id as 'box' | 'cylinder' | 'sphere');
-    if (id === 'measure') return toggleMeasure();
 }
 function toggleIsolate() {
     if (isolateActive.value) {
@@ -319,7 +286,7 @@ function onBlankCommit() {
 
 function setTool(tool: ViewTool) {
     if (operation.value && activeTool.value !== tool) cancelOperation();
-    if (measureMode.value) { measureMode.value = false; viewport?.setMeasureMode(false); }
+    stopMeasure();
     if (sketchMode.value) cancelSketch();
     activeTool.value = tool;
     viewport?.setTool(tool);
@@ -368,14 +335,22 @@ function onBodySelect(id: string) {
     setTool('translate');
 }
 function toggleMeasure() {
-    if (measureMode.value) {
-        measureMode.value = false;
-        viewport?.setMeasureMode(false);
-    } else {
-        setTool('select');
-        measureMode.value = true;
-        viewport?.setMeasureMode(true);
-    }
+    if (measureMode.value) return stopMeasure();
+    if (sketchMode.value) {
+        chooseSketchSelection();
+        clearSketchSelection();
+    } else setTool('select');
+    measureMode.value = true;
+    viewport?.setMeasureMode(true);
+}
+function stopMeasure() {
+    if (!measureMode.value) return;
+    measureMode.value = false;
+    viewport?.setMeasureMode(false);
+}
+function startSymmetry() {
+    stopMeasure();
+    sketchAdvanced.startSymmetry();
 }
 function preventContextMenu(event: Event) { event.preventDefault(); }
 function preventBrowserZoom(event: WheelEvent) { if (event.ctrlKey || event.metaKey) event.preventDefault(); }
@@ -390,6 +365,19 @@ function entityIcon(kind: ModelEntity['kind']) {
 }
 function fitView() { viewport?.fit(true); }
 function toggleProjection() { projectionMode.value = viewport?.toggleProjection() || 'perspective'; }
+function closeOperationBar() {
+    if (operation.value) cancelOperation();
+    else if (sketchMode.value) closeSketchMode();
+    else parameterCardOpen.value = false;
+}
+function updateBooleanOperation(value: BooleanOperation) {
+    if (!booleanDraft.value) return;
+    const entity = document.value.entities.find((item) => item.id === booleanDraft.value!.resultId);
+    if (entity) entity.operation = value;
+}
+function updateBooleanKeep(key: 'keepTarget' | 'keepTool', value: boolean) {
+    if (booleanDraft.value) booleanDraft.value[key] = value;
+}
 function onKeyDown(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
@@ -433,6 +421,7 @@ watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
 watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
+    if (!active) stopMeasure();
     if (!active) return;
     nextTick(() => {
         const list = window.document.querySelector<HTMLElement>('.object-list');
@@ -574,7 +563,7 @@ onBeforeUnmount(() => {
             @name="project.name = $event" @undo="undo" @redo="redo" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
         <div class="workspace">
-            <EntitySidebar :visible="itemsVisible" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
+            <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
                 @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
 
@@ -582,134 +571,40 @@ onBeforeUnmount(() => {
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
-                    :measure-mode="measureMode" :items-visible="itemsVisible" :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
-                    @measure="toggleMeasure" @items="itemsVisible = !itemsVisible" @history="editHistory" />
+                    @history="editHistory" />
 
-                <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel">
-                    <div class="tool-panel-title"><strong>{{ ({ search: '搜索', insert: '插入', construct: '构造', tools: '工具', display: '显示' } as Record<string, string>)[activePanel] }}</strong><button @click="activePanel = null"><NIcon><CloseOutline /></NIcon></button></div>
-                    <template v-if="activePanel === 'search'">
-                        <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索命令" />
-                        <div class="command-results"><button v-for="command in commandResults" :key="command.id" @click="runCommand(command.id)"><strong>{{ command.label }}</strong><span>{{ command.hint }}</span></button><div v-if="!commandResults.length" class="history-empty">没有匹配的命令</div></div>
-                    </template>
-                    <template v-else-if="activePanel === 'insert'">
-                        <div class="panel-section-label">基础实体</div>
-                        <MenuCommand title="立方体" subtitle="插入参数化立方体" @click="createPrimitive('box')"><NIcon><CubeOutline /></NIcon></MenuCommand>
-                        <MenuCommand title="圆柱体" subtitle="插入参数化圆柱体" @click="createPrimitive('cylinder')"><NIcon><ShapesOutline /></NIcon></MenuCommand>
-                        <MenuCommand title="球体" subtitle="插入参数化球体" @click="createPrimitive('sphere')"><NIcon><EllipseOutline /></NIcon></MenuCommand>
-                        <div class="panel-section-label">项目</div>
-                        <MenuCommand title="文件" subtitle="导入项目 JSON" @click="importProject"><NIcon><FolderOpenOutline /></NIcon></MenuCommand>
-                    </template>
-                    <template v-else-if="activePanel === 'construct'">
-                        <p class="panel-note">选择实体平面后可创建贴合该面的构造平面；也可以直接添加基准面。</p>
-                        <button class="menu-command" @click="createPlane('XZ')"><NIcon><GridOutline /></NIcon><span><strong>XZ 平面</strong><small>水平基准面</small></span></button>
-                        <button class="menu-command" @click="createPlane('XY')"><NIcon><GridOutline /></NIcon><span><strong>XY 平面</strong><small>正视基准面</small></span></button>
-                        <button class="menu-command" @click="createPlane('YZ')"><NIcon><GridOutline /></NIcon><span><strong>YZ 平面</strong><small>侧视基准面</small></span></button>
-                    </template>
-                    <template v-else-if="activePanel === 'tools'">
-                        <button class="menu-command" :disabled="!selectedSketches.length" @click="message.info('请拖动视图中的上下粗箭头进行拉伸')"><NIcon><ArrowUpOutline /></NIcon><span><strong>拉伸</strong><small>选择封闭轮廓后拖动双向粗箭头</small></span></button>
-                        <button class="menu-command" :disabled="selectionKind !== 'face'" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>沿面法向推拉实体</small></span></button>
-                        <div class="panel-section-label">布尔运算 · 选择两个实体</div>
-                        <div class="inline-command-row"><button :disabled="!canBoolean" @click="applyBoolean('union')">并集</button><button :disabled="!canBoolean" @click="applyBoolean('subtract')">差集</button><button :disabled="!canBoolean" @click="applyBoolean('intersect')">交集</button></div>
-                    </template>
-                    <template v-else-if="activePanel === 'display'">
-                        <div class="display-mode-grid"><button :class="{ active: displayMode === 'shaded' }" @click="updateDisplayMode('shaded')">实体着色</button><button :class="{ active: displayMode === 'wireframe' }" @click="updateDisplayMode('wireframe')">线框</button><button :class="{ active: displayMode === 'xray' }" @click="updateDisplayMode('xray')">透视</button></div>
-                        <NCheckbox :checked="showEdges" size="small" @update:checked="showEdges = $event">显示边线</NCheckbox>
-                        <NCheckbox v-model:checked="shadowVisible" size="small">地面投影</NCheckbox>
-                        <NCheckbox v-model:checked="gridVisible" size="small">网格</NCheckbox>
-                    </template>
-                </aside>
-
-                <aside v-if="!activePanel && selectedIds.length && !sketchMode && !operation" class="tool-panel adaptive-panel">
-                    <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button @click="selectEntity(null)"><NIcon><CloseOutline /></NIcon></button></div>
-                    <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
-                    <template v-else-if="selectedEntities.length > 1"><div class="inline-command-row vertical"><button @click="applyBoolean('union')">并集</button><button @click="applyBoolean('subtract')">差集</button><button @click="applyBoolean('intersect')">交集</button></div></template>
-                    <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button><button class="menu-command" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong></span></button></template>
-                    <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>拖动模型面或输入尺寸</small></span></button><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
-                    <template v-else><button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>移动整个实体</small></span></button><button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong></span></button><button class="menu-command" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong></span></button></template>
-                    <button class="more-tools" @click="togglePanel('tools')">更多工具 <span>›</span></button>
-                </aside>
+                <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
+                    :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean"
+                    @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @import="importProject" @create-plane="createPlane"
+                    @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
-                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="sketchAdvanced.startSymmetry" @transform="chooseSketchTransform" />
+                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
-                <SketchHints v-if="sketchMode && !overlayActive" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
+                <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 
-                <section v-if="contextVisible" class="context-panel">
-                    <button class="parameter-close" title="收起参数卡，不退出工具" @click="parameterCardOpen = false"><NIcon><ChevronDownOutline /></NIcon></button>
-                    <template v-if="operation?.type === 'extrude' && extrudeBody">
-                        <div class="context-title"><strong>拉伸</strong><span>{{ historyEditId ? '历史记录编辑' : '拖动画布箭头或输入距离' }}</span></div>
-                        <div class="context-fields operation-fields">
-                            <label>距离<IntegerInputNumber class="extrude-distance-input" :precision="4" :value="displayLength(extrudeBody.depth)" :min="displayLength(0.1)" size="small" @update:value="updateExtrudeLength" /></label>
-                            <label>方向<NSelect :value="extrudeBody.direction" size="small" :options="[{ label: '正向', value: 1 }, { label: '反向', value: -1 }]" @update:value="updateExtrude('direction', $event)" /></label>
-                            <label>侧面<NSelect :value="extrudeBody.sideMode" size="small" :options="[{ label: '单侧', value: 'one' }, { label: '对称', value: 'symmetric' }]" @update:value="updateExtrude('sideMode', $event)" /></label>
-                            <label>拔模°<IntegerInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="updateExtrude('draftAngle', $event)" /></label>
-                            <label>结果<NSelect :value="operation.result" size="small" :options="[{ label: '新实体', value: 'new' }, { label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="updateExtrudeResult" /></label>
-                            <NSelect v-if="operation.result !== 'new'" :value="operation.targetId" :options="operationTargets" placeholder="目标实体" size="small" @update:value="operation.targetId = $event" />
-                            <NButton size="small" type="primary" @click="doneOperation">完成</NButton><NButton size="small" quaternary @click="cancelOperation">取消</NButton>
-                        </div>
-                    </template>
-                    <template v-else-if="operation?.type === 'boolean' && booleanDraft">
-                        <div class="context-title"><strong>布尔运算</strong><span>紫色目标 / 蓝色工具</span></div>
-                        <div class="context-fields operation-fields">
-                            <NSelect :value="document.entities.find(item => item.id === booleanDraft.resultId)?.operation" size="small" :options="[{ label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="document.entities.find(item => item.id === booleanDraft.resultId)!.operation = $event" />
-                            <NButton size="small" secondary @click="swapBooleanRoles">交换 目标 / 工具</NButton>
-                            <NCheckbox v-model:checked="booleanDraft.keepTarget" size="small">保留目标</NCheckbox>
-                            <NCheckbox v-model:checked="booleanDraft.keepTool" size="small">保留工具</NCheckbox>
-                            <NButton size="small" type="primary" @click="doneOperation">完成</NButton><NButton size="small" quaternary @click="cancelOperation">取消</NButton>
-                        </div>
-                    </template>
-                    <template v-else-if="sketchMode">
-                        <div class="context-title"><NIcon><CreateOutline /></NIcon><strong>{{ editingSketchId ? '编辑草图' : '绘制草图' }}</strong><span>单击添加点，拖动顶点调整</span></div>
-                        <div class="context-fields">
-                            <NSelect v-if="!editingSketchId" :value="activePlaneId" :options="planeOptions" size="small" class="plane-select" @update:value="changeActivePlane" />
-                            <label>厚度<IntegerInputNumber :precision="4" :value="displayLength(sketchDepth)" :min="displayLength(0.1)" size="small" @update:value="updateSketchDepth(inputLength($event))" /></label>
-                            <template v-if="selectedSketchPoint >= 0 && sketchPoints[selectedSketchPoint]">
-                                <label>X<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="updateSketchCoordinate(0, $event)" /></label>
-                                <label>Z<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="updateSketchCoordinate(1, $event)" /></label>
-                            </template>
-                            <NButton size="small" secondary @click="viewport?.normalToSketch()">正视草图</NButton>
-                            <NButton size="small" type="primary" :disabled="!sketchClosed" @click="finishSketch">退出草图</NButton>
-                            <button class="context-close" @click="cancelSketch"><NIcon><CloseOutline /></NIcon></button>
-                        </div>
-                    </template>
-                    <template v-else-if="selectedEntities.length > 1">
-                        <div class="context-title"><strong>{{ selectedEntities.length }} 个实体</strong><span>按选择顺序执行布尔运算</span></div>
-                        <div class="context-fields"><NButton size="small" secondary @click="applyBoolean('union')">并集</NButton><NButton size="small" secondary @click="applyBoolean('subtract')">差集</NButton><NButton size="small" secondary @click="applyBoolean('intersect')">交集</NButton></div>
-                    </template>
-                    <template v-else-if="selected">
-                        <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
-                        <div v-if="activeVector" class="context-fields vector-fields">
-                            <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<IntegerInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
-                        </div>
-                        <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
-                            <label>面偏移<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="updateFaceOffsetInput(inputLength($event))" /></label>
-                            <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
-                        </div>
-                        <div v-else class="context-fields">
-                            <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<IntegerInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="updateLengthEntity(field.key, $event)" /></label>
-                            <label v-if="selected.kind === 'extrude'" class="context-action"><NButton size="small" secondary @click="startSketch(true)">编辑轮廓</NButton></label>
-                            <input class="context-color" type="color" :value="selected.color" title="实体颜色" @input="updateEntity('color', ($event.target as HTMLInputElement).value)" />
-                        </div>
-                    </template>
-                    <template v-else>
-                        <div class="context-title"><strong>推拉</strong><span>在画布中按住模型并拖动</span></div>
-                    </template>
-                </section>
+                <ModelingOperationBar v-if="contextVisible" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
+                    :operation-targets="operationTargets" :document="document" :sketch-mode="sketchMode" :editing-sketch-id="editingSketchId" :active-plane-id="activePlaneId"
+                    :plane-options="planeOptions" :sketch-depth="sketchDepth" :selected-sketch-point="selectedSketchPoint" :sketch-points="sketchPoints"
+                    :selected="selected" :selected-entities="selectedEntities" :active-tool="activeTool" :display-length="displayLength" :input-length="inputLength"
+                    @close="closeOperationBar" @done="doneOperation" @cancel="cancelOperation" @update-extrude-length="updateExtrudeLength" @update-extrude="updateExtrude"
+                    @update-extrude-result="updateExtrudeResult" @update-extrude-target="operation?.type === 'extrude' && (operation.targetId = $event)"
+                    @update-boolean-operation="updateBooleanOperation" @update-boolean-keep="updateBooleanKeep"
+                    @swap-boolean-roles="swapBooleanRoles" @change-plane="changeActivePlane" @update-sketch-depth="updateSketchDepth" @update-sketch-coordinate="updateSketchCoordinate"
+                    @normal-to-sketch="viewport?.normalToSketch()" @finish-sketch="finishSketch" @update-name="updateEntity('name', $event)"
+                    @update-vector="updateVector" @update-face-offset="updateFaceOffsetInput" @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" @edit-profile="startSketch(true)" @boolean="applyBoolean" />
 
-                <div class="viewport-utilities">
-                    <div class="measure-actions">
-                        <NTooltip><template #trigger><button :class="{ active: measureMode }" @click.stop="toggleMeasure"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
-                        <NTooltip><template #trigger><button @click.stop="toggleProjection"><NIcon><component :is="projectionMode === 'perspective' ? CameraOutline : GridOutline" /></NIcon></button></template>{{ projectionMode === 'perspective' ? '切换正交相机' : '切换透视相机' }}</NTooltip>
-                        <NTooltip><template #trigger><button @click.stop="fitView"><NIcon><ScanOutline /></NIcon></button></template>适配视图</NTooltip>
-                    </div>
-                    <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBarLabel }}</span></div>
-                </div>
+                <ViewportUtilities :measure-mode="measureMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
+                    :display-mode="displayMode" :show-edges="showEdges" :shadow-visible="shadowVisible" :grid-visible="gridVisible"
+                    @measure="toggleMeasure" @fit="fitView" @projection="toggleProjection" @display-mode="updateDisplayMode"
+                    @show-edges="showEdges = $event" @shadow-visible="shadowVisible = $event" @grid-visible="gridVisible = $event" />
                 <div v-if="!sketchMode" class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
         </div>

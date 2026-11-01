@@ -599,6 +599,10 @@ export class InteractionController {
             }
             return;
         }
+        if (this.measureMode && this.sketchMode) {
+            if (!event.buttons) this.sketchOperationPoint(event);
+            return;
+        }
         if (this.measureMode && this.measurePoints.length < 2) {
             const hit = this.hitEntity(event);
             if (hit) this.showHoverFace(hit);
@@ -759,6 +763,11 @@ export class InteractionController {
         if (this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
         if (this.measureMode) {
             event.preventDefault(); event.stopImmediatePropagation();
+            if (this.sketchMode) {
+                const point = this.sketchOperationPoint(event);
+                if (point) this.addSketchMeasurePoint(point);
+                return;
+            }
             if (this.measurePoints.length >= 2) {
                 this.setMeasureMode(false);
                 this.callbacks.onMeasureChange(false);
@@ -834,6 +843,7 @@ export class InteractionController {
     private clearHoverFace() { this.measurementRenderer.clearHoverFace(); }
     private showHoverFace(hit: THREE.Intersection) { this.measurementRenderer.showHoverFace(hit); }
     private addMeasurePoint(point: THREE.Vector3) { this.measurementRenderer.addPoint(point); }
+    private addSketchMeasurePoint(point: Point2) { this.measurementRenderer.addSketchPoint(this.sketchRenderer.world(point, 0.4)); }
 
     private onDoubleClick(event: MouseEvent) {
         if (this.measureMode) return;
@@ -864,6 +874,7 @@ export class InteractionController {
         this.measureMode = active;
         this.container.classList.toggle('is-measuring', active);
         this.measurementRenderer.clear();
+        this.clearSketchReferences();
         this.updateOrbitRotation();
     }
 

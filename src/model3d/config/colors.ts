@@ -46,6 +46,7 @@ export const VIEWPORT_COLORS = {
     measureFaceActive: '#e2a34d',
     measureStart: '#147d70',
     measureEnd: '#d88d32',
+    measureSketch: '#1677c8',
     measureX: '#ef5261',
     measureY: '#63ad45',
     measureZ: '#4c86e8',

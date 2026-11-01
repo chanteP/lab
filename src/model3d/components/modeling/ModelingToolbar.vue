@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
-import { AddOutline, BuildOutline, CameraOutline, CutOutline, EyeOutline, LayersOutline, ListOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
+import { AddOutline, BuildOutline, CutOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
@@ -11,8 +11,6 @@ defineProps<{
     sketchMode: boolean;
     sectionActive: boolean;
     isolateActive: boolean;
-    measureMode: boolean;
-    itemsVisible: boolean;
     selectionKind: string | null;
     canIsolate: boolean;
     historySteps: HistoryStep[];
@@ -24,8 +22,6 @@ const emit = defineEmits<{
     tool: [tool: string];
     section: [];
     isolate: [];
-    measure: [];
-    items: [];
     history: [id: string];
 }>();
 const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉伸', boolean: '布尔' };
@@ -49,9 +45,6 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
         <div class="tool-group primary-tools">
             <ViewportToolItem :description-on-hover="false" label="剖视图" :active="sectionActive" @click="emit('section')"><NIcon><CutOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="测量" :active="measureMode" @click="emit('measure')"><SvgIcon name="ruler" /></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="显示" :active="activePanel === 'display'" @click="emit('panel', 'display')"><NIcon><CameraOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="实体树" :active="itemsVisible" @click="emit('items')"><NIcon><ListOutline /></NIcon></ViewportToolItem>
             <NPopover trigger="click" placement="right-start">
                 <template #trigger><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></template>
                 <div class="history-panel">

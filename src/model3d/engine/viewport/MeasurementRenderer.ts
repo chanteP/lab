@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { VIEWPORT_COLORS } from '../../config/colors';
-import { clearGroup } from './renderUtils';
+import { clearGroup, createFatLine } from './renderUtils';
 import type { OverlayController } from './OverlayController';
 
 /** Two-point measurement geometry and its labels. */
@@ -8,8 +9,9 @@ export class MeasurementRenderer {
     readonly group = new THREE.Group();
     readonly points: THREE.Vector3[] = [];
     hoverFace: THREE.Mesh | null = null;
+    private mode: 'model' | 'sketch' = 'model';
 
-    constructor(private readonly formatLength: (value: number) => string, private readonly overlay: OverlayController) {}
+    constructor(private readonly formatLength: (value: number) => string, private readonly overlay: OverlayController, private readonly renderer: THREE.WebGLRenderer) {}
 
     clearHoverFace() {
         if (!this.hoverFace) return;
@@ -37,6 +39,7 @@ export class MeasurementRenderer {
     }
 
     addPoint(point: THREE.Vector3) {
+        this.mode = 'model';
         this.points.push(point.clone());
         const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: this.points.length === 1 ? VIEWPORT_COLORS.measureStart : VIEWPORT_COLORS.measureEnd, depthTest: false }));
         marker.position.copy(point);
@@ -44,6 +47,48 @@ export class MeasurementRenderer {
         this.group.add(marker);
         this.clearHoverFace();
         if (this.points.length === 2) this.draw();
+    }
+
+    addSketchPoint(point: THREE.Vector3) {
+        const previous = this.mode === 'sketch' ? this.points[this.points.length - 1]?.clone() : null;
+        this.clear();
+        this.mode = 'sketch';
+        if (previous) this.points.push(previous);
+        this.points.push(point.clone());
+        this.points.forEach((point) => {
+            const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: VIEWPORT_COLORS.measureSketch, depthTest: false, depthWrite: false }));
+            marker.position.copy(point);
+            marker.userData.sketchMeasureMarker = true;
+            marker.renderOrder = 1006;
+            this.group.add(marker);
+        });
+        if (this.points.length !== 2) return;
+        const [a, b] = this.points;
+        const canvas = this.renderer.domElement;
+        const line = createFatLine([a, b], canvas.clientWidth, canvas.clientHeight);
+        const material = line.material as LineMaterial;
+        material.color.set(VIEWPORT_COLORS.measureSketch);
+        material.linewidth = 3;
+        line.renderOrder = 1005;
+        this.group.add(line);
+        this.label(this.formatLength(a.distanceTo(b)), a.clone().lerp(b, 0.5), 'measure-total');
+    }
+
+    updateSketchMarkers(unitsPerPixel: number) {
+        this.group.traverse((object) => {
+            if (object.userData.sketchMeasureMarker) object.scale.setScalar(unitsPerPixel * 4);
+        });
+    }
+
+    refresh() {
+        if (this.mode !== 'sketch') {
+            clearGroup(this.group);
+            this.draw();
+            return;
+        }
+        const current = this.points[this.points.length - 1]?.clone();
+        if (!current) return;
+        this.addSketchPoint(current);
     }
 
     private label(text: string, position: THREE.Vector3, className = '') {
@@ -85,6 +130,7 @@ export class MeasurementRenderer {
         this.overlay.clear('measure-label:');
         this.points.length = 0;
         this.hoverFace = null;
+        this.mode = 'model';
     }
 
     dispose() {

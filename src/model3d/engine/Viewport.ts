@@ -139,7 +139,7 @@ export class Viewport {
             raycast: (event, targets) => this.interaction.raycast(event, targets),
             raycastPoint: (event) => this.interaction.sketchPoint(event),
         });
-        this.measurementRenderer = new MeasurementRenderer((value) => this.formatLength(value), this.overlay);
+        this.measurementRenderer = new MeasurementRenderer((value) => this.formatLength(value), this.overlay, this.engine.renderer);
         this.guideRenderer = new GuideRenderer({
             overlay: this.overlay,
             model: this.sceneSynchronizer.model,
@@ -184,6 +184,7 @@ export class Viewport {
     private animate(delta: number) {
         this.cameraController.update(delta, () => this.interaction.updateOrbitRotation());
         this.sketchRenderer.updateScreenSpaceMarkers();
+        if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
         this.engine.render(this.cameraController.camera, this.cameraController.viewHelper, this.cameraController.planeGizmo, this.sketchMode, this.cameraController.controls.target);
         this.options.onOverlaysChange?.(this.overlay.project(this.cameraController.camera, this.engine.renderer.domElement));
     }
@@ -195,8 +196,7 @@ export class Viewport {
     setLengthUnit(unit: LengthUnit) {
         this.lengthUnit = unit;
         if (this.measurementRenderer.points.length === 2) {
-            clearGroup(this.measurementRenderer.group);
-            this.measurementRenderer.draw();
+            this.measurementRenderer.refresh();
         }
         if (this.sceneSynchronizer.document) this.guideRenderer.update(this.sceneSynchronizer.document);
     }
