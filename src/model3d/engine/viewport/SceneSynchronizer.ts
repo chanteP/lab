@@ -249,7 +249,7 @@ export class SceneSynchronizer {
         this.model.children.forEach((object) => {
             const mesh = object as THREE.Mesh;
             const material = mesh.material as THREE.MeshStandardMaterial;
-            const active = this.selected.includes(mesh.userData.entityId) && !['offsetFace', 'fillet', 'chamfer'].includes(this.options.getTool());
+            const active = this.selected.includes(mesh.userData.entityId) && this.options.getTool() !== 'offsetFace';
             if (material.emissive) {
                 const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);

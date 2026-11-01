@@ -22,7 +22,6 @@ export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; re
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
-export type EdgeTreatment = { type: 'fillet' | 'chamfer'; size: number; segments: number };
 
 export interface ModelFolder {
     id: string;
@@ -78,7 +77,6 @@ export interface ModelEntity {
     draftAngle?: number;
     operation?: BooleanOperation;
     operands?: [string, string];
-    edge?: EdgeTreatment | null;
     faceOffset?: { normal: Vec3; distance: number } | null;
 }
 
@@ -125,7 +123,6 @@ export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): 
         position: [0, 20, 0],
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
-        edge: null,
     };
     if (kind === 'box') return { ...base, width: 40, height: 40, depth: 40 };
     if (kind === 'cylinder') return { ...base, radius: 20, height: 40, position: [0, 20, 0] };

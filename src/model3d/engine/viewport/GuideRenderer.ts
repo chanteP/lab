@@ -1,16 +1,19 @@
 import * as THREE from 'three';
+import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
 import { SKETCH_COLORS } from '../../config/colors';
 import type { ModelDocument, Vec3 } from '../../types';
 import type { ViewTool } from '../Viewport';
-import { clearGroup } from './renderUtils';
+import { clearGroup, createFatLine } from './renderUtils';
 import type { OverlayController } from './OverlayController';
+import type { GeometryAnchor } from './GeometrySelector';
 
-export type GeometryAnchor = { id: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
+export type { GeometryAnchor } from './GeometrySelector';
 
 interface GuideRendererOptions {
     overlay: OverlayController;
     model: THREE.Group;
+    renderer: THREE.WebGLRenderer;
     getSelected: () => string[];
     getTool: () => ViewTool;
     getGeometryAnchor: () => GeometryAnchor | null;
@@ -31,26 +34,25 @@ export class GuideRenderer {
     private createThickArrow(origin: THREE.Vector3, normal: THREE.Vector3, length: number, data: Record<string, any>) {
         const group = new THREE.Group();
         group.userData.arrowKey = JSON.stringify(data);
-        const highlighted = group.userData.arrowKey === this.activeArrowKey || group.userData.arrowKey === this.hoverArrowKey;
-        const material = new THREE.MeshBasicMaterial({ color: highlighted ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.arrow, depthTest: false, depthWrite: false, toneMapped: false });
+        const active = group.userData.arrowKey === this.activeArrowKey;
+        const hovered = group.userData.arrowKey === this.hoverArrowKey;
+        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, depthTest: true, depthWrite: true, toneMapped: false, side: THREE.DoubleSide });
         const arrowLength = length / 3;
         const headHeight = Math.min(4, arrowLength * 0.7);
         const shaftLength = Math.max(0.5, arrowLength - headHeight);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, shaftLength, 16), material);
-        shaft.position.y = shaftLength / 2;
-        const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, headHeight, 20), material);
-        head.position.y = shaftLength + headHeight / 2;
-        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, depthTest: false, depthWrite: false, toneMapped: false });
-        const shaftOutline = new THREE.LineSegments(new THREE.EdgesGeometry(shaft.geometry), outlineMaterial);
-        const headOutline = new THREE.LineSegments(new THREE.EdgesGeometry(head.geometry), outlineMaterial);
-        shaftOutline.position.copy(shaft.position);
-        headOutline.position.copy(head.position);
-        group.add(shaft, head, shaftOutline, headOutline);
+        const shape = new THREE.Shape([
+            new THREE.Vector2(-1.3, 0), new THREE.Vector2(-1.3, shaftLength), new THREE.Vector2(-2.2, shaftLength),
+            new THREE.Vector2(0, arrowLength), new THREE.Vector2(2.2, shaftLength), new THREE.Vector2(1.3, shaftLength), new THREE.Vector2(1.3, 0),
+        ]);
+        const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
+        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, depthTest: true, depthWrite: false, toneMapped: false });
+        const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(shape.getPoints().map((point) => new THREE.Vector3(point.x, point.y, 0))), outlineMaterial);
+        group.add(arrow, outline);
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
         group.scale.setScalar(2.5);
         group.traverse((child) => { Object.assign(child.userData, data); child.userData.arrowKey = group.userData.arrowKey; child.renderOrder = 100; });
-        shaftOutline.renderOrder = headOutline.renderOrder = 101;
+        outline.renderOrder = 101;
         return group;
     }
 
@@ -61,6 +63,22 @@ export class GuideRenderer {
         if (this.options.isSketchMode()) return;
         const tool = this.options.getTool();
         const selected = this.options.getSelected();
+        const geometryAnchor = this.options.getGeometryAnchor();
+        if (['select', 'offsetFace'].includes(tool) && geometryAnchor?.type === 'face' && selected.includes(geometryAnchor.id)) {
+            const entity = document.entities.find((item) => item.id === geometryAnchor.id);
+            if (!entity) return;
+            const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
+            const origin = new THREE.Vector3(...geometryAnchor.point);
+            const value = entity.faceOffset?.distance || 0;
+            origin.add(normal.clone().multiplyScalar(value));
+            const length = 18;
+            this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
+            this.options.overlay.set({
+                id: 'guide-label:direct', kind: 'label', position: origin.clone().add(normal.clone().multiplyScalar(length)).toArray(),
+                text: this.options.formatLength(value), className: 'extrude-dimension', action: 'extrude-dimension',
+            });
+            return;
+        }
         if (tool === 'select') {
             const profiles = selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch' && entityProfileClosed(item))).filter(Boolean) as ModelDocument['entities'];
             if (!profiles.length) return;
@@ -76,26 +94,6 @@ export class GuideRenderer {
             for (const direction of [1, -1] as const) {
                 this.group.add(this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId: profiles[profiles.length - 1].id, direction } }));
             }
-            return;
-        }
-        const geometryAnchor = this.options.getGeometryAnchor();
-        if (['offsetFace', 'fillet', 'chamfer'].includes(tool) && geometryAnchor) {
-            const entity = document.entities.find((item) => item.id === geometryAnchor.id);
-            if (!entity) return;
-            const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
-            const origin = new THREE.Vector3(...geometryAnchor.point);
-            const value = tool === 'offsetFace' ? entity.faceOffset?.distance || 0 : entity.edge?.size || 3;
-            origin.add(normal.clone().multiplyScalar(value));
-            const length = 18;
-            this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
-            this.options.overlay.set({
-                id: 'guide-label:direct',
-                kind: 'label',
-                position: origin.clone().add(normal.clone().multiplyScalar(length)).toArray(),
-                text: this.options.formatLength(value),
-                className: 'extrude-dimension',
-                action: 'extrude-dimension',
-            });
             return;
         }
         if (tool !== 'extrude') return;
@@ -123,31 +121,42 @@ export class GuideRenderer {
 
     updateArrowColors() {
         this.group.children.forEach((group) => {
-            const active = group.userData.arrowKey && (group.userData.arrowKey === this.activeArrowKey || group.userData.arrowKey === this.hoverArrowKey);
+            const active = group.userData.arrowKey === this.activeArrowKey;
+            const hovered = group.userData.arrowKey === this.hoverArrowKey;
             group.traverse((object) => {
                 if (!(object instanceof THREE.Mesh)) return;
                 const material = object.material as THREE.MeshBasicMaterial;
-                if (material.color) material.color.set(active ? SKETCH_COLORS.hoverLine : SKETCH_COLORS.arrow);
+                if (material.color) material.color.set(active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow);
             });
         });
     }
 
     refreshFaceFeedback() {
         clearGroup(this.faceFeedback);
-        const anchor = this.options.getHoverFaceAnchor() || (['offsetFace', 'fillet', 'chamfer'].includes(this.options.getTool()) ? this.options.getGeometryAnchor() : null);
-        if (!anchor) return;
+        if (this.options.isSketchMode()) return;
+        const selected = this.options.getGeometryAnchor();
+        const hovered = this.options.getHoverFaceAnchor();
+        if (selected && this.options.getSelected().includes(selected.id)) this.renderAnchor(selected, true);
+        if (hovered && hovered.id !== selected?.id) this.renderAnchor(hovered, false);
+    }
+
+    private renderAnchor(anchor: GeometryAnchor, active: boolean) {
+        const color = active ? SKETCH_COLORS.active : SKETCH_COLORS.hoverFill;
         if (anchor.type === 'edge' && anchor.vertices.length >= 2) {
-            const a = new THREE.Vector3(...anchor.vertices[0]), b = new THREE.Vector3(...anchor.vertices[1]);
-            const direction = b.clone().sub(a);
-            const edge = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, direction.length(), 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.hoverLine, depthTest: false }));
-            edge.position.copy(a).lerp(b, 0.5);
-            edge.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+            const canvas = this.options.renderer.domElement;
+            const edge = createFatLine(anchor.vertices.map((point) => new THREE.Vector3(...point)), canvas.clientWidth, canvas.clientHeight);
+            const material = edge.material as LineMaterial;
+            material.color.set(color);
+            material.linewidth = 4;
             edge.renderOrder = 14;
             this.faceFeedback.add(edge);
-        } else {
+        } else if (anchor.vertices.length >= 3) {
             const geometry = new THREE.BufferGeometry().setFromPoints(anchor.vertices.map((point) => new THREE.Vector3(...point)));
             geometry.setIndex(anchor.indices);
-            const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.hoverFill, transparent: true, opacity: 0.52, side: THREE.DoubleSide, depthTest: false }));
+            const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: active ? 0.48 : 0.3, side: THREE.DoubleSide,
+                depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+            }));
             face.renderOrder = 13;
             this.faceFeedback.add(face);
         }

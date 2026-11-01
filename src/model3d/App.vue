@@ -93,7 +93,7 @@ const {
     operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
     createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
     updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-    clearEdge, updateFaceOffsetInput, onDirectEdit,
+    updateFaceOffsetInput, onDirectEdit,
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
     parameterCardOpen, lastFace, viewport: () => viewport, message, pushHistory, popHistory, inputLength, setTool,
@@ -102,7 +102,6 @@ const {
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const historySteps = computed(() => document.value.entities.flatMap((item) => {
     const steps = ['sketch', 'extrude', 'boolean'].includes(item.kind) ? [{ id: item.id, name: item.name, kind: item.kind as string }] : [];
-    if (item.edge) steps.push({ id: `${item.id}:edge`, name: item.name, kind: item.edge.type });
     return steps;
 }).reverse());
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
@@ -117,7 +116,7 @@ const {
 });
 const {
     treeNodes, contextMenu, showRename, renameValue,
-    selectEntity, updateEntity, updateLengthEntity, updateEdgeSize, updateVector,
+    selectEntity, updateEntity, updateLengthEntity, updateVector,
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
     createFolder, openNodeContext, requestRename, applyRename, deleteContextNodes, reparentNodes,
     createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
@@ -165,15 +164,13 @@ const sketchAdvanced = useSketchAdvanced({
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || ['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)));
+const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && operation.value?.type !== 'extrude' && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
         { id: 'extrude', label: '拉伸', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
         { id: 'offsetFace', label: '偏移面', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
-        { id: 'fillet', label: '圆角', hint: '为所选实体边创建圆角', keys: '圆角 fillet' },
-        { id: 'chamfer', label: '倒角', hint: '为所选实体边创建倒角', keys: '倒角 chamfer' },
         { id: 'translate', label: '移动 / 旋转', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
         { id: 'scale', label: '缩放', hint: '缩放所选实体', keys: '缩放 scale' },
         { id: 'plane', label: '构造平面', hint: '添加构造平面', keys: '平面 构造 plane' },
@@ -256,7 +253,7 @@ function runCommand(id: string) {
     if (id === 'sketch') return beginSketch();
     if (id === 'extrude' && selected.value?.kind === 'sketch') return startExtrude(selected.value.id);
     if (id === 'extrude') return message.warning('请先选择闭合 Sketch profile');
-    if (['offsetFace', 'fillet', 'chamfer', 'translate', 'scale'].includes(id)) return chooseTool(id as ViewTool);
+    if (['offsetFace', 'translate', 'scale'].includes(id)) return chooseTool(id as ViewTool);
     if (id === 'plane') return createPlane();
     if (['box', 'cylinder', 'sphere'].includes(id)) return createPrimitive(id as 'box' | 'cylinder' | 'sphere');
     if (id === 'measure') return toggleMeasure();
@@ -312,7 +309,7 @@ function onMarqueeSelect(ids: string[], additive: boolean) {
 }
 function onBlankCommit() {
     if (operation.value) return doneOperation();
-    if (['offsetFace', 'fillet', 'chamfer'].includes(activeTool.value)) {
+    if (activeTool.value === 'offsetFace') {
         setTool('select');
         parameterCardOpen.value = false;
         return;
@@ -356,8 +353,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     if (entity?.kind === 'sketch') {
         if (!entityProfileClosed(entity)) startSketch(true);
         else setTool('select');
-    } else if (type === 'edge') setTool('fillet');
-    else setTool('offsetFace');
+    } else setTool('select');
 }
 function onBodySelect(id: string) {
     selectEntity(id);
@@ -417,7 +413,6 @@ function onKeyDown(event: KeyboardEvent) {
     else if (event.code === 'KeyS' && (sketchMode.value || selectionKind.value !== 'plane')) sketchMode.value ? chooseSketchTransform('scale') : setTool('scale');
     else if (event.code === 'KeyE' && operation.value?.type === 'extrude' && extrudeBody.value) updateExtrude('sideMode', extrudeBody.value.sideMode === 'one' ? 'symmetric' : 'one');
     else if (event.code === 'KeyE' && selected.value?.kind === 'sketch') startExtrude(selected.value.id);
-    else if (event.code === 'KeyF' && selectionKind.value === 'edge') chooseTool('fillet');
     else if (event.code === 'KeyF') viewport?.fit();
 }
 
@@ -425,7 +420,10 @@ watch(document, () => {
     if (!transforming) viewport?.sync(document.value);
     scheduleSave();
 }, { deep: true });
-watch([selectedIds, selectedShapes, sketchMode], ([ids, shapes, active]) => viewport?.setSelected(active ? shapes : ids), { deep: true });
+watch([selectedIds, selectedShapes, sketchMode, selectionKind], ([ids, shapes, active, kind]) => {
+    viewport?.setSelected(active ? shapes : ids);
+    if (!active && kind !== 'face' && kind !== 'edge') viewport?.clearGeometrySelection();
+}, { deep: true });
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(() => project.value.name, scheduleSave);
 watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
@@ -611,8 +609,6 @@ onBeforeUnmount(() => {
                     <template v-else-if="activePanel === 'tools'">
                         <button class="menu-command" :disabled="!selectedSketches.length" @click="message.info('请拖动视图中的上下粗箭头进行拉伸')"><NIcon><ArrowUpOutline /></NIcon><span><strong>拉伸</strong><small>选择封闭轮廓后拖动双向粗箭头</small></span></button>
                         <button class="menu-command" :disabled="selectionKind !== 'face'" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>沿面法向推拉实体</small></span></button>
-                        <button class="menu-command" :disabled="selectionKind !== 'edge'" @click="chooseTool('chamfer')"><NIcon><CutOutline /></NIcon><span><strong>倒角</strong><small>处理所选实体边</small></span></button>
-                        <button class="menu-command" :disabled="selectionKind !== 'edge'" @click="chooseTool('fillet')"><NIcon><EllipseOutline /></NIcon><span><strong>圆角</strong><small>圆角半径可拖动或精确输入</small></span></button>
                         <div class="panel-section-label">布尔运算 · 选择两个实体</div>
                         <div class="inline-command-row"><button :disabled="!canBoolean" @click="applyBoolean('union')">并集</button><button :disabled="!canBoolean" @click="applyBoolean('subtract')">差集</button><button :disabled="!canBoolean" @click="applyBoolean('intersect')">交集</button></div>
                     </template>
@@ -630,7 +626,6 @@ onBeforeUnmount(() => {
                     <template v-else-if="selectedEntities.length > 1"><div class="inline-command-row vertical"><button @click="applyBoolean('union')">并集</button><button @click="applyBoolean('subtract')">差集</button><button @click="applyBoolean('intersect')">交集</button></div></template>
                     <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button><button class="menu-command" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong></span></button></template>
                     <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="chooseTool('offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>拖动模型面或输入尺寸</small></span></button><button class="menu-command" @click="beginSketch()"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
-                    <template v-else-if="selectionKind === 'edge'"><button class="menu-command" :class="{ active: activeTool === 'fillet' }" @click="chooseTool('fillet')"><NIcon><EllipseOutline /></NIcon><span><strong>圆角</strong><small>圆角 · F</small></span></button><button class="menu-command" :class="{ active: activeTool === 'chamfer' }" @click="chooseTool('chamfer')"><NIcon><CutOutline /></NIcon><span><strong>倒角</strong><small>倒角</small></span></button></template>
                     <template v-else><button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="chooseTool('translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>移动整个实体</small></span></button><button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="chooseTool('rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong></span></button><button class="menu-command" :class="{ active: activeTool === 'scale' }" @click="chooseTool('scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong></span></button></template>
                     <button class="more-tools" @click="togglePanel('tools')">更多工具 <span>›</span></button>
                 </aside>
@@ -688,17 +683,13 @@ onBeforeUnmount(() => {
                         <div class="context-fields"><NButton size="small" secondary @click="applyBoolean('union')">并集</NButton><NButton size="small" secondary @click="applyBoolean('subtract')">差集</NButton><NButton size="small" secondary @click="applyBoolean('intersect')">交集</NButton></div>
                     </template>
                     <template v-else-if="selected">
-                        <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'">在模型上拖动调整距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
+                        <div class="context-title"><input :value="selected.name" @change="updateEntity('name', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
                         <div v-if="activeVector" class="context-fields vector-fields">
                             <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<IntegerInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="updateVector(activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
                         </div>
                         <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
                             <label>面偏移<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="updateFaceOffsetInput(inputLength($event))" /></label>
                             <button class="text-button" @click="updateFaceOffsetInput(0)">清除面拉伸</button>
-                        </div>
-                        <div v-else-if="activeTool === 'fillet' || activeTool === 'chamfer'" class="context-fields">
-                            <label>距离<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.edge?.size || 0)" :min="0" :max="selected ? displayLength(edgeLimitFor(selected)) : 0" size="small" @update:value="updateEdgeSize" /></label>
-                            <button class="text-button" @click="clearEdge">清除边处理</button>
                         </div>
                         <div v-else class="context-fields">
                             <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<IntegerInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="updateLengthEntity(field.key, $event)" /></label>
@@ -707,7 +698,7 @@ onBeforeUnmount(() => {
                         </div>
                     </template>
                     <template v-else>
-                        <div class="context-title"><strong>{{ activeTool === 'offsetFace' ? '推拉' : activeTool === 'fillet' ? '圆角' : '倒角' }}</strong><span>在画布中按住模型并拖动</span></div>
+                        <div class="context-title"><strong>推拉</strong><span>在画布中按住模型并拖动</span></div>
                     </template>
                 </section>
 
@@ -751,7 +742,7 @@ onBeforeUnmount(() => {
             <div class="help-content">
                 <section><strong>选择与画布导航</strong><p>左键单击选择，拖拽环绕；Command/Ctrl＋拖拽框选，空格＋拖拽平移。右键环绕，中键平移，滚轮缩放。</p></section>
                 <section><strong>草图与约束</strong><p>草图中选择基准面、构造平面或实体平面。完成图形后仍可连续绘制，退出草图才离开编辑。右侧约束区支持线段方向、平行、垂直、等长和点锁定。</p></section>
-                <section><strong>自适应建模</strong><p>选择面时推荐偏移面，选择边时推荐倒角或圆角，选择实体时推荐移动/旋转。再次点击当前工具只收起参数卡，不会退出工具；拖动手柄或输入尺寸才修改几何。</p></section>
+                <section><strong>自适应建模</strong><p>点击选择面或轮廓线，拖动面上的箭头进行偏移，选择实体时可移动、旋转或缩放。再次点击当前工具只收起参数卡，不会退出工具；拖动手柄或输入尺寸才修改几何。</p></section>
                 <section><strong>检查与历史</strong><p>隔离、剖视图和显示模式 用于检查模型；测量只读数。历史记录可回改草图、拉伸、布尔运算 和已有边处理参数。</p></section>
             </div>
         </NModal>

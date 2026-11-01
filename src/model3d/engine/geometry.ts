@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { profileClosed, profilePoints, profileShape } from './profiles';
@@ -8,45 +6,9 @@ import { SKETCH_COLORS } from '../config/colors';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
 function qualityValues(quality: GeometryQuality) {
-    if (quality === 'preview') return { radial: 48, sphere: 48, edge: 4 };
-    if (quality === 'ultra') return { radial: 256, sphere: 192, edge: 16 };
-    return { radial: 128, sphere: 128, edge: 10 };
-}
-
-function chamferedBox(width: number, height: number, depth: number, size: number) {
-    const x = width / 2;
-    const y = height / 2;
-    const z = depth / 2;
-    const points: THREE.Vector3[] = [];
-    for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) {
-        points.push(new THREE.Vector3(a * (x - size), b * y, c * z));
-        points.push(new THREE.Vector3(a * x, b * (y - size), c * z));
-        points.push(new THREE.Vector3(a * x, b * y, c * (z - size)));
-    }
-    return new ConvexGeometry(points);
-}
-
-function treatedCylinder(radius: number, height: number, entity: ModelEntity, quality: GeometryQuality) {
-    const edge = entity.edge!;
-    const size = Math.min(edge.size, radius * 0.48, height * 0.48);
-    const half = height / 2;
-    const profile: THREE.Vector2[] = [new THREE.Vector2(0, -half), new THREE.Vector2(radius - size, -half)];
-    if (edge.type === 'chamfer') {
-        profile.push(new THREE.Vector2(radius, -half + size), new THREE.Vector2(radius, half - size));
-    } else {
-        const segments = qualityValues(quality).edge;
-        for (let i = 1; i <= segments; i++) {
-            const angle = -Math.PI / 2 + (i / segments) * Math.PI / 2;
-            profile.push(new THREE.Vector2(radius - size + Math.cos(angle) * size, -half + size + Math.sin(angle) * size));
-        }
-        profile.push(new THREE.Vector2(radius, half - size));
-        for (let i = 1; i <= segments; i++) {
-            const angle = (i / segments) * Math.PI / 2;
-            profile.push(new THREE.Vector2(radius - size + Math.cos(angle) * size, half - size + Math.sin(angle) * size));
-        }
-    }
-    profile.push(new THREE.Vector2(0, half));
-    return new THREE.LatheGeometry(profile, qualityValues(quality).radial);
+    if (quality === 'preview') return { radial: 48, sphere: 48 };
+    if (quality === 'ultra') return { radial: 256, sphere: 192 };
+    return { radial: 128, sphere: 128 };
 }
 
 export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity) {
@@ -88,15 +50,11 @@ function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: n
 
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
     const q = qualityValues(quality);
-    const edge = entity.edge;
     if (entity.kind === 'box') {
         const width = entity.width!;
         const height = entity.height!;
         const depth = entity.depth!;
-        const size = edge ? Math.min(edge.size, width * 0.48, height * 0.48, depth * 0.48) : 0;
-        const base = !edge ? new THREE.BoxGeometry(width, height, depth) : edge.type === 'fillet'
-            ? new RoundedBoxGeometry(width, height, depth, q.edge, size)
-            : chamferedBox(width, height, depth, size);
+        const base = new THREE.BoxGeometry(width, height, depth);
         if (!entity.faceOffset?.distance) return base;
         const normal = new THREE.Vector3(...entity.faceOffset.normal).normalize();
         const axis = Math.abs(normal.x) > 0.5 ? 0 : Math.abs(normal.y) > 0.5 ? 1 : 2;
@@ -118,9 +76,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         return mergeGeometries([base, extension]) || base;
     }
     if (entity.kind === 'cylinder') {
-        const base = edge
-            ? treatedCylinder(entity.radius!, entity.height!, entity, quality)
-            : new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height!, q.radial, 1, false);
+        const base = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height!, q.radial, 1, false);
         if (!entity.faceOffset?.distance || Math.abs(entity.faceOffset.normal[1]) < 0.5) return base;
         const sign = Math.sign(entity.faceOffset.normal[1]) || 1;
         if (entity.faceOffset.distance < 0) {
@@ -143,15 +99,10 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         ? entity.parts.filter((part) => part.closed && part.points.length >= 3).map((part) => new THREE.Shape(part.points.map(([x, y]) => new THREE.Vector2(x, y))))
         : profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves);
     if (Array.isArray(shape) && !shape.length) return new THREE.BufferGeometry();
-    const size = edge ? Math.min(edge.size, entity.depth! * 0.24) : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: entity.depth! - size * 2,
+        depth: entity.depth!,
         steps: 1,
-        bevelEnabled: !!edge,
-        bevelThickness: size,
-        bevelSize: size,
-        bevelOffset: -size,
-        bevelSegments: edge?.type === 'fillet' ? q.edge : 1,
+        bevelEnabled: false,
         curveSegments: 12,
     });
     if (entity.draftAngle) {
@@ -188,7 +139,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const direction = Math.sign(new THREE.Vector3(...entity.faceOffset.normal).dot(planeNormal)) || 1;
         const shrink = entity.faceOffset.distance < 0;
         const depth = Math.abs(entity.faceOffset.distance);
-        const extension = baseGeometry({ ...entity, depth: shrink ? depth + 2 : depth, direction: direction as 1 | -1, sideMode: 'one', draftAngle: 0, edge: null, faceOffset: null }, quality, document);
+        const extension = baseGeometry({ ...entity, depth: shrink ? depth + 2 : depth, direction: direction as 1 | -1, sideMode: 'one', draftAngle: 0, faceOffset: null }, quality, document);
         const originalDirection = entity.direction === -1 ? -1 : 1;
         const extent = direction === originalDirection ? (entity.sideMode === 'symmetric' ? entity.depth! / 2 : entity.depth!) : (entity.sideMode === 'symmetric' ? -entity.depth! / 2 : 0);
         extension.translate(...planeNormal.multiplyScalar(originalDirection * extent).toArray());

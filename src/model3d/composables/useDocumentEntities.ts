@@ -89,10 +89,6 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         (selected.value as any)[key] = value;
     }
     function updateLengthEntity(key: keyof ModelEntity, value: number | null) { updateEntity(key, inputLength(value)); }
-    function updateEdgeSize(value: number | null) {
-        if (!selected.value || !['fillet', 'chamfer'].includes(activeTool.value)) return;
-        updateEntity('edge', { type: activeTool.value, size: inputLength(value) || 0, segments: selected.value.edge?.segments || 6 });
-    }
     function updateVector(key: 'position' | 'rotation' | 'scale', index: number, value: number | null) {
         if (!selected.value || value === null) return;
         pushHistory();
@@ -287,7 +283,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
 
     return {
         treeNodes, contextMenu, showRename, renameValue, renameTarget,
-        selectEntity, updateEntity, updateLengthEntity, updateEdgeSize, updateVector,
+        selectEntity, updateEntity, updateLengthEntity, updateVector,
         removeSelected, removeConstraintsForEdge, removeConstraintsForEntity, deleteNodeIds, duplicateSelected,
         createFolder, openNodeContext, requestRename, applyRename, deleteContextNodes, reparentNodes,
         createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,

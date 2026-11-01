@@ -77,7 +77,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const entity: ModelEntity = {
             id: uid(), parentId: null, name: `${names[type]} ${document.value.entities.filter((item) => item.kind === 'boolean').length + 1}`,
             kind: 'boolean', color: target.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
-            operation: type, operands: [target.id, tool.id], edge: null,
+            operation: type, operands: [target.id, tool.id],
         };
         document.value.entities.push(entity);
         operation.value = { type: 'boolean', resultId: entity.id, targetId: target.id, toolId: tool.id, before, keepTarget: false, keepTool: false, existing: false };
@@ -184,7 +184,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 const result: ModelEntity = {
                     id: uid(), parentId: body.parentId, name: `拉伸${current.result === 'union' ? '并集' : current.result === 'subtract' ? '差集' : '交集'} ${document.value.entities.length + 1}`,
                     kind: 'boolean', color: body.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
-                    operation: current.result, operands: [target.id, body.id], edge: null,
+                    operation: current.result, operands: [target.id, body.id],
                 };
                 target.visible = false;
                 body.visible = false;
@@ -217,17 +217,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         setTool('select');
     }
     function editHistory(id: string) {
-        if (id.endsWith(':edge')) {
-            const entity = document.value.entities.find((item) => item.id === id.slice(0, -5));
-            if (!entity?.edge) return;
-            selectedIds.value = [entity.id];
-            selectionKind.value = 'edge';
-            historyEditId.value = entity.id;
-            activePanel.value = null;
-            parameterCardOpen.value = true;
-            setTool(entity.edge.type);
-            return;
-        }
         const entity = document.value.entities.find((item) => item.id === id);
         if (!entity) return;
         if (entity.kind === 'sketch') {
@@ -248,17 +237,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         }
     }
 
-    function edgeLimitFor(item: ModelEntity) {
-        if (item.kind === 'box') return Math.min(item.width!, item.height!, item.depth!) * 0.48;
-        if (item.kind === 'cylinder') return Math.min(item.radius!, item.height! / 2) * 0.48;
-        if (item.kind === 'extrude') return item.depth! * 0.24;
-        return 0;
-    }
-    function clearEdge() {
-        if (!selected.value) return;
-        pushHistory();
-        selected.value.edge = null;
-    }
     function updateFaceOffsetInput(value: number | null) {
         const item = selected.value;
         if (!item || value === null || !lastFace.value) return;
@@ -298,12 +276,11 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         }
         const item = document.value.entities.find((entity) => entity.id === id);
         if (!item) return;
-        const edgeTool = activeTool.value === 'fillet' || activeTool.value === 'chamfer';
         if (phase ==='start') {
-            if (edgeTool && !['box', 'cylinder', 'extrude'].includes(item.kind)) return message.warning('该实体暂不支持边处理');
-            if (!edgeTool && !['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
-            if (!edgeTool && item.kind === 'cylinder' && Math.abs(normal[1]) < 0.5) return message.warning('圆柱侧面暂不支持向外拉伸');
-            if (!edgeTool && item.kind === 'extrude') {
+            if (activeTool.value === 'select') setTool('offsetFace');
+            if (!['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
+            if (item.kind === 'cylinder' && Math.abs(normal[1]) < 0.5) return message.warning('圆柱侧面暂不支持向外拉伸');
+            if (item.kind === 'extrude') {
                 const plane = document.value.planes.find((entry) => entry.id === item.planeId);
                 if (plane && Math.abs(new THREE.Vector3(...normal).dot(new THREE.Vector3(...plane.normal))) < 0.9) return message.warning('请选择拉伸体的顶面或底面');
             }
@@ -318,13 +295,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (!directBase) return;
         if (!directHistoryPushed) {
             pushHistory();
-            if (edgeTool) item.edge = { type: activeTool.value as 'fillet' | 'chamfer', size: item.edge?.size || 3, segments: item.edge?.segments || 6 };
             directHistoryPushed = true;
-        }
-        if (edgeTool) {
-            const size = Math.round(THREE.MathUtils.clamp((directBase.edge?.size || 3) + delta, 0.1, edgeLimitFor(directBase)) * 10000) / 10000;
-            item.edge = { ...directBase.edge!, size };
-            return;
         }
         const next = (directBase.faceOffset?.distance || 0) + delta;
         item.faceOffset = { normal: [...normal], distance: Math.round(Math.max(faceOffsetMinimum(directBase, normal), next) * 100) / 100 };
@@ -335,6 +306,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
         updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-        edgeLimitFor, clearEdge, updateFaceOffsetInput, faceOffsetMinimum, onDirectEdit,
+        updateFaceOffsetInput, faceOffsetMinimum, onDirectEdit,
     };
 }

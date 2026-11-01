@@ -12,7 +12,7 @@ import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
 
-export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
+export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude';
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
 export type EditPhase = 'start' | 'move' | 'end';
@@ -143,6 +143,7 @@ export class Viewport {
         this.guideRenderer = new GuideRenderer({
             overlay: this.overlay,
             model: this.sceneSynchronizer.model,
+            renderer: this.engine.renderer,
             getSelected: () => this.sceneSynchronizer.selected,
             getTool: () => this.tool,
             getGeometryAnchor: () => this.interaction?.geometryAnchor || null,

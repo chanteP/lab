@@ -56,7 +56,7 @@ button { color: inherit; }
 .viewport.is-panning { cursor: grab; }
 .viewport.is-panning:active { cursor: grabbing; }
 .viewport.is-sketching { cursor: crosshair; }
-.viewport[data-tool=offsetFace], .viewport[data-tool=fillet], .viewport[data-tool=chamfer] { cursor: ns-resize; }
+.viewport[data-tool=offsetFace] { cursor: ns-resize; }
 .vertical-toolbar { position: absolute; z-index: 6; top: 12px; bottom: 43px; left: 12px; width: 44px; display: flex; flex-direction: column; padding: 4px; background: var(--model3d-ui-surface94); border: 1px solid var(--model3d-ui-border90); border-radius: 9px; box-shadow: 0 5px 18px var(--model3d-ui-30433b16); backdrop-filter: blur(12px); overflow-y: auto; scrollbar-width: none; }
 .vertical-toolbar::-webkit-scrollbar { display: none; }
 .vertical-toolbar .tool-group { display: flex; flex-direction: column; flex: 0 0 auto; gap: 2px; padding: 4px 0; border-bottom: 1px solid var(--model3d-ui-e3e8e5); }

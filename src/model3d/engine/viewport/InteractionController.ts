@@ -8,7 +8,8 @@ import type { CameraController } from './CameraController';
 import type { ViewportEngine } from './ViewportEngine';
 import type { SceneSynchronizer } from './SceneSynchronizer';
 import type { SketchRenderer } from './SketchRenderer';
-import type { GuideRenderer, GeometryAnchor } from './GuideRenderer';
+import type { GuideRenderer } from './GuideRenderer';
+import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 
 type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
@@ -41,6 +42,7 @@ export class InteractionController {
     private readonly sketchRenderer: SketchRenderer;
     private readonly guideRenderer: GuideRenderer;
     private readonly measurementRenderer: MeasurementRenderer;
+    private readonly geometrySelector = new GeometrySelector();
     private readonly transform: TransformControls;
     private readonly callbacks: ViewportCallbacks;
     private readonly getTool: () => ViewTool;
@@ -55,13 +57,12 @@ export class InteractionController {
     private sketchSelectionGuardPointerUp = false;
     private spaceSketchPointerBlocked = false;
     private lastPointer: { clientX: number; clientY: number } | null = null;
-    private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number } | null = null;
+    private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number; anchor: GeometryAnchor | null } | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
     private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private marquee: { startX: number; startY: number; x: number; y: number; additive: boolean; moved: boolean } | null = null;
     private readonly selectionRectangle: HTMLDivElement;
-    private readonly surfaceCache = new Map<string, { vertices: Vec3[]; indices: number[]; point: Vec3 }>();
     private spacePressed = false;
     private spaceDragMoved = false;
     private spaceHover: { id: string; normal: Vec3; point: Vec3 } | null = null;
@@ -190,7 +191,7 @@ export class InteractionController {
     }
 
     updateOrbitRotation() {
-        this.controls.enableRotate = ['select', 'offsetFace', 'fillet', 'chamfer', 'extrude'].includes(this.tool) && !this.sketchMode && !this.measureMode;
+        this.controls.enableRotate = !this.sketchMode && !this.measureMode;
     }
 
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') {
@@ -231,6 +232,12 @@ export class InteractionController {
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
         return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object));
+    }
+
+    private hitEntityEdge(event: PointerEvent) {
+        this.setPointer(event);
+        this.raycaster.params.Line.threshold = Math.max(0.08, this.camera.position.distanceTo(this.controls.target) * 0.004);
+        return this.raycaster.intersectObjects(this.model.children, true).find((item) => item.object.userData.displayEdge && this.isVisible(item.object));
     }
 
     private hitExtrudeArrow(event: PointerEvent) {
@@ -458,12 +465,13 @@ export class InteractionController {
             if (start) { this.shapeDrag = { start, moved: false }; this.capturePointer(event); }
             return;
         }
-        if (['offsetFace', 'extrude', 'fillet', 'chamfer'].includes(this.tool)) {
+        if (['select', 'offsetFace', 'extrude'].includes(this.tool)) {
             const arrow = this.hitDirectArrow(event);
             const normal = arrow?.normal || this.geometryAnchor?.localNormal;
             if (arrow && normal) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                this.directDrag = { id: arrow.id, normal, worldNormal: this.geometryAnchor?.normal || normal, x: event.clientX, y: event.clientY };
+                const anchor = this.geometryAnchor ? { ...this.geometryAnchor, vertices: this.geometryAnchor.vertices.map((point) => [...point] as Vec3) } : null;
+                this.directDrag = { id: arrow.id, normal, worldNormal: this.geometryAnchor?.normal || normal, x: event.clientX, y: event.clientY, anchor };
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
@@ -479,7 +487,6 @@ export class InteractionController {
             this.capturePointer(event);
             return;
         }
-        if (hit && ['translate', 'rotate', 'scale'].includes(this.tool)) this.controls.enableRotate = false;
     }
 
     private snapPlaneCamera(force = false) { this.cameraController.snapPlaneCamera(this.activePlane, force); }
@@ -586,6 +593,10 @@ export class InteractionController {
             direction.normalize();
             const delta = ((event.clientX - this.directDrag.x) * direction.x + (event.clientY - this.directDrag.y) * direction.y) * scale;
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
+            if (this.directDrag.anchor) {
+                const offset = new THREE.Vector3(...this.directDrag.worldNormal).multiplyScalar(delta);
+                this.geometryAnchor = { ...this.directDrag.anchor, vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
+            }
             return;
         }
         if (this.measureMode && this.measurePoints.length < 2) {
@@ -608,7 +619,7 @@ export class InteractionController {
             if (hit) {
                 const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
                 this.hoverGeometry = { id: hit.object.userData.entityId, normal, point: hit.point.toArray() };
-                this.hoverFaceAnchor = sketchId ? null : this.createGeometryAnchor(hit, event, 'face');
+                this.hoverFaceAnchor = sketchId ? null : this.createGeometryAnchor(hit);
             } else { this.hoverGeometry = null; this.hoverFaceAnchor = null; }
             this.refreshFaceFeedback();
         }
@@ -769,131 +780,26 @@ export class InteractionController {
             return;
         }
         const hit = this.hitEntity(event);
+        const edgeHit = this.hitEntityEdge(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
         if (planeHit && (!hit || planeHit.distance < hit.distance)) { this.callbacks.onPlaneSelect(planeHit.id); return; }
-        if (hit) {
-            const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray();
-            const selectionType = this.nearFaceEdge(hit, event) ? 'edge' : 'face';
-            this.geometryAnchor = this.createGeometryAnchor(hit, event, selectionType);
+        if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
+            this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
             this.hoverFaceAnchor = null;
-            this.callbacks.onGeometrySelect(hit.object.userData.entityId, selectionType, normal, this.geometryAnchor.point, additive);
-        } else if (!hit && ['extrude', 'offsetFace', 'fillet', 'chamfer'].includes(this.tool)) this.callbacks.onBlankCommit();
+            this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);
+        } else if (hit) {
+            const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray();
+            this.geometryAnchor = this.createGeometryAnchor(hit);
+            this.hoverFaceAnchor = null;
+            this.callbacks.onGeometrySelect(hit.object.userData.entityId, 'face', normal, this.geometryAnchor.point, additive);
+        } else if (['extrude', 'offsetFace'].includes(this.tool)) this.callbacks.onBlankCommit();
         else this.callbacks.onSelect(null, additive);
     }
 
-    private nearFaceEdge(hit: THREE.Intersection, event: PointerEvent) {
-        if (!hit.face) return false;
-        const mesh = hit.object as THREE.Mesh;
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        const points = [hit.face.a, hit.face.b, hit.face.c].map((index) => new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld).project(this.camera));
-        const screen = points.map((point) => new THREE.Vector2(rect.left + (point.x + 1) * rect.width / 2, rect.top + (1 - point.y) * rect.height / 2));
-        const pointer = new THREE.Vector2(event.clientX, event.clientY);
-        const distance = (a: THREE.Vector2, b: THREE.Vector2) => new THREE.Line3(new THREE.Vector3(a.x, a.y, 0), new THREE.Vector3(b.x, b.y, 0)).closestPointToPoint(new THREE.Vector3(pointer.x, pointer.y, 0), true, new THREE.Vector3()).distanceTo(new THREE.Vector3(pointer.x, pointer.y, 0));
-        return Math.min(distance(screen[0], screen[1]), distance(screen[1], screen[2]), distance(screen[2], screen[0])) < 8;
-    }
-
-    private collectSurface(mesh: THREE.Mesh, hit: THREE.Intersection) {
-        const start = hit.faceIndex ?? Math.floor((hit.face?.a || 0) / 3);
-        const key = `${mesh.uuid}:${start}`;
-        const cached = this.surfaceCache.get(key);
-        if (cached) return cached;
-        const geometry = mesh.geometry;
-        const positions = geometry.attributes.position;
-        const index = geometry.index;
-        const triangles: { vertices: number[]; normal: THREE.Vector3 }[] = [];
-        const vertexToTriangles = new Map<string, number[]>();
-        const triangleCount = (index?.count || positions.count) / 3;
-        for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-            const vertices = [0, 1, 2].map((offset) => index ? index.getX(triangleIndex * 3 + offset) : triangleIndex * 3 + offset);
-            const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(positions, vertex));
-            const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
-            triangles.push({ vertices, normal });
-            vertices.forEach((vertex, offset) => {
-                const point = points[offset];
-                const key = `${point.x.toFixed(4)},${point.y.toFixed(4)},${point.z.toFixed(4)}`;
-                const list = vertexToTriangles.get(key) || [];
-                list.push(triangleIndex);
-                vertexToTriangles.set(key, list);
-            });
-        }
-        const visited = new Set<number>();
-        const queue = [start];
-        const threshold = Math.cos(THREE.MathUtils.degToRad(15));
-        for (let cursor = 0; cursor < queue.length; cursor++) {
-            const current = queue[cursor];
-            if (visited.has(current) || !triangles[current]) continue;
-            visited.add(current);
-            triangles[current].vertices.forEach((vertex) => {
-                const point = new THREE.Vector3().fromBufferAttribute(positions, vertex);
-                const key = `${point.x.toFixed(4)},${point.y.toFixed(4)},${point.z.toFixed(4)}`;
-                (vertexToTriangles.get(key) || []).forEach((neighbor) => {
-                    if (!visited.has(neighbor) && triangles[current].normal.dot(triangles[neighbor].normal) >= threshold) queue.push(neighbor);
-                });
-            });
-        }
-        const vertices: Vec3[] = [];
-        const indices: number[] = [];
-        const center = new THREE.Vector3();
-        [...visited].sort((a, b) => a - b).forEach((triangleIndex) => {
-            triangles[triangleIndex].vertices.forEach((vertex) => {
-                const point = new THREE.Vector3().fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld);
-                center.add(point);
-                vertices.push(point.toArray());
-                indices.push(indices.length);
-            });
-        });
-        const result = { vertices, indices, point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 };
-        this.surfaceCache.set(key, result);
-        return result;
-    }
-
-    private createGeometryAnchor(hit: THREE.Intersection, event: PointerEvent, type: 'face' | 'edge'): GeometryAnchor {
-        const mesh = hit.object as THREE.Mesh;
-        const localNormal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone();
-        const normal = localNormal.clone().transformDirection(hit.object.matrixWorld);
-        const triangle = hit.face ? [hit.face.a, hit.face.b, hit.face.c].map((index) => new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld)) : [hit.point.clone()];
-        let vertices = triangle;
-        let indices = [0, 1, 2];
-        let point = hit.point.clone();
-        if (type === 'face') {
-            const bodyCenter = new THREE.Box3().setFromObject(hit.object).getCenter(new THREE.Vector3());
-            point = bodyCenter.add(normal.clone().multiplyScalar(hit.point.clone().sub(bodyCenter).dot(normal)));
-            const entity = this.document?.entities.find((item) => item.id === hit.object.userData.entityId);
-            if (entity?.kind === 'box') {
-                const dimensions = [entity.width!, entity.height!, entity.depth!];
-                const axis = Math.abs(localNormal.x) > 0.5 ? 0 : Math.abs(localNormal.y) > 0.5 ? 1 : 2;
-                const u = (axis + 1) % 3, v = (axis + 2) % 3;
-                const sign = Math.sign(localNormal.getComponent(axis)) || 1;
-                vertices = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => {
-                    const local = [0, 0, 0];
-                    local[axis] = sign * dimensions[axis] / 2;
-                    local[u] = su * dimensions[u] / 2;
-                    local[v] = sv * dimensions[v] / 2;
-                    return new THREE.Vector3(...local as Vec3).applyMatrix4(mesh.matrixWorld);
-                });
-                point = vertices.reduce((center, vertex) => center.add(vertex), new THREE.Vector3()).multiplyScalar(0.25);
-                indices = [0, 1, 2, 0, 2, 3];
-            } else {
-                const surface = this.collectSurface(mesh, hit);
-                vertices = surface.vertices.map((point) => new THREE.Vector3(...point));
-                indices = surface.indices;
-                point = hit.point.clone();
-            }
-        } else if (triangle.length === 3) {
-            const rect = this.renderer.domElement.getBoundingClientRect();
-            const screen = triangle.map((vertex) => {
-                const projected = vertex.clone().project(this.camera);
-                return new THREE.Vector2(rect.left + (projected.x + 1) * rect.width / 2, rect.top + (1 - projected.y) * rect.height / 2);
-            });
-            const pointer = new THREE.Vector2(event.clientX, event.clientY);
-            const distance = (a: THREE.Vector2, b: THREE.Vector2) => new THREE.Line3(new THREE.Vector3(a.x, a.y, 0), new THREE.Vector3(b.x, b.y, 0)).closestPointToPoint(new THREE.Vector3(pointer.x, pointer.y, 0), true, new THREE.Vector3()).distanceTo(new THREE.Vector3(pointer.x, pointer.y, 0));
-            const edges = [[0, 1], [1, 2], [2, 0]];
-            const nearest = edges.sort((a, b) => distance(screen[a[0]], screen[a[1]]) - distance(screen[b[0]], screen[b[1]]))[0];
-            vertices = [triangle[nearest[0]], triangle[nearest[1]]];
-            point = vertices[0].clone().lerp(vertices[1], 0.5);
-        }
-        return { id: hit.object.userData.entityId, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type, vertices: vertices.map((vertex) => vertex.toArray()), indices };
+    private createGeometryAnchor(hit: THREE.Intersection): GeometryAnchor {
+        const entity = this.document?.entities.find((item) => item.id === hit.object.userData.entityId);
+        return this.geometrySelector.createFaceAnchor(hit, entity);
     }
 
     private updateSketchCursor(event: PointerEvent) {
@@ -975,7 +881,7 @@ export class InteractionController {
     }
 
     clearSurfaceCache() {
-        this.surfaceCache.clear();
+        this.geometrySelector.clear();
     }
 
     dispose() {

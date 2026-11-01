@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-本次重构只调整职责归属、组件复用和可维护性，不改变项目数据格式与既有建模语义。几何引擎继续使用 Three.js，Vue 组件不直接承担几何算法。
+本次重构调整职责归属、组件复用、可维护性与建模交互。用户明确宣布“正式完工”之前允许直接调整项目数据格式，不保留旧数据迁移或兼容逻辑。几何引擎继续使用 Three.js，Vue 组件不直接承担几何算法。
 
 ## 分层方案
 
@@ -36,7 +36,8 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
-- `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态。事件优先级、pointer capture、拖拽阈值和 start/move/end 回调顺序保持原实现。
+- `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
+
 - `OverlayController` 只保存普通业务数据和世界坐标；每帧投影后由 `ViewportOverlay.vue` 渲染尺寸输入、单位、约束锁和标注。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
 
 销毁顺序为交互监听、TransformControls、相机辅助器、场景/各渲染器资源、渲染核心；Vue 组件卸载时统一触发，App 不再重复 dispose。
@@ -46,6 +47,8 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 新增组件使用 scoped SCSS、原生 button、可见焦点样式和 aria-label。既有全局样式逐步收敛，不在一次重构中做无关视觉重排。
 
 ## Changelog
+
+- 2026-11-01：实体面/边改为先选择再高亮、拖箭头再编辑；修复曲面高亮重复缓存与背面透画，粗箭头改为三态整体轮廓描边，变换工具恢复左右键环绕，首页工具栏常驻标题，并移除圆角/倒角交互与数据字段；新增几何选择回归测试。
 
 - 2026-10-31：变换中心磁吸保留当前形状自身语义参考点，支持吸附到所选矩形角点和圆半径点，不再误排除唯一选中形状。
 

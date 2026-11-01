@@ -2,6 +2,8 @@
 
 本文档记录当前画布、实体树和视图辅助交互。新增工具时应同步更新本文和相关代码分区注释。
 
+当前迭代在用户明确宣布“正式完工”前不保证旧项目数据兼容，不保留迁移或旧功能回退入口。
+
 ## 全局
 
 - 页面内禁用浏览器原生右键菜单；实体树与画布分别使用自定义上下文菜单。
@@ -33,16 +35,15 @@
 - 视口拾取时将射线与平面的世界交点转换成 `(u, v)`；预览和拉伸重建时再转换回世界坐标。
 - 单击添加点，拖动顶点调整位置，选中顶点后输入局部坐标可精准编辑，厚度可随时输入。
 - 选中已有拉伸实体后进入草图工具，可继续编辑原轮廓。
-- 没有 `planeId` 的旧项目草图保留原始 XZ 映射，确保历史项目兼容。
 
 ## 选择与相机
 
 实现：`Viewport.onPointerDown`、 `OrientationGizmo.ts`。
 
 - 左键单击选择 face / edge，双击选择完整 Body，Shift + 单击累加选择。变换工具激活时，单击实体仍可重新选择几何；只有 gizmo、直接编辑手柄和显式工具消费拖动。
-- 实体 face hover 与选中使用透明橙色高亮；选中 edge 使用独立的橙色粗线高亮，不再用整个 Body 的材质变化代替。
-- face 高亮从命中面片按 15° 法向夹角向相邻面片扩展，选择连续平面/曲面；结果缓存到下一次场景同步。
-- 非工具状态下左键空白或模型拖动均为 Orbit；Command/Ctrl + 左键拖动才进入框选：从左往右只选完全包含的 Body，从右往左选择接触框线的 Body。
+- 实体 face hover 与选中使用透明橙色高亮；选中 edge 使用独立的橙色粗线高亮，不再用整个 Body 的材质变化代替。高亮遵守场景深度遮挡，选中曲面不会覆盖其他面。
+- face 高亮从命中面片按 15° 法向夹角向相邻面片扩展，选择连续平面/曲面；同一网格的连通面只构建一次并共享缓存。edge 从实际显示轮廓拾取，不使用三角形内部边。
+- 三维工具状态下，非手柄区域的左键空白或模型拖动均为 Orbit，包括移动、旋转、缩放工具；Command/Ctrl + 左键拖动才进入框选：从左往右只选完全包含的 Body，从右往左选择接触框线的 Body。
 - 空格 + 左键拖动使用 OrbitControls PAN 平移视图；未拖动时松开空格仍可对悬停实体平面建立草图。
 - 右键拖动 Orbit，中键拖动 Pan，Shift + 右键拖动也可 Pan；右键单击打开上下文菜单，普通滚轮缩放。
 - 悬停实体平面时按空格，在该面建立草图并切换到正交正视图。
@@ -86,10 +87,10 @@
 - `Default`：无选择，显示完整 Sketch、Construct、Transform、Tools 和布尔入口。
 - `Sketch`：平面草图上下文，显示 Line、Rectangle、Circle、Arc，另一侧保留视图和约束扩展位置。
 - `SelectionAdaptive`：Items 或画布选择变化后的推荐状态。
-- `ToolActive`：Extrude、Offset Face、Chamfer/Fillet 或 Boolean 正在预览；显示参数、Done、Cancel。
+- `ToolActive`：Extrude、Offset Face 或 Boolean 正在预览；显示参数、Done、Cancel。
 - `HistoryEdit`：从 History 重新打开已有 Extrude/Boolean，引用和参数在提交后写回同一实体。
 
-实体面、实体边、Body 分别触发 Offset Face、Chamfer/Fillet、Move/Rotate。闭合 Profile 单击只选择，必须拖动视图中的双向粗箭头才进入 Extrude。双击画布中的面选择完整 Body。
+实体面和实体边单击只选择并高亮，拖动面上的粗箭头才进入 Offset Face；Body 通过实体树或双击选择后可 Move/Rotate。闭合 Profile 单击只选择，必须拖动视图中的双向粗箭头才进入 Extrude。双击画布中的面选择完整 Body。
 
 ## Profile 与草图工具
 
@@ -113,11 +114,11 @@
 - 点击画布尺寸标签聚焦距离输入；空白提交和 Done 等价，Esc/Cancel 恢复执行前文档。
 - 导出只包含 Body，不把辅助 Profile 面写入 STL/GLB。
 
-## Offset Face 与 Chamfer/Fillet
+## Offset Face
 
 - Offset Face 选中面后显示法向粗箭头，只有拖箭头或修改新增厚度才写入 `faceOffset`。基础 Body 的尺寸、位置和旋转保持不变，几何以所选面为底面向外拼接新增部分。
-- 负 `faceOffset` 使用局部布尔切削实现面收缩；箭头跟随当前面位置，拖动距离按箭头屏幕方向投影，hover/拖动显示橙色且不被模型或网格遮挡。
-- Chamfer/Fillet 选中边后显示粗箭头，拖动时持续重建预览；圆角/倒角被约束在原实体边界内。Extrude 的 bevel 使用负 offset，避免轮廓向外扩张。
+- 负 `faceOffset` 使用局部布尔切削实现面收缩；箭头跟随当前面位置，拖动距离按箭头屏幕方向投影。
+- 粗箭头默认天蓝色、hover 深蓝色、拖动绿色、描边黑色，只描述整体轮廓。箭头正常写入深度，不被透明网格覆盖。
 
 ## Boolean 执行态与 History
 
