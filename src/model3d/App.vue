@@ -118,7 +118,7 @@ const {
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
     createFolder, openNodeContext, requestRename, applyRename, deleteContextNodes, reparentNodes,
     createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
-    toggleNodeVisibility, changeActivePlane,
+    toggleNodeVisibility,
 } = useDocumentEntities({
     document, selectedIds, selected, selectionKind, activeTool, activePanel, activePlaneId, activePlane,
     lastFace, sketchMode, editingSketchId, activeConstraintRule, viewport: () => viewport, message,
@@ -141,7 +141,7 @@ const {
     openSketchContext, deleteSketchFromContext, deleteViewportSketch, addSketchPoint,
     moveSketchPoint, finishSketchHandleDrag, moveSketchCenter, deleteSketchPoint, deleteSketchBorder,
     selectSketchSegment, moveSketchHandle, resetSketchHandle, selectSketchPoint,
-    selectSketchPointRef, dragSketch, closeSketchPath, setSketchSides, updateSketchCoordinate,
+    selectSketchPointRef, dragSketch, closeSketchPath, setSketchSides,
 } = sketchEditing;
 const sketchSession = useSketchSession({
     document, selectedIds, selected, selectionKind, activeTool, activePlaneId, lastFace, lengthUnit,
@@ -150,7 +150,7 @@ const sketchSession = useSketchSession({
     canDraw: () => canDraw.value, isTransforming: () => transforming,
 });
 const {
-    startSketch, refreshSketch, setSketchType, updateSketchDepth,
+    startSketch, refreshSketch, setSketchType,
     onSketchSectorMove, resetSketchSector, onSketchDimension, finishSketch, closeSketch,
     cancelSketch, cancelSketchRefresh,
 } = sketchSession;
@@ -161,8 +161,7 @@ const sketchAdvanced = useSketchAdvanced({
 });
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
-const planeOptions = computed(() => document.value.planes.map((plane) => ({ label: plane.name, value: plane.id })));
-const contextVisible = computed(() => parameterCardOpen.value && !(sketchMode.value && overlayActive.value) && (sketchMode.value || (!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
+const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 
 function togglePanel(panel: PrimaryPanel) {
@@ -367,7 +366,6 @@ function fitView() { viewport?.fit(true); }
 function toggleProjection() { projectionMode.value = viewport?.toggleProjection() || 'perspective'; }
 function closeOperationBar() {
     if (operation.value) cancelOperation();
-    else if (sketchMode.value) closeSketchMode();
     else parameterCardOpen.value = false;
 }
 function updateBooleanOperation(value: BooleanOperation) {
@@ -591,14 +589,11 @@ onBeforeUnmount(() => {
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
 
                 <ModelingOperationBar v-if="contextVisible" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
-                    :operation-targets="operationTargets" :document="document" :sketch-mode="sketchMode" :editing-sketch-id="editingSketchId" :active-plane-id="activePlaneId"
-                    :plane-options="planeOptions" :sketch-depth="sketchDepth" :selected-sketch-point="selectedSketchPoint" :sketch-points="sketchPoints"
-                    :selected="selected" :selected-entities="selectedEntities" :active-tool="activeTool" :display-length="displayLength" :input-length="inputLength"
+                    :operation-targets="operationTargets" :document="document" :selected="selected" :selected-entities="selectedEntities" :active-tool="activeTool" :display-length="displayLength" :input-length="inputLength"
                     @close="closeOperationBar" @done="doneOperation" @cancel="cancelOperation" @update-extrude-length="updateExtrudeLength" @update-extrude="updateExtrude"
                     @update-extrude-result="updateExtrudeResult" @update-extrude-target="operation?.type === 'extrude' && (operation.targetId = $event)"
                     @update-boolean-operation="updateBooleanOperation" @update-boolean-keep="updateBooleanKeep"
-                    @swap-boolean-roles="swapBooleanRoles" @change-plane="changeActivePlane" @update-sketch-depth="updateSketchDepth" @update-sketch-coordinate="updateSketchCoordinate"
-                    @normal-to-sketch="viewport?.normalToSketch()" @finish-sketch="finishSketch" @update-name="updateEntity('name', $event)"
+                    @swap-boolean-roles="swapBooleanRoles" @update-name="updateEntity('name', $event)"
                     @update-vector="updateVector" @update-face-offset="updateFaceOffsetInput" @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" @edit-profile="startSketch(true)" @boolean="applyBoolean" />
 
                 <ViewportUtilities :measure-mode="measureMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NButton, NCheckbox, NIcon, NSelect } from 'naive-ui';
-import { CreateOutline } from '@vicons/ionicons5';
+import { NButton, NCheckbox, NSelect } from 'naive-ui';
 import OperationBar from '../ui/OperationBar.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
-import { ENTITY_NAMES, type BooleanOperation, type ModelDocument, type ModelEntity, type OperationState, type Point2 } from '../../types';
+import { ENTITY_NAMES, type BooleanOperation, type ModelDocument, type ModelEntity, type OperationState } from '../../types';
 import type { ViewTool } from '../../engine/Viewport';
 
 const props = defineProps<{
@@ -14,13 +13,6 @@ const props = defineProps<{
     historyEditId: string | null;
     operationTargets: { label: string; value: string }[];
     document: ModelDocument;
-    sketchMode: boolean;
-    editingSketchId: string | null;
-    activePlaneId: string | null;
-    planeOptions: { label: string; value: string }[];
-    sketchDepth: number;
-    selectedSketchPoint: number;
-    sketchPoints: Point2[];
     selected: ModelEntity | null;
     selectedEntities: ModelEntity[];
     activeTool: ViewTool;
@@ -38,11 +30,6 @@ const emit = defineEmits<{
     updateBooleanOperation: [operation: BooleanOperation];
     updateBooleanKeep: [key: 'keepTarget' | 'keepTool', value: boolean];
     swapBooleanRoles: [];
-    changePlane: [id: string];
-    updateSketchDepth: [value: number | null];
-    updateSketchCoordinate: [axis: number, value: number | null];
-    normalToSketch: [];
-    finishSketch: [];
     updateName: [name: string];
     updateVector: [key: 'position' | 'rotation' | 'scale', axis: number, value: number | null];
     updateFaceOffset: [value: number | null];
@@ -94,19 +81,6 @@ const booleanOperation = computed(() => props.booleanDraft ? props.document.enti
                 <NButton size="small" type="primary" @click="emit('done')">完成</NButton>
             </div>
         </template>
-        <template v-else-if="sketchMode">
-            <div class="context-title"><NIcon><CreateOutline /></NIcon><strong>{{ editingSketchId ? '编辑草图' : '绘制草图' }}</strong><span>单击添加点，拖动顶点调整</span></div>
-            <div class="context-fields sketch-fields">
-                <NSelect v-if="!editingSketchId" :value="activePlaneId" :options="planeOptions" size="small" class="plane-select" @update:value="emit('changePlane', $event)" />
-                <label>厚度<IntegerInputNumber :precision="4" :value="displayLength(sketchDepth)" :min="displayLength(0.1)" size="small" @update:value="emit('updateSketchDepth', inputLength($event))" /></label>
-                <template v-if="selectedSketchPoint >= 0 && sketchPoints[selectedSketchPoint]">
-                    <label>X<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][0]" size="small" :show-button="false" @update:value="emit('updateSketchCoordinate', 0, $event)" /></label>
-                    <label>Z<IntegerInputNumber :precision="4" :value="sketchPoints[selectedSketchPoint][1]" size="small" :show-button="false" @update:value="emit('updateSketchCoordinate', 1, $event)" /></label>
-                </template>
-                <NButton size="small" secondary @click="emit('normalToSketch')">正视草图</NButton>
-                <NButton size="small" type="primary" @click="emit('finishSketch')">退出草图</NButton>
-            </div>
-        </template>
         <template v-else-if="selectedEntities.length > 1">
             <div class="context-title"><strong>{{ selectedEntities.length }} 个实体</strong><span>按选择顺序执行布尔运算</span></div>
             <div class="context-fields"><NButton size="small" secondary @click="emit('boolean', 'union')">并集</NButton><NButton size="small" secondary @click="emit('boolean', 'subtract')">差集</NButton><NButton size="small" secondary @click="emit('boolean', 'intersect')">交集</NButton></div>
@@ -137,7 +111,6 @@ const booleanOperation = computed(() => props.booleanDraft ? props.document.enti
 .context-title input { width: 90px; padding: 0; border: 0; outline: 0; background: transparent; }
 .context-title span { padding-left: 6px; border-left: 1px solid var(--model3d-ui-e0e6e2); }
 .context-fields { display: flex; align-items: center; gap: 6px; }
-:deep(.operation-bar__content) .sketch-fields { flex-wrap: nowrap; }
 .context-fields label { display: flex; align-items: center; gap: 4px; color: var(--model3d-ui-748078); font-size: 9px; white-space: nowrap; }
 .context-fields .n-input-number { width: 69px; }
 .text-button { color: var(--model3d-ui-147d70); background: transparent; border: 0; cursor: pointer; }

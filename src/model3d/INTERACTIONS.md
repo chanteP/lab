@@ -90,6 +90,7 @@
 
 - `Default`：无选择，显示完整 Sketch、Construct、Transform、Tools 和布尔入口。
 - `Sketch`：平面草图上下文，显示 Line、Rectangle、Circle、Arc，另一侧保留视图和约束扩展位置。
+- 普通草图不显示顶部参数操作条，厚度、平面和点编辑不占用画布顶部；对称工具的步骤条除外。
 - `SelectionAdaptive`：Items 或画布选择变化后的推荐状态。
 - `ToolActive`：Extrude、Offset Face 或 Boolean 正在预览；显示参数、Done、Cancel。
 - `HistoryEdit`：从 History 重新打开已有 Extrude/Boolean，引用和参数在提交后写回同一实体。
