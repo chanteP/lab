@@ -36,7 +36,7 @@ export class GuideRenderer {
         group.userData.arrowKey = JSON.stringify(data);
         const active = group.userData.arrowKey === this.activeArrowKey;
         const hovered = group.userData.arrowKey === this.hoverArrowKey;
-        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, depthTest: true, depthWrite: true, toneMapped: false, side: THREE.DoubleSide });
+        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
         const arrowLength = length / 3;
         const headHeight = Math.min(4, arrowLength * 0.7);
         const shaftLength = Math.max(0.5, arrowLength - headHeight);
@@ -45,7 +45,7 @@ export class GuideRenderer {
             new THREE.Vector2(0, arrowLength), new THREE.Vector2(2.2, shaftLength), new THREE.Vector2(1.3, shaftLength), new THREE.Vector2(1.3, 0),
         ]);
         const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
-        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, depthTest: true, depthWrite: false, toneMapped: false });
+        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
         const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(shape.getPoints().map((point) => new THREE.Vector3(point.x, point.y, 0))), outlineMaterial);
         group.add(arrow, outline);
         group.position.copy(origin);
@@ -70,7 +70,6 @@ export class GuideRenderer {
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
             const origin = new THREE.Vector3(...geometryAnchor.point);
             const value = entity.faceOffset?.distance || 0;
-            origin.add(normal.clone().multiplyScalar(value));
             const length = 18;
             this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
             this.options.overlay.set({
@@ -137,11 +136,11 @@ export class GuideRenderer {
         const selected = this.options.getGeometryAnchor();
         const hovered = this.options.getHoverFaceAnchor();
         if (selected && this.options.getSelected().includes(selected.id)) this.renderAnchor(selected, true);
-        if (hovered && hovered.id !== selected?.id) this.renderAnchor(hovered, false);
+        if (hovered && hovered.key !== selected?.key) this.renderAnchor(hovered, false);
     }
 
     private renderAnchor(anchor: GeometryAnchor, active: boolean) {
-        const color = active ? SKETCH_COLORS.active : SKETCH_COLORS.hoverFill;
+        const color = active ? SKETCH_COLORS.activeDark : SKETCH_COLORS.active;
         if (anchor.type === 'edge' && anchor.vertices.length >= 2) {
             const canvas = this.options.renderer.domElement;
             const edge = createFatLine(anchor.vertices.map((point) => new THREE.Vector3(...point)), canvas.clientWidth, canvas.clientHeight);

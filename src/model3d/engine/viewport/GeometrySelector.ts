@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ModelEntity, Vec3 } from '../../types';
 
-export type GeometryAnchor = { id: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
+export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
 type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3 };
 type MeshSurfaces = { triangleSurfaces: number[]; surfaces: Surface[] };
 
@@ -91,10 +91,12 @@ export class GeometrySelector {
         let vertices = triangle;
         let indices = [0, 1, 2];
         let point = hit.point.clone();
+        let surfaceKey = 'triangle';
 
         if (entity?.kind === 'box') {
             const dimensions = [entity.width!, entity.height!, entity.depth!];
             const axis = Math.abs(localNormal.x) > 0.5 ? 0 : Math.abs(localNormal.y) > 0.5 ? 1 : 2;
+            surfaceKey = `${axis}:${Math.sign(localNormal.getComponent(axis)) || 1}`;
             const u = (axis + 1) % 3, v = (axis + 2) % 3;
             const sign = Math.sign(localNormal.getComponent(axis)) || 1;
             vertices = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => {
@@ -109,20 +111,55 @@ export class GeometrySelector {
         } else {
             const surface = this.collectSurface(mesh, hit);
             if (surface?.vertices.length) {
+                const cached = this.surfaceCache.get(mesh.uuid);
+                surfaceKey = String(cached?.surfaces.indexOf(surface) ?? 0);
                 vertices = surface.vertices.map((point) => new THREE.Vector3(...point));
                 indices = surface.indices;
             }
         }
-        return { id: mesh.userData.entityId, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', vertices: vertices.map((vertex) => vertex.toArray()), indices };
+        const id = mesh.userData.entityId;
+        return { id, key: `${id}:face:${surfaceKey}`, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', vertices: vertices.map((vertex) => vertex.toArray()), indices };
     }
 
     createEdgeAnchor(hit: THREE.Intersection): GeometryAnchor {
         const positions = (hit.object as THREE.LineSegments).geometry.attributes.position;
-        const start = hit.index || 0;
-        const vertices = [start, start + 1].map((index) => new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(hit.object.matrixWorld));
+        hit.object.updateWorldMatrix(true, false);
+        const pointKey = (index: number) => [positions.getX(index), positions.getY(index), positions.getZ(index)].map((value) => value.toFixed(4)).join(',');
+        const adjacency = new Map<string, number[]>();
+        for (let segment = 0; segment < Math.floor(positions.count / 2); segment++) {
+            [segment * 2, segment * 2 + 1].forEach((index) => {
+                const key = pointKey(index);
+                adjacency.set(key, [...adjacency.get(key) || [], segment]);
+            });
+        }
+
+        // Degree-two display edges form circles and other smooth loops; box corners still select one segment.
+        const startSegment = Math.floor((hit.index || 0) / 2);
+        const visited = new Set([startSegment]);
+        const ordered = [startSegment * 2, startSegment * 2 + 1];
+        const extend = (fromStart: boolean) => {
+            let current = fromStart ? ordered[0] : ordered[ordered.length - 1];
+            while (true) {
+                const connected = adjacency.get(pointKey(current)) || [];
+                if (connected.length !== 2) break;
+                const next = connected.find((segment) => !visited.has(segment));
+                if (next === undefined) break;
+                visited.add(next);
+                const a = next * 2, b = a + 1;
+                const other = pointKey(a) === pointKey(current) ? b : a;
+                if (fromStart) ordered.unshift(other);
+                else ordered.push(other);
+                current = other;
+            }
+        };
+        extend(false);
+        extend(true);
+        const vertices = ordered.map((index) => new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(hit.object.matrixWorld));
         const point = vertices[0].clone().lerp(vertices[1], 0.5);
         let owner: THREE.Object3D | null = hit.object;
         while (owner && !owner.userData.entityId) owner = owner.parent;
-        return { id: owner?.userData.entityId || '', normal: [0, 1, 0], localNormal: [0, 1, 0], point: point.toArray(), type: 'edge', vertices: vertices.map((vertex) => vertex.toArray()), indices: [0, 1] };
+        const id = owner?.userData.entityId || '';
+        const edgeKey = [...new Set(ordered.map(pointKey))].sort().join('|');
+        return { id, key: `${id}:edge:${edgeKey}`, normal: [0, 1, 0], localNormal: [0, 1, 0], point: point.toArray(), type: 'edge', vertices: vertices.map((vertex) => vertex.toArray()), indices: [0, 1] };
     }
 }

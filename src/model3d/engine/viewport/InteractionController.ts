@@ -599,7 +599,11 @@ export class InteractionController {
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
             if (this.directDrag.anchor) {
                 const offset = new THREE.Vector3(...this.directDrag.worldNormal).multiplyScalar(delta);
-                this.geometryAnchor = { ...this.directDrag.anchor, vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
+                this.geometryAnchor = {
+                    ...this.directDrag.anchor,
+                    point: new THREE.Vector3(...this.directDrag.anchor.point).add(offset).toArray(),
+                    vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()),
+                };
             }
             return;
         }
@@ -622,9 +626,13 @@ export class InteractionController {
         if (!event.buttons && !this.sketchMode) this.updateArrowHover(event);
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
+            const edgeHit = this.hitEntityEdge(event);
             const sketchId = hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch' ? hit.object.userData.entityId : null;
             this.setSketchHover(sketchId);
-            if (hit) {
+            if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
+                this.hoverGeometry = null;
+                this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
+            } else if (hit) {
                 const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
                 this.hoverGeometry = { id: hit.object.userData.entityId, normal, point: hit.point.toArray() };
                 this.hoverFaceAnchor = sketchId ? null : this.createGeometryAnchor(hit);

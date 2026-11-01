@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const outdir = resolve(root, '.temp/test/model3d');
-const entries = ['sketchCurves', 'sketchBorders', 'sketchAdvanced', 'geometrySelection', 'measurement'];
+const entries = ['sketchCurves', 'sketchBorders', 'sketchAdvanced', 'geometry', 'geometrySelection', 'measurement'];
 await build({
     entryPoints: entries.map((name) => resolve(root, `src/model3d/engine/${name}.spec.ts`)),
     bundle: true,

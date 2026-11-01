@@ -43,3 +43,22 @@ test('outline hit uses the actual display-edge segment rather than a mesh triang
     assert.equal(anchor.vertices.length, 2);
     assert.equal(anchor.vertices[0].length, 3);
 });
+
+test('cylinder cap outline selects the complete circular loop', () => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 20, 32, 1, false));
+    mesh.userData.entityId = 'cylinder';
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 28));
+    mesh.add(edges);
+    mesh.updateMatrixWorld(true);
+    const positions = edges.geometry.attributes.position;
+    let segment = -1;
+    for (let index = 0; index < positions.count; index += 2) {
+        if ([index, index + 1].every((vertex) => Math.abs(positions.getY(vertex) - 10) < 0.0001)) { segment = index; break; }
+    }
+
+    const anchor = new GeometrySelector().createEdgeAnchor({ object: edges, index: segment } as unknown as THREE.Intersection);
+
+    assert(anchor.vertices.length > 32);
+    assert(anchor.vertices.every((point) => Math.abs(point[1] - 10) < 0.0001));
+    assert(anchor.vertices[0].every((value, axis) => Math.abs(value - anchor.vertices[anchor.vertices.length - 1][axis]) < 0.0001));
+});

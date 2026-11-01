@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { profileClosed, profilePoints, profileShape } from './profiles';
 import { SKETCH_COLORS } from '../config/colors';
@@ -29,6 +28,16 @@ function subtractGeometry(base: THREE.BufferGeometry, cutter: THREE.BufferGeomet
     return geometry;
 }
 
+function unionGeometry(base: THREE.BufferGeometry, extension: THREE.BufferGeometry) {
+    const brushA = new Brush(base), brushB = new Brush(extension);
+    brushA.updateMatrixWorld(true);
+    brushB.updateMatrixWorld(true);
+    const result = new Evaluator().evaluate(brushA, brushB, ADDITION);
+    base.dispose();
+    extension.dispose();
+    return result.geometry;
+}
+
 function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: number) {
     base.computeBoundingBox();
     const box = base.boundingBox!;
@@ -45,7 +54,7 @@ function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: n
     center.setComponent(axis, shrink ? boundary - sign * (depth / 2 - 1) : boundary + sign * depth / 2);
     const extension = new THREE.BoxGeometry(...dimensions as Vec3);
     extension.translate(...center.toArray());
-    return shrink ? subtractGeometry(base, extension) : mergeGeometries([base, extension]) || base;
+    return shrink ? subtractGeometry(base, extension) : unionGeometry(base, extension);
 }
 
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
@@ -61,33 +70,20 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const sign = Math.sign(normal.getComponent(axis)) || 1;
         const thickness = entity.faceOffset.distance;
         const dimensions = [width, height, depth];
-        if (thickness < 0) {
-            const depth = Math.abs(thickness);
-            const cutterDimensions = [...dimensions];
-            cutterDimensions[axis] = depth + 2;
-            const cutter = new THREE.BoxGeometry(...cutterDimensions as Vec3);
-            cutter.translate(...new THREE.Vector3().setComponent(axis, sign * (dimensions[axis] / 2 - depth / 2 + 1)).toArray());
-            return subtractGeometry(base, cutter);
-        }
-        const extensionDimensions = [...dimensions];
-        extensionDimensions[axis] = thickness;
-        const extension = new THREE.BoxGeometry(...extensionDimensions as Vec3);
-        extension.translate(axis === 0 ? sign * (width / 2 + thickness / 2) : 0, axis === 1 ? sign * (height / 2 + thickness / 2) : 0, axis === 2 ? sign * (depth / 2 + thickness / 2) : 0);
-        return mergeGeometries([base, extension]) || base;
+        dimensions[axis] += thickness;
+        const geometry = new THREE.BoxGeometry(...dimensions as Vec3);
+        geometry.translate(...new THREE.Vector3().setComponent(axis, sign * thickness / 2).toArray());
+        base.dispose();
+        return geometry;
     }
     if (entity.kind === 'cylinder') {
         const base = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height!, q.radial, 1, false);
         if (!entity.faceOffset?.distance || Math.abs(entity.faceOffset.normal[1]) < 0.5) return base;
         const sign = Math.sign(entity.faceOffset.normal[1]) || 1;
-        if (entity.faceOffset.distance < 0) {
-            const depth = Math.abs(entity.faceOffset.distance);
-            const cutter = new THREE.CylinderGeometry(entity.radius!, entity.radius!, depth + 2, q.radial, 1, false);
-            cutter.translate(0, sign * (entity.height! / 2 - depth / 2 + 1), 0);
-            return subtractGeometry(base, cutter);
-        }
-        const extension = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.faceOffset.distance, q.radial, 1, false);
-        extension.translate(0, sign * (entity.height! / 2 + entity.faceOffset.distance / 2), 0);
-        return mergeGeometries([base, extension]) || base;
+        const geometry = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height! + entity.faceOffset.distance, q.radial, 1, false);
+        geometry.translate(0, sign * entity.faceOffset.distance / 2, 0);
+        base.dispose();
+        return geometry;
     }
     if (entity.kind === 'sphere') {
         return new THREE.SphereGeometry(entity.radius!, q.sphere, Math.max(16, q.sphere / 2));
@@ -99,8 +95,9 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         ? entity.parts.filter((part) => part.closed && part.points.length >= 3).map((part) => new THREE.Shape(part.points.map(([x, y]) => new THREE.Vector2(x, y))))
         : profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves);
     if (Array.isArray(shape) && !shape.length) return new THREE.BufferGeometry();
+    const offset = entity.faceOffset?.distance && plane ? entity.faceOffset.distance : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: entity.depth!,
+        depth: entity.depth! + offset,
         steps: 1,
         bevelEnabled: false,
         curveSegments: 12,
@@ -134,20 +131,12 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const legacyBox = geometry.boundingBox!;
         geometry.translate(0, -(legacyBox.min.y + legacyBox.max.y) / 2, 0);
     }
-    if (entity.faceOffset?.distance && plane) {
+    if (offset && plane) {
         const planeNormal = new THREE.Vector3(...plane.normal).normalize();
         const direction = Math.sign(new THREE.Vector3(...entity.faceOffset.normal).dot(planeNormal)) || 1;
-        const shrink = entity.faceOffset.distance < 0;
-        const depth = Math.abs(entity.faceOffset.distance);
-        const extension = baseGeometry({ ...entity, depth: shrink ? depth + 2 : depth, direction: direction as 1 | -1, sideMode: 'one', draftAngle: 0, faceOffset: null }, quality, document);
         const originalDirection = entity.direction === -1 ? -1 : 1;
-        const extent = direction === originalDirection ? (entity.sideMode === 'symmetric' ? entity.depth! / 2 : entity.depth!) : (entity.sideMode === 'symmetric' ? -entity.depth! / 2 : 0);
-        extension.translate(...planeNormal.multiplyScalar(originalDirection * extent).toArray());
-        if (shrink) {
-            extension.translate(...planeNormal.clone().multiplyScalar(-direction * depth).toArray());
-            return subtractGeometry(geometry, extension);
-        }
-        return mergeGeometries([geometry, extension]) || geometry;
+        const translation = entity.sideMode === 'symmetric' || direction !== originalDirection ? direction * offset / (entity.sideMode === 'symmetric' ? 2 : 1) : 0;
+        geometry.translate(...planeNormal.multiplyScalar(translation).toArray());
     }
     return geometry;
 }
