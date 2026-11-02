@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { ModelEntity, Vec3 } from '../../types';
+import type { ModelEntity, Point2, Vec3 } from '../../types';
 
-export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; planar: boolean; vertices: Vec3[]; indices: number[] };
+export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; planar: boolean; vertices: Vec3[]; indices: number[]; profilePoints?: Point2[] };
 type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean };
 type MeshSurfaces = { triangleSurfaces: number[]; surfaces: Surface[] };
 

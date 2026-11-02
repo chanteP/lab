@@ -38,7 +38,7 @@ import { STORAGE_KEYS } from './config/const';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     createDocument,
-    type BooleanOperation, type ModelDocument, type ModelEntity, type Vec3, type PrimaryPanel, type SelectionKind,
+    type BooleanOperation, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
 } from './types';
 
 const message = useMessage();
@@ -57,6 +57,7 @@ const stats = ref({ vertices: 0, triangles: 0, objects: 0 });
 const measureMode = ref(false);
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
+const selectedProfileFace = ref<Point2[] | null>(null);
 const viewportMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
 const activePanel = ref<PrimaryPanel | null>(null);
 const selectionKind = ref<SelectionKind>(null);
@@ -100,6 +101,7 @@ const {
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
     parameterCardOpen, lastFace, viewport: () => viewport, message, pushHistory, popHistory, inputLength, setTool,
+    profileFace: () => selectedProfileFace.value,
     startSketch: (editProfile) => sketchSession.startSketch(editProfile),
 });
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
@@ -312,13 +314,14 @@ function selectFromItems(id: string, additive: boolean) {
     if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool('select'); }
     else if (entity && entity.kind !== 'boolean') setTool('translate');
 }
-function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false) {
+function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     const picked = document.value.entities.find((item) => item.id === id);
     if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
         operation.value.targetId = id;
         return;
     }
     lastFace.value = { bodyId: id, normal, point };
+    selectedProfileFace.value = profileFace?.map((point) => [...point]) || null;
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : picked?.kind === 'sketch' ? 'sketch' : type;
     activePanel.value = null;
@@ -416,8 +419,9 @@ watch(document, () => {
     scheduleSave();
 }, { deep: true });
 watch([selectedIds, selectedShapes, sketchMode, selectionKind], ([ids, shapes, active, kind]) => {
-    viewport?.setSelected(active ? shapes : ids);
-    if (!active && kind !== 'face' && kind !== 'edge') viewport?.clearGeometrySelection();
+    if (!ids.length) selectedProfileFace.value = null;
+    viewport?.setSelected(active ? shapes : ids, active ? 'sketch' : kind);
+    if (!active && kind !== 'face' && kind !== 'edge' && !selectedProfileFace.value) viewport?.clearGeometrySelection();
 }, { deep: true });
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(() => project.value.name, scheduleSave);

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
 import { SKETCH_COLORS } from '../../config/colors';
+import { INTERACTION } from '../../config/const';
 import type { ModelDocument, Vec3 } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
@@ -93,6 +94,10 @@ export class GuideRenderer {
             const center = box.getCenter(new THREE.Vector3());
             const plane = document.planes.find((item) => item.id === profiles[0].planeId);
             const normal = plane ? new THREE.Vector3(...plane.normal).normalize() : new THREE.Vector3(0, 1, 0);
+            if (geometryAnchor?.key.endsWith(':intersection') && selected.includes(geometryAnchor.id)) {
+                center.copy(new THREE.Vector3(...geometryAnchor.point));
+                normal.copy(new THREE.Vector3(...geometryAnchor.normal));
+            }
             for (const direction of [1, -1] as const) {
                 this.group.add(this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId: profiles[profiles.length - 1].id, direction } }));
             }
@@ -133,6 +138,25 @@ export class GuideRenderer {
         });
     }
 
+    updateAnimation(camera: THREE.Camera, time: number) {
+        const height = this.options.renderer.domElement.clientHeight || 1;
+        const breath = Math.sin(time * 2.4);
+        this.group.children.forEach((arrow) => {
+            const origin = arrow.getWorldPosition(new THREE.Vector3());
+            const worldPerPixel = camera instanceof THREE.PerspectiveCamera
+                ? 2 * camera.position.distanceTo(origin) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height
+                : (camera as THREE.OrthographicCamera).top ? ((camera as THREE.OrthographicCamera).top - (camera as THREE.OrthographicCamera).bottom) / height : 0.1;
+            arrow.scale.setScalar(worldPerPixel * INTERACTION.arrowScreenLengthPx / 6);
+            arrow.traverse((object) => {
+                if (object instanceof THREE.Mesh) (object.material as THREE.MeshStandardMaterial).opacity = 0.76 + breath * 0.14;
+            });
+        });
+        this.faceFeedback.children.forEach((object) => {
+            if (!(object instanceof THREE.Mesh) || !object.userData.activeSelection) return;
+            (object.material as THREE.Material).opacity = 0.42 + breath * 0.12;
+        });
+    }
+
     refreshFaceFeedback() {
         clearGroup(this.faceFeedback);
         if (this.options.isSketchMode()) return;
@@ -161,6 +185,7 @@ export class GuideRenderer {
                 depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
                 clippingPlanes: this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [],
             }));
+            face.userData.activeSelection = active;
             face.renderOrder = 13;
             this.faceFeedback.add(face);
         }

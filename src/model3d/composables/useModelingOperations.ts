@@ -10,7 +10,7 @@ import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
     cloneDocument, createEntity,
     type BooleanOperation, type ModelDocument, type ModelEntity, type OperationState,
-    type PrimaryPanel, type SelectionKind, type Vec3,
+    type Point2, type PrimaryPanel, type SelectionKind, type Vec3,
 } from '../types';
 
 interface ModelingOperationsOptions {
@@ -23,6 +23,7 @@ interface ModelingOperationsOptions {
     activePanel: Ref<PrimaryPanel | null>;
     parameterCardOpen: Ref<boolean>;
     lastFace: Ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>;
+    profileFace: () => Point2[] | null;
     viewport: () => Viewport | undefined;
     message: ReturnType<typeof useMessage>;
     pushHistory: () => void;
@@ -36,7 +37,7 @@ interface ModelingOperationsOptions {
 export function useModelingOperations(options: ModelingOperationsOptions) {
     const {
         document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
-        parameterCardOpen, lastFace, viewport, message, pushHistory, popHistory, inputLength, setTool, startSketch,
+        parameterCardOpen, lastFace, profileFace, viewport, message, pushHistory, popHistory, inputLength, setTool, startSketch,
     } = options;
     const operation = ref<OperationState | null>(null);
     const historyEditId = ref<string | null>(null);
@@ -96,7 +97,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (operation.value) return;
         const primary = document.value.entities.find((item) => item.id === profileId && item.kind === 'sketch');
         if (!primary || !entityProfileClosed(primary)) return;
-        const profiles = existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && entityProfileClosed(item))];
+        const activeIntersection = existingBody ? null : profileFace();
+        const profiles = activeIntersection ? [primary] : existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && entityProfileClosed(item))];
         const before = cloneDocument(document.value);
         pushHistory();
         const bodies: ModelEntity[] = [];
@@ -106,9 +108,9 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 body = createEntity('extrude', uid());
                 body.name = uniqueEntityName(document.value, 'extrude');
                 body.parentId = profile.parentId;
-                body.profileId = profile.id;
-                body.points = profile.points!.map((point) => [...point]);
-                body.profileType = profile.profileType;
+                body.profileId = activeIntersection ? undefined : profile.id;
+                body.points = (activeIntersection || profile.points!).map((point) => [...point]);
+                body.profileType = activeIntersection ? 'polygon' : profile.profileType;
                 body.planeId = profile.planeId;
                 body.depth = 10;
                 body.sideMode = 'one';
@@ -122,9 +124,24 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             bodies.push(body);
         });
         const body = bodies[0];
+        let combinedResultId: string | undefined;
+        if (!existingBody && !activeIntersection && bodies.length > 1) {
+            let target = bodies[0];
+            bodies.slice(1).forEach((tool) => {
+                const result: ModelEntity = {
+                    id: uid(), parentId: target.parentId, name: '组合拉伸', kind: 'boolean', color: target.color, visible: true,
+                    position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], operation: 'union', operands: [target.id, tool.id],
+                };
+                target.visible = false;
+                tool.visible = false;
+                document.value.entities.push(result);
+                target = result;
+                combinedResultId = result.id;
+            });
+        }
         const targetId: string | null = null;
         const result: 'new' | BooleanOperation = 'new';
-        operation.value = { type: 'extrude', profileId, bodyId: body.id, profileIds: profiles.map((item) => item.id), bodyIds: bodies.map((item) => item.id), before, result, targetId, existing: !!existingBody };
+        operation.value = { type: 'extrude', profileId, bodyId: body.id, profileIds: profiles.map((item) => item.id), bodyIds: bodies.map((item) => item.id), before, result, targetId, existing: !!existingBody, combinedResultId };
         activePanel.value = null;
         historyEditId.value = existingBody?.id || null;
         selectedIds.value = profiles.map((item) => item.id);
@@ -177,7 +194,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 const plane = document.value.planes.find((item) => item.id === profile?.planeId);
                 if (plane) plane.visible = false;
             });
-            let selectedId = current.bodyId;
+            let selectedId = current.combinedResultId || current.bodyId;
             if (current.result !== 'new') {
                 if (!current.targetId) return message.warning('请选择自动布尔的目标 Body');
                 const target = document.value.entities.find((item) => item.id === current.targetId);

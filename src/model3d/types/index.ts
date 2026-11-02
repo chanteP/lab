@@ -167,7 +167,7 @@ export type SelectionKind = 'face' | 'edge' | 'body' | 'plane' | 'sketch' | 'mix
 export type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
 export type ConstraintRuleListItem = { id: string; label: string; entityId: string; index: number; ruleId?: string; lock?: 'point' | 'edge' };
 export type OperationState = {
-    type: 'extrude'; profileId: string; bodyId: string; profileIds: string[]; bodyIds: string[]; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean;
+    type: 'extrude'; profileId: string; bodyId: string; profileIds: string[]; bodyIds: string[]; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean; combinedResultId?: string;
 } | {
     type: 'boolean'; resultId: string; targetId: string; toolId: string; before: ModelDocument; keepTarget: boolean; keepTool: boolean; existing: boolean;
 };

@@ -38,6 +38,7 @@ export const VIEWPORT_COLORS = {
     gridMinor: '#cbd2cd',
     bodyEdge: '#334d46',
     selectedEmissive: '#164b45',
+    selectedBody: '#78c7ee',
     booleanTarget: '#6d35a8',
     booleanTool: '#175fc2',
     noEmissive: '#000000',

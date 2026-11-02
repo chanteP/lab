@@ -3,7 +3,7 @@ import type { TransformControls } from 'three/addons/controls/TransformControls.
 import { buildScene } from '../geometry';
 import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import type { ModelDocument, SketchPlane } from '../../types';
+import type { ModelDocument, SelectionKind, SketchPlane } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createDisplayEdgeGeometry, createFatLine } from './renderUtils';
 
@@ -36,6 +36,7 @@ interface SceneSynchronizerOptions {
     onRefreshSketchFaces: () => void;
     onRefreshSketchSelectionFeedback: () => void;
     onPlaneOrientation: (plane: SketchPlane) => void;
+    isProfileIntersection: () => boolean;
 }
 
 /** Rebuilds Three.js scene content from the document and owns scene-wide display state. */
@@ -45,6 +46,7 @@ export class SceneSynchronizer {
     readonly sectionOutlines = new THREE.Group();
     document: ModelDocument | null = null;
     selected: string[] = [];
+    selectionKind: SelectionKind = null;
     activePlane: SketchPlane | null = null;
     editingSketchId: string | null = null;
     editingBorderIndex: number | null = null;
@@ -308,8 +310,9 @@ export class SceneSynchronizer {
         this.options.onRefreshSketchFaces();
     }
 
-    setSelected(ids: string[]) {
+    setSelected(ids: string[], kind: SelectionKind = 'body') {
         this.selected = ids;
+        this.selectionKind = kind;
         this.applySelection();
         if (this.document) this.options.onUpdateExtrudeGuide(this.document);
     }
@@ -325,12 +328,18 @@ export class SceneSynchronizer {
             const mesh = object as THREE.Mesh;
             const material = mesh.material as THREE.MeshStandardMaterial;
             const active = this.selected.includes(mesh.userData.entityId) && this.options.getTool() !== 'offsetFace';
+            const entity = this.document?.entities.find((item) => item.id === mesh.userData.entityId);
+            const bodyActive = active && entity?.kind !== 'sketch' && ['body', 'mixed'].includes(this.selectionKind || '');
             if (material.emissive) {
-                const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
+                if (!material.userData.baseColor && material.color) material.userData.baseColor = material.color.getHex();
+                if (material.color) material.color.set(bodyActive ? VIEWPORT_COLORS.selectedBody : material.userData.baseColor);
+                const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active && !bodyActive && !['face', 'edge'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);
                 material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;
+                mesh.userData.bodySelected = bodyActive && role === VIEWPORT_COLORS.noEmissive;
             } else if (material.color) {
-                material.color.set(active ? SKETCH_COLORS.active : SKETCH_COLORS.line);
+                if (material.userData.sketchBaseColor === undefined) material.userData.sketchBaseColor = material.color.getHex();
+                material.color.set(active && !this.options.isProfileIntersection() ? SKETCH_COLORS.active : material.userData.sketchBaseColor);
             }
         });
         const id = this.selected[this.selected.length - 1];
@@ -339,6 +348,16 @@ export class SceneSynchronizer {
         if (planeObject && ['translate', 'rotate'].includes(this.options.getTool()) && !this.options.isSketchMode()) this.options.transform.attach(planeObject);
         else if (object && ['translate', 'rotate', 'scale'].includes(this.options.getTool()) && !this.options.isSketchMode()) this.options.transform.attach(object);
         this.options.onRefreshSketchSelectionFeedback();
+    }
+
+    updateSelectionAnimation(time: number) {
+        const intensity = 0.2 + (Math.sin(time * 2.4) + 1) * 0.08;
+        this.model.children.forEach((object) => {
+            if (!object.userData.bodySelected) return;
+            const material = (object as THREE.Mesh).material as THREE.MeshStandardMaterial;
+            material.emissive.set(VIEWPORT_COLORS.selectedBody);
+            material.emissiveIntensity = intensity;
+        });
     }
 
     dispose() {

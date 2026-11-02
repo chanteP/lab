@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { ProfileType, ProfileCurves } from './profiles';
-import type { LengthUnit, ModelDocument, Point2, SketchPlane, Vec3, SketchElementRef } from '../types';
+import type { LengthUnit, ModelDocument, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
 import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
@@ -20,7 +20,7 @@ export type SketchDimension = { kind: 'segment' | 'control' | 'width' | 'height'
 
 export interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
-    onGeometrySelect: (id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive?: boolean) => void;
+    onGeometrySelect: (id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive?: boolean, profileFace?: Point2[]) => void;
     onBodySelect: (id: string) => void;
     onPlaneSelect: (id: string) => void;
     onPlaneTransform: (id: string, position: Vec3, quaternion: THREE.Quaternion) => void;
@@ -123,6 +123,7 @@ export class Viewport {
                 const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal));
                 this.cameraController.planeGizmo.setOrientation(new THREE.Quaternion().setFromRotationMatrix(basis));
             },
+            isProfileIntersection: () => !!this.interaction?.geometryAnchor?.key.endsWith(':intersection'),
         });
         this.sketchRenderer = new SketchRenderer({
             container,
@@ -186,6 +187,9 @@ export class Viewport {
 
     private animate(delta: number) {
         this.cameraController.update(delta, () => this.interaction.updateOrbitRotation());
+        const time = performance.now() / 1000;
+        this.guideRenderer.updateAnimation(this.cameraController.camera, time);
+        this.sceneSynchronizer.updateSelectionAnimation(time);
         this.sceneSynchronizer.updateSection(this.cameraController.camera);
         this.sketchRenderer.updateScreenSpaceMarkers();
         if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
@@ -223,7 +227,7 @@ export class Viewport {
     setSketchEditing(id: string | null) { this.sceneSynchronizer.setSketchEditing(id); }
     setSketchEdgeEditing(index: number | null) { this.sceneSynchronizer.setSketchEdgeEditing(index); }
     setActivePlane(plane: SketchPlane | null) { this.sceneSynchronizer.setActivePlane(plane); }
-    setSelected(ids: string[]) { this.sceneSynchronizer.setSelected(ids); }
+    setSelected(ids: string[], kind: SelectionKind = 'body') { this.sceneSynchronizer.setSelected(ids, kind); }
     setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) { this.sketchRenderer.setSelectionState(edges, points); }
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
     clearGeometrySelection() { this.interaction.clearGeometrySelection(); }
