@@ -32,6 +32,7 @@ import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
+import SectionControl from './components/viewport/SectionControl.vue';
 import { STORAGE_KEYS } from './config/const';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
@@ -61,6 +62,8 @@ const selectionKind = ref<SelectionKind>(null);
 const parameterCardOpen = ref(true);
 const isolateActive = ref(false);
 const sectionActive = ref(false);
+const sectionOffset = ref(0);
+const sectionLimit = ref(100);
 const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
 const showEdges = ref(true);
 
@@ -138,7 +141,7 @@ const sketchEditing = useSketchEditing({
 });
 const {
     activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
-    openSketchContext, deleteSketchFromContext, deleteViewportSketch, addSketchPoint,
+    openSketchContext, deleteSketchFromContext, addSketchPoint,
     moveSketchPoint, finishSketchHandleDrag, moveSketchCenter, deleteSketchPoint, deleteSketchBorder,
     selectSketchSegment, moveSketchHandle, resetSketchHandle, selectSketchPoint,
     selectSketchPointRef, dragSketch, closeSketchPath, setSketchSides,
@@ -237,10 +240,15 @@ function toggleIsolate() {
 }
 function toggleSection() {
     sectionActive.value = !sectionActive.value;
-    const plane = activePlane.value && selectedIds.value.includes(activePlane.value.id) ? activePlane.value : null;
-    const normal = plane?.normal || lastFace.value?.normal || [0, 1, 0];
-    const point = plane?.origin || lastFace.value?.point || [0, 0, 0];
-    viewport?.setSection(sectionActive.value, normal as Vec3, point as Vec3);
+    if (sectionActive.value) {
+        sectionLimit.value = Math.max(1, viewport?.getSectionRadius() || 100);
+        sectionOffset.value = 0;
+    }
+    viewport?.setSection(sectionActive.value, sectionOffset.value);
+}
+function updateSectionOffset(value: number) {
+    sectionOffset.value = value;
+    viewport?.setSectionOffset(value);
 }
 function updateDisplayMode(mode: 'shaded' | 'wireframe' | 'xray') {
     displayMode.value = mode;
@@ -315,17 +323,13 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     activePanel.value = null;
     parameterCardOpen.value = true;
     if (additive) { setTool('select'); return; }
-    const entity = picked;
-    if (entity?.kind === 'sketch') {
-        if (!entityProfileClosed(entity)) startSketch(true);
-        else setTool('select');
-    } else setTool('select');
+    setTool('select');
 }
 function onBodySelect(id: string) {
     selectEntity(id);
     if (document.value.entities.find((item) => item.id === id)?.kind === 'sketch') {
         selectionKind.value = 'sketch';
-        startSketch(true);
+        setTool('select');
         return;
     }
     selectionKind.value = 'body';
@@ -404,6 +408,10 @@ function onKeyDown(event: KeyboardEvent) {
 
 watch(document, () => {
     if (!transforming) viewport?.sync(document.value);
+    if (sectionActive.value) {
+        sectionLimit.value = Math.max(1, viewport?.getSectionRadius() || 100);
+        if (Math.abs(sectionOffset.value) > sectionLimit.value) updateSectionOffset(Math.sign(sectionOffset.value) * sectionLimit.value);
+    }
     scheduleSave();
 }, { deep: true });
 watch([selectedIds, selectedShapes, sketchMode, selectionKind], ([ids, shapes, active, kind]) => {
@@ -572,6 +580,7 @@ onBeforeUnmount(() => {
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
                     @history="editHistory" />
+                <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean"
@@ -617,7 +626,6 @@ onBeforeUnmount(() => {
             <button :disabled="!selectedIds.length" @click="toggleIsolate(); viewportMenu = null"><NIcon><EyeOutline /></NIcon>{{ isolateActive ? '退出隔离' : '隔离所选对象' }}</button>
             <button :disabled="!selectedIds.length" @click="zoomToSelection"><NIcon><ScanOutline /></NIcon>缩放至所选对象</button>
             <button v-if="selectionKind === 'face'" @click="beginSketch(); viewportMenu = null"><SvgIcon name="pencil" />在此面上绘制</button>
-            <button v-if="selectionKind === 'sketch'" class="danger" @click="deleteViewportSketch"><NIcon><TrashOutline /></NIcon>删除草图</button>
         </div>
         <div v-if="sketchContextMenu" class="entity-context-menu" :style="{ left: `${sketchContextMenu.x}px`, top: `${sketchContextMenu.y}px` }" @click.stop>
             <button class="danger" @click="deleteSketchFromContext"><NIcon><TrashOutline /></NIcon>删除草图</button>

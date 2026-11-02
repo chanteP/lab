@@ -18,6 +18,7 @@ interface GuideRendererOptions {
     getTool: () => ViewTool;
     getGeometryAnchor: () => GeometryAnchor | null;
     getHoverFaceAnchor: () => GeometryAnchor | null;
+    getSectionPlane: () => THREE.Plane | null;
     isSketchMode: () => boolean;
     formatLength: (value: number) => string;
 }
@@ -36,23 +37,19 @@ export class GuideRenderer {
         group.userData.arrowKey = JSON.stringify(data);
         const active = group.userData.arrowKey === this.activeArrowKey;
         const hovered = group.userData.arrowKey === this.hoverArrowKey;
-        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
         const arrowLength = length / 3;
         const headHeight = Math.min(4, arrowLength * 0.7);
         const shaftLength = Math.max(0.5, arrowLength - headHeight);
-        const shape = new THREE.Shape([
-            new THREE.Vector2(-1.3, 0), new THREE.Vector2(-1.3, shaftLength), new THREE.Vector2(-2.2, shaftLength),
-            new THREE.Vector2(0, arrowLength), new THREE.Vector2(2.2, shaftLength), new THREE.Vector2(1.3, shaftLength), new THREE.Vector2(1.3, 0),
-        ]);
-        const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
-        const outlineMaterial = new THREE.LineBasicMaterial({ color: SKETCH_COLORS.arrowOutline, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
-        const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(shape.getPoints().map((point) => new THREE.Vector3(point.x, point.y, 0))), outlineMaterial);
-        group.add(arrow, outline);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, shaftLength, 24), material);
+        shaft.position.y = shaftLength / 2;
+        const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, headHeight, 32), material);
+        head.position.y = shaftLength + headHeight / 2;
+        group.add(shaft, head);
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
         group.scale.setScalar(2.5);
         group.traverse((child) => { Object.assign(child.userData, data); child.userData.arrowKey = group.userData.arrowKey; child.renderOrder = 100; });
-        outline.renderOrder = 101;
         return group;
     }
 
@@ -60,7 +57,7 @@ export class GuideRenderer {
         clearGroup(this.group);
         this.options.overlay.clear('guide-label:');
         this.refreshFaceFeedback();
-        if (this.options.isSketchMode()) return;
+        if (this.options.isSketchMode() || this.options.getSectionPlane()) return;
         const tool = this.options.getTool();
         const selected = this.options.getSelected();
         const geometryAnchor = this.options.getGeometryAnchor();
@@ -147,6 +144,7 @@ export class GuideRenderer {
             const material = edge.material as LineMaterial;
             material.color.set(color);
             material.linewidth = 4;
+            material.clippingPlanes = this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [];
             edge.renderOrder = 14;
             this.faceFeedback.add(edge);
         } else if (anchor.vertices.length >= 3) {
@@ -155,6 +153,7 @@ export class GuideRenderer {
             const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
                 color, transparent: true, opacity: active ? 0.48 : 0.3, side: THREE.DoubleSide,
                 depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+                clippingPlanes: this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [],
             }));
             face.renderOrder = 13;
             this.faceFeedback.add(face);

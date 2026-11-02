@@ -3,9 +3,26 @@ import type { TransformControls } from 'three/addons/controls/TransformControls.
 import { buildScene } from '../geometry';
 import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import type { ModelDocument, SketchPlane, Vec3 } from '../../types';
+import type { ModelDocument, SketchPlane } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
+
+/** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
+export function measureSectionRadius(objects: THREE.Object3D[]) {
+    let radiusSquared = 0;
+    const point = new THREE.Vector3();
+    objects.forEach((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.updateWorldMatrix(true, false);
+        const positions = object.geometry.attributes.position;
+        if (!positions) return;
+        for (let index = 0; index < positions.count; index++) {
+            point.fromBufferAttribute(positions, index).applyMatrix4(object.matrixWorld);
+            radiusSquared = Math.max(radiusSquared, point.lengthSq());
+        }
+    });
+    return Math.sqrt(radiusSquared);
+}
 
 interface SceneSynchronizerOptions {
     transform: TransformControls;
@@ -25,6 +42,7 @@ interface SceneSynchronizerOptions {
 export class SceneSynchronizer {
     readonly model = new THREE.Group();
     readonly planes = new THREE.Group();
+    readonly sectionOutlines = new THREE.Group();
     document: ModelDocument | null = null;
     selected: string[] = [];
     activePlane: SketchPlane | null = null;
@@ -34,7 +52,9 @@ export class SceneSynchronizer {
 
     private displayMode: 'shaded' | 'wireframe' | 'xray' = 'shaded';
     private showEdges = true;
-    private sectionPlane: THREE.Plane | null = null;
+    sectionPlane: THREE.Plane | null = null;
+    private sectionInversePlane: THREE.Plane | null = null;
+    private sectionOffset = 0;
     private isolateIds: Set<string> | null = null;
     private sketchHoverId: string | null = null;
 
@@ -44,6 +64,7 @@ export class SceneSynchronizer {
         this.document = document;
         this.options.onClearAltBorder();
         this.options.transform.detach();
+        clearGroup(this.sectionOutlines);
         clearGroup(this.model);
         const next = buildScene(document);
         [...next.children].forEach((child) => {
@@ -96,6 +117,7 @@ export class SceneSynchronizer {
         this.applyIsolation();
         this.activePlane = this.activePlane ? document.planes.find((plane) => plane.id === this.activePlane!.id) || null : null;
         this.applySelection();
+        this.rebuildSectionOutlines();
         this.updatePlaneAppearance();
         this.options.onUpdateExtrudeGuide(document);
         this.options.onRefreshSketchFaces();
@@ -134,10 +156,54 @@ export class SceneSynchronizer {
         this.model.children.forEach((child) => this.applyObjectDisplay(child));
     }
 
-    setSection(active: boolean, normal: Vec3 = [0, 1, 0], point: Vec3 = [0, 0, 0]) {
-        const direction = new THREE.Vector3(...normal).normalize();
-        this.sectionPlane = active ? new THREE.Plane(direction, -direction.dot(new THREE.Vector3(...point))) : null;
+    setSection(active: boolean, offset = 0) {
+        this.sectionOffset = offset;
+        this.sectionPlane = active ? new THREE.Plane(new THREE.Vector3(0, -1, 0), offset) : null;
+        this.sectionInversePlane = active ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -offset) : null;
+        this.sectionOutlines.visible = active;
+        if (active) this.rebuildSectionOutlines();
+        else clearGroup(this.sectionOutlines);
         this.model.children.forEach((child) => this.applyObjectDisplay(child));
+    }
+
+    setSectionOffset(offset: number) {
+        this.sectionOffset = offset;
+    }
+
+    getSectionRadius() {
+        const objects = this.model.children.filter((child) => child.visible && this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind !== 'sketch');
+        return measureSectionRadius(objects);
+    }
+
+    updateSection(camera: THREE.Camera) {
+        if (!this.sectionPlane || !this.sectionInversePlane) return;
+        const normal = camera.getWorldDirection(new THREE.Vector3()).normalize();
+        const point = normal.clone().multiplyScalar(this.sectionOffset);
+        this.sectionPlane.normal.copy(normal);
+        this.sectionPlane.constant = -normal.dot(point);
+        this.sectionInversePlane.normal.copy(normal).negate();
+        this.sectionInversePlane.constant = -this.sectionInversePlane.normal.dot(point);
+    }
+
+    isSectionPointClipped(point: THREE.Vector3) {
+        return !!this.sectionPlane && this.sectionPlane.distanceToPoint(point) < 0;
+    }
+
+    private rebuildSectionOutlines() {
+        clearGroup(this.sectionOutlines);
+        if (!this.sectionPlane || !this.sectionInversePlane) return;
+        this.model.children.forEach((child) => {
+            if (!(child instanceof THREE.Mesh) || !child.visible || this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind === 'sketch') return;
+            const outline = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({
+                color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.3, depthWrite: false,
+                clippingPlanes: [this.sectionInversePlane!],
+            }));
+            outline.position.copy(child.position);
+            outline.quaternion.copy(child.quaternion);
+            outline.scale.copy(child.scale);
+            outline.userData.sourceEntityId = child.userData.entityId;
+            this.sectionOutlines.add(outline);
+        });
     }
 
     applyIsolation() {
@@ -153,6 +219,10 @@ export class SceneSynchronizer {
             }
         });
         this.planes.children.forEach((child) => child.visible = !this.isolateIds || this.isolateIds.has(child.userData.planeId));
+        this.sectionOutlines.children.forEach((outline) => {
+            const source = this.model.children.find((child) => child.userData.entityId === outline.userData.sourceEntityId);
+            outline.visible = !!source?.visible;
+        });
     }
 
     setIsolate(ids: string[] | null) {
@@ -269,5 +339,6 @@ export class SceneSynchronizer {
     dispose() {
         clearGroup(this.model);
         clearGroup(this.planes);
+        clearGroup(this.sectionOutlines);
     }
 }

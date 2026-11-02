@@ -25,7 +25,7 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
 <template>
     <aside v-show="visible" class="left-panel panel" aria-label="项目与实体树">
         <section class="objects-section">
-            <div class="section-label">实体 <span class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon><NIcon class="add-folder-badge"><AddOutline /></NIcon></button><i>{{ entityCount }}</i></span></div>
+            <div class="section-label">实体 <span class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button><i>{{ entityCount }}</i></span></div>
             <div class="object-list">
                 <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
                 <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="(id, additive) => emit('select', id, additive)" @activate="emit('activate', $event)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
@@ -53,7 +53,6 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
 .section-actions button { display: flex; align-items: center; gap: 2px; padding: 2px 5px; border: 1px solid var(--model3d-ui-dce4df); border-radius: 4px; background: var(--model3d-ui-fff); color: var(--model3d-ui-527067); font-size: 9px; cursor: pointer; }
 .section-actions .add-folder { position: relative; width: 27px; height: 27px; justify-content: center; padding: 0; border-color: transparent; background: transparent; font-size: 18px; }
 .section-actions .add-folder:hover { color: var(--model3d-ui-147d70); background: var(--model3d-ui-e9edea); }
-.add-folder-badge { position: absolute; right: 1px; bottom: 1px; padding: 1px; color: var(--model3d-ui-147d70); background: var(--model3d-ui-fafbfa); border-radius: 50%; font-size: 10px; }
 .section-actions i { min-width: 18px; padding: 1px 5px; text-align: center; background: var(--model3d-ui-e9edea); border-radius: 8px; font-size: 9px; font-style: normal; }
 .object-list { flex: 1; overflow-y: auto; }
 .empty-objects { padding: 28px 10px; color: var(--model3d-ui-8c9891); text-align: center; font-size: 11px; line-height: 1.7; }

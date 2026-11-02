@@ -95,7 +95,8 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         selected.value[key][index] = key === 'scale' ? Math.max(0.01, value) : key === 'position' ? inputLength(value)! : value;
     }
     function removeSelected() {
-        if (selectedIds.value.length) deleteNodeIds(selectedIds.value);
+        const ids = sketchMode.value ? selectedIds.value : selectedIds.value.filter((id) => document.value.entities.find((item) => item.id === id)?.kind !== 'sketch');
+        if (ids.length) deleteNodeIds(ids);
     }
     function removeConstraintsForEdge(entityId: string, index: number) {
         if (activeConstraintRule.value?.entityId === entityId && activeConstraintRule.value.index === index) {

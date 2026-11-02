@@ -148,11 +148,13 @@ export class Viewport {
             getTool: () => this.tool,
             getGeometryAnchor: () => this.interaction?.geometryAnchor || null,
             getHoverFaceAnchor: () => this.interaction?.hoverFaceAnchor || null,
+            getSectionPlane: () => this.sceneSynchronizer.sectionPlane,
             isSketchMode: () => this.sketchMode,
             formatLength: (value) => this.formatLength(value),
         });
         this.engine.scene.add(
             this.sceneSynchronizer.model,
+            this.sceneSynchronizer.sectionOutlines,
             this.sketchRenderer.faces,
             this.sketchRenderer.group,
             this.sceneSynchronizer.planes,
@@ -183,6 +185,7 @@ export class Viewport {
 
     private animate(delta: number) {
         this.cameraController.update(delta, () => this.interaction.updateOrbitRotation());
+        this.sceneSynchronizer.updateSection(this.cameraController.camera);
         this.sketchRenderer.updateScreenSpaceMarkers();
         if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
         this.engine.render(this.cameraController.camera, this.cameraController.viewHelper, this.cameraController.planeGizmo, this.sketchMode, this.cameraController.controls.target);
@@ -207,7 +210,14 @@ export class Viewport {
     }
 
     setDisplayMode(mode: 'shaded' | 'wireframe' | 'xray', showEdges?: boolean) { this.sceneSynchronizer.setDisplayMode(mode, showEdges); }
-    setSection(active: boolean, normal: Vec3 = [0, 1, 0], point: Vec3 = [0, 0, 0]) { this.sceneSynchronizer.setSection(active, normal, point); }
+    setSection(active: boolean, offset = 0) {
+        this.sceneSynchronizer.setSection(active, offset);
+        if (this.sceneSynchronizer.document) this.guideRenderer.update(this.sceneSynchronizer.document);
+        this.guideRenderer.group.visible = !active;
+        if (active) this.overlay.clear('guide-label:');
+    }
+    setSectionOffset(offset: number) { this.sceneSynchronizer.setSectionOffset(offset); }
+    getSectionRadius() { return this.sceneSynchronizer.getSectionRadius(); }
     setIsolate(ids: string[] | null) { this.sceneSynchronizer.setIsolate(ids); }
     setSketchEditing(id: string | null) { this.sceneSynchronizer.setSketchEditing(id); }
     setSketchEdgeEditing(index: number | null) { this.sceneSynchronizer.setSketchEdgeEditing(index); }

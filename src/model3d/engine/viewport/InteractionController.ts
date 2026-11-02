@@ -231,13 +231,13 @@ export class InteractionController {
 
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
-        return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object));
+        return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
     }
 
     private hitEntityEdge(event: PointerEvent) {
         this.setPointer(event);
         this.raycaster.params.Line.threshold = Math.max(0.08, this.camera.position.distanceTo(this.controls.target) * 0.004);
-        return this.raycaster.intersectObjects(this.model.children, true).find((item) => item.object.userData.displayEdge && this.isVisible(item.object));
+        return this.raycaster.intersectObjects(this.model.children, true).find((item) => item.object.userData.displayEdge && this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
     }
 
     private hitExtrudeArrow(event: PointerEvent) {

@@ -12,7 +12,6 @@ export const SKETCH_COLORS = {
     arrow: '#78c7ee',
     arrowHover: '#1677c8',
     arrowActive: '#28a745',
-    arrowOutline: '#000000',
     planeBlue: '#5b8fc9',
     edge: '#26302c',
     point: '#ffffff',

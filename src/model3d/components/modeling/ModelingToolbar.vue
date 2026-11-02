@@ -46,7 +46,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
             <ViewportToolItem :description-on-hover="false" label="剖视图" :active="sectionActive" @click="emit('section')"><NIcon><CutOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
             <NPopover trigger="click" placement="right-start">
-                <template #trigger><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></template>
+                <template #trigger><span class="history-trigger"><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></span></template>
                 <div class="history-panel">
                     <strong>历史</strong>
                     <button v-for="step in historySteps" :key="step.id" type="button" @click="emit('history', step.id)"><span>{{ historyNames[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button>
@@ -65,6 +65,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 .vertical-toolbar .primary-tools :deep(.viewport-tool-item) { height: auto; min-height: 40px; }
 .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .toolbar-spacer { flex: 1; min-height: 2px; }
+.history-trigger { display: block; }
 .history-panel { width: 220px; max-height: 340px; overflow-y: auto; }
 .history-panel > strong { display: block; margin-bottom: 8px; font-size: 12px; }
 .history-panel > button { width: 100%; display: flex; align-items: center; gap: 7px; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--model3d-ui-edf0ee); background: transparent; color: var(--model3d-ui-4e5e54); font-size: 10px; text-align: left; cursor: pointer; }
