@@ -63,7 +63,7 @@ export const GIZMO_COLORS = {
 
 /** Default colors assigned to newly created model entities. */
 export const ENTITY_COLORS = {
-    primitive: '#789e9b',
+    primitive: '#8ca3b0',
 } as const;
 
 /** UI hex palette injected as --model3d-ui-<hex> custom properties. */
