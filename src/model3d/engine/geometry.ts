@@ -48,6 +48,22 @@ function signedVolume(geometry: THREE.BufferGeometry) {
     return volume;
 }
 
+function convexHull(points: THREE.Vector2[]) {
+    const sorted = points.map((point) => point.clone()).sort((a, b) => a.x - b.x || a.y - b.y).filter((point, index, all) => !index || point.distanceTo(all[index - 1]) > 1e-6);
+    const cross = (a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    const lower: THREE.Vector2[] = [], upper: THREE.Vector2[] = [];
+    sorted.forEach((point) => {
+        while (lower.length > 1 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+        lower.push(point);
+    });
+    for (let index = sorted.length - 1; index >= 0; index--) {
+        const point = sorted[index];
+        while (upper.length > 1 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+        upper.push(point);
+    }
+    return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
 function reflectExtrusion(geometry: THREE.BufferGeometry) {
     geometry.scale(1, 1, -1);
     reverseWinding(geometry);
@@ -145,6 +161,24 @@ function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>) {
         const relative = point.clone().sub(loop[0]);
         return new THREE.Vector2(relative.dot(u), relative.dot(v));
     });
+    const triangleArea = sourceIndices.reduce((sum, _, index) => {
+        if (index % 3) return sum;
+        const a = source[sourceIndices[index]], b = source[sourceIndices[index + 1]], c = source[sourceIndices[index + 2]];
+        const origin = new THREE.Vector3(...a), u = new THREE.Vector3(...b).sub(origin).normalize();
+        const v = new THREE.Vector3(...offset.normal).normalize().cross(u).normalize();
+        const project = (point: Vec3) => {
+            const relative = new THREE.Vector3(...point).sub(origin);
+            return new THREE.Vector2(relative.dot(u), relative.dot(v));
+        };
+        const pa = project(a), pb = project(b), pc = project(c);
+        return sum + Math.abs((pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x)) / 2;
+    }, 0);
+    const hull = convexHull(points);
+    const hullArea = Math.abs(hull.reduce((sum, point, index) => {
+        const next = hull[(index + 1) % hull.length];
+        return sum + point.x * next.y - next.x * point.y;
+    }, 0) / 2);
+    if (hull.length >= 3 && Math.abs(hullArea - triangleArea) <= Math.max(0.0001, triangleArea * 0.001)) points = hull;
     if (offset.distance < 0) {
         const center = points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / points.length);
         points = points.map((point) => point.clone().sub(center).multiplyScalar(1.0001).add(center));

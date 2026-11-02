@@ -95,7 +95,7 @@ export class GeometrySelector {
         let planar = true;
         let surfaceKey = 'triangle';
 
-        if (entity?.kind === 'box') {
+        if (entity?.kind === 'box' && !entity.meshGeometry) {
             const dimensions = [entity.width!, entity.height!, entity.depth!];
             const axis = Math.abs(localNormal.x) > 0.5 ? 0 : Math.abs(localNormal.y) > 0.5 ? 1 : 2;
             surfaceKey = `${axis}:${Math.sign(localNormal.getComponent(axis)) || 1}`;

@@ -129,6 +129,7 @@ export class InteractionController {
         this.onKeyUp = this.onKeyUp.bind(this);
         this.onAltKey = this.onAltKey.bind(this);
         this.onPointerLeave = this.onPointerLeave.bind(this);
+        this.onWindowBlur = this.onWindowBlur.bind(this);
         const canvas = this.renderer.domElement;
         canvas.addEventListener('pointerdown', this.onPointerDown, true);
         canvas.addEventListener('pointermove', this.onPointerMove, true);
@@ -142,6 +143,18 @@ export class InteractionController {
         window.addEventListener('keydown', this.onAltKey);
         window.addEventListener('keyup', this.onAltKey);
         window.addEventListener('blur', this.onKeyUp);
+        window.addEventListener('blur', this.onWindowBlur);
+    }
+
+    private onWindowBlur() {
+        if (!this.directDrag) return;
+        this.flushDirectMove();
+        this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
+        this.directDrag = null;
+        this.activeArrowKey = null;
+        this.container.classList.remove('is-handle-dragging');
+        this.updateArrowColors();
+        this.controls.enabled = true;
     }
 
     private onPointerLeave() {
@@ -989,6 +1002,7 @@ export class InteractionController {
         window.removeEventListener('keydown', this.onAltKey);
         window.removeEventListener('keyup', this.onAltKey);
         window.removeEventListener('blur', this.onKeyUp);
+        window.removeEventListener('blur', this.onWindowBlur);
         this.selectionRectangle.remove();
     }
 }

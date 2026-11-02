@@ -300,15 +300,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             return;
         }
         if (phase === 'end') {
-            syncDirectBoolean(item, true);
-            bakeDirectEntity(item);
-            if (directResultId && directBooleanMode.value === 'union') {
-                selectedIds.value = [directResultId];
-                selectionKind.value = 'body';
-            }
-            viewport()?.clearGeometrySelection();
-            directBase = null;
-            directFace = null;
+            finishDirectEdit();
             return;
         }
         if (!directBase) return;
@@ -343,6 +335,22 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             indices: geometry.index ? Array.from(geometry.index.array) : Array.from({ length: geometry.attributes.position.count }, (_, index) => index),
         };
         item.faceOffset = null;
+    }
+
+    function finishDirectEdit() {
+        if (!directBase) return;
+        const item = document.value.entities.find((entity) => entity.id === directBase!.id);
+        if (item) {
+            syncDirectBoolean(item, true);
+            bakeDirectEntity(item);
+            if (directResultId && directBooleanMode.value === 'union') {
+                selectedIds.value = [directResultId];
+                selectionKind.value = 'body';
+            }
+        }
+        viewport()?.clearGeometrySelection();
+        directBase = null;
+        directFace = null;
     }
 
     function syncDirectBoolean(item: ModelEntity, force = false) {
@@ -406,6 +414,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
         updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-        updateFaceOffsetInput, onDirectEdit, updateDirectBooleanMode,
+        updateFaceOffsetInput, onDirectEdit, finishDirectEdit, updateDirectBooleanMode,
     };
 }

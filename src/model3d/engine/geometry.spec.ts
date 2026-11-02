@@ -150,3 +150,33 @@ test('a baked cylinder remains a valid subtraction tool on the next boolean oper
     const hit = raycaster.intersectObject(mesh)[0];
     assert.equal(hit, undefined, 'the center ray must pass through the entire cylinder hole');
 });
+
+test('three consecutive box faces always come from the current baked mesh', () => {
+    const document = createDocument();
+    const entity = Object.assign(createEntity('box', 'box'), { position: [0, 0, 0], width: 40, height: 40, depth: 40 });
+    const selector = new GeometrySelector();
+    const apply = (normal: Vec3, distance: number) => {
+        const mesh = buildEntityMesh(entity, document);
+        const positions = mesh.geometry.attributes.position;
+        const indices = mesh.geometry.index;
+        let hit: THREE.Intersection | null = null;
+        for (let index = 0; index < (indices?.count || positions.count) && !hit; index += 3) {
+            const a = new THREE.Vector3().fromBufferAttribute(positions, indices ? indices.getX(index) : index), b = new THREE.Vector3().fromBufferAttribute(positions, indices ? indices.getX(index + 1) : index + 1), c = new THREE.Vector3().fromBufferAttribute(positions, indices ? indices.getX(index + 2) : index + 2);
+            const faceNormal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+            if (faceNormal.dot(new THREE.Vector3(...normal)) > 0.999) hit = { object: mesh, faceIndex: index / 3, face: { a: index, b: index + 1, c: index + 2, normal: faceNormal }, point: a.add(b).add(c).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+        }
+        assert(hit, `missing selected face ${normal.join(',')}`);
+        const anchor = selector.createFaceAnchor(hit!, entity);
+        entity.faceOffset = { normal, distance, vertices: anchor.vertices, indices: anchor.indices };
+        const geometry = buildEntityMesh(entity, document).geometry;
+        entity.meshGeometry = { positions: Array.from(geometry.attributes.position.array), indices: geometry.index ? Array.from(geometry.index.array) : [] };
+        entity.faceOffset = null;
+    };
+
+    apply([0, 1, 0], 5);
+    apply([1, 0, 0], 4);
+    apply([0, 0, 1], 3);
+    const result = bounds(entity);
+    assert.deepEqual(result.min.toArray(), [-20, -20, -20]);
+    assert.deepEqual(result.max.toArray(), [24, 25, 23]);
+});

@@ -97,7 +97,7 @@ const {
     operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
     createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
     updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-    updateFaceOffsetInput, onDirectEdit, updateDirectBooleanMode,
+    updateFaceOffsetInput, onDirectEdit, finishDirectEdit, updateDirectBooleanMode,
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
     parameterCardOpen, lastFace, viewport: () => viewport, message, pushHistory, popHistory, inputLength, setTool,
@@ -296,6 +296,7 @@ function onBlankCommit() {
 }
 
 function setTool(tool: ViewTool) {
+    finishDirectEdit();
     if (operation.value && activeTool.value !== tool) cancelOperation();
     stopMeasure();
     if (sketchMode.value) cancelSketch();
@@ -303,6 +304,7 @@ function setTool(tool: ViewTool) {
     viewport?.setTool(tool);
 }
 function selectFromItems(id: string, additive: boolean) {
+    finishDirectEdit();
     if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
     if (sketchMode.value && document.value.entities.some((item) => item.id === id && item.kind === 'sketch')) { selectSketchEntity(id); return; }
     selectEntity(id, additive);
@@ -315,6 +317,7 @@ function selectFromItems(id: string, additive: boolean) {
     else if (entity && entity.kind !== 'boolean') setTool('translate');
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
+    finishDirectEdit();
     const picked = document.value.entities.find((item) => item.id === id);
     if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
         operation.value.targetId = id;
@@ -330,6 +333,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     setTool('select');
 }
 function onBodySelect(id: string) {
+    finishDirectEdit();
     selectEntity(id);
     if (document.value.entities.find((item) => item.id === id)?.kind === 'sketch') {
         selectionKind.value = 'sketch';
