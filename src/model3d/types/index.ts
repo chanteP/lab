@@ -81,6 +81,7 @@ export interface ModelEntity {
     directSourceId?: string;
     directTargetId?: string;
     directTargetVisible?: boolean;
+    meshGeometry?: { positions: number[]; indices: number[] };
 }
 
 export interface ModelDocument {

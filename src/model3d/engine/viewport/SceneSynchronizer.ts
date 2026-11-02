@@ -5,7 +5,7 @@ import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 import type { ModelDocument, SketchPlane } from '../../types';
 import type { ViewTool } from '../Viewport';
-import { clearGroup, createFatLine } from './renderUtils';
+import { clearGroup, createDisplayEdgeGeometry, createFatLine } from './renderUtils';
 
 /** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
 export function measureSectionRadius(objects: THREE.Object3D[]) {
@@ -56,7 +56,7 @@ export class SceneSynchronizer {
     private sectionInversePlane: THREE.Plane | null = null;
     private sectionOffset = 0;
     private isolateIds: Set<string> | null = null;
-    private sketchHoverId: string | null = null;
+    private sketchHoverIds = new Set<string>();
 
     constructor(private readonly options: SceneSynchronizerOptions) {}
 
@@ -71,7 +71,7 @@ export class SceneSynchronizer {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && entity?.kind !== 'sketch') {
-                const edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
+                const edges = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
                 edges.userData.displayEdge = true;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.options.isSketchMode()) {
@@ -194,7 +194,7 @@ export class SceneSynchronizer {
         if (!this.sectionPlane || !this.sectionInversePlane) return;
         this.model.children.forEach((child) => {
             if (!(child instanceof THREE.Mesh) || !child.visible || this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind === 'sketch') return;
-            const outline = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 28), new THREE.LineBasicMaterial({
+            const outline = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({
                 color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.3, depthWrite: false,
                 clippingPlanes: [this.sectionInversePlane!],
             }));
@@ -245,7 +245,12 @@ export class SceneSynchronizer {
     }
 
     setSketchHover(id: string | null) {
-        if (this.sketchHoverId === id) return;
+        this.setSketchHovers(id ? [id] : []);
+    }
+
+    setSketchHovers(ids: string[]) {
+        const next = new Set(ids);
+        if (this.sketchHoverIds.size === next.size && [...next].every((id) => this.sketchHoverIds.has(id))) return;
         const paint = (entityId: string | null, hovered: boolean) => {
             if (!entityId) return;
             const object = this.model.children.find((item) => item.userData.entityId === entityId);
@@ -262,9 +267,9 @@ export class SceneSynchronizer {
                 else if (!hovered) material.opacity = material.userData.sketchBaseOpacity;
             });
         };
-        paint(this.sketchHoverId, false);
-        this.sketchHoverId = id;
-        paint(this.sketchHoverId, true);
+        this.sketchHoverIds.forEach((id) => paint(id, false));
+        this.sketchHoverIds = next;
+        this.sketchHoverIds.forEach((id) => paint(id, true));
     }
 
     planeMatrix(plane: SketchPlane) {

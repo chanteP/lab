@@ -24,7 +24,7 @@ export class ViewportEngine {
         this.renderer.setClearColor(VIEWPORT_COLORS.background, 1);
         this.renderer.localClippingEnabled = true;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        this.renderer.shadowMap.enabled = false;
+        this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 0.9;
@@ -54,7 +54,7 @@ export class ViewportEngine {
         this.scene.add(new THREE.HemisphereLight(VIEWPORT_COLORS.light, VIEWPORT_COLORS.lightGround, 1.25));
         this.sun = new THREE.DirectionalLight(VIEWPORT_COLORS.light, 2.1);
         this.sun.position.set(90, 160, 100);
-        this.sun.castShadow = false;
+        this.sun.castShadow = true;
         this.sun.shadow.mapSize.set(2048, 2048);
         Object.assign(this.sun.shadow.camera, { left: -180, right: 180, top: 180, bottom: -180 });
         this.sun.shadow.bias = -0.0002;
@@ -98,10 +98,9 @@ export class ViewportEngine {
 
     setShadowsVisible(visible: boolean) {
         this.shadow.visible = visible;
-        this.sun.castShadow = visible;
-        this.renderer.shadowMap.enabled = visible;
         this.scene.traverse((object) => {
             if (object instanceof THREE.Mesh) {
+                if (object.userData.entityId) object.castShadow = visible;
                 (Array.isArray(object.material) ? object.material : [object.material]).forEach((material) => material.needsUpdate = true);
             }
         });

@@ -37,7 +37,8 @@ export class GuideRenderer {
         group.userData.arrowKey = JSON.stringify(data);
         const active = group.userData.arrowKey === this.activeArrowKey;
         const hovered = group.userData.arrowKey === this.hoverArrowKey;
-        const material = new THREE.MeshBasicMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+        const material = new THREE.MeshStandardMaterial({ color: active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow, transparent: true, depthTest: false, depthWrite: false, roughness: 0.48, metalness: 0, envMapIntensity: 0.35 });
+        material.color.multiplyScalar(0.65);
         const arrowLength = length / 3;
         const headHeight = Math.min(4, arrowLength * 0.7);
         const shaftLength = Math.max(0.5, arrowLength - headHeight);
@@ -45,20 +46,15 @@ export class GuideRenderer {
         shaft.position.y = shaftLength / 2;
         const head = new THREE.Mesh(new THREE.ConeGeometry(2.2, headHeight, 32), material);
         head.position.y = shaftLength + headHeight / 2;
-        const shadowMaterial = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.arrowShadow, transparent: true, opacity: 0.2, depthTest: false, depthWrite: false, toneMapped: false });
-        const shadowShaft = new THREE.Mesh(shaft.geometry.clone(), shadowMaterial);
-        const shadowHead = new THREE.Mesh(head.geometry.clone(), shadowMaterial);
-        shadowShaft.position.copy(shaft.position).add(new THREE.Vector3(0.35, -0.3, 0));
-        shadowHead.position.copy(head.position).add(new THREE.Vector3(0.35, -0.3, 0));
-        shadowShaft.userData.arrowShadow = true;
-        shadowHead.userData.arrowShadow = true;
-        group.add(shadowShaft, shadowHead, shaft, head);
+        shaft.castShadow = true;
+        head.castShadow = true;
+        shaft.receiveShadow = true;
+        head.receiveShadow = true;
+        group.add(shaft, head);
         group.position.copy(origin);
         group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
         group.scale.setScalar(2.5);
         group.traverse((child) => { Object.assign(child.userData, data); child.userData.arrowKey = group.userData.arrowKey; child.renderOrder = 100; });
-        shadowShaft.renderOrder = 99;
-        shadowHead.renderOrder = 99;
         return group;
     }
 
@@ -131,9 +127,8 @@ export class GuideRenderer {
             const hovered = group.userData.arrowKey === this.hoverArrowKey;
             group.traverse((object) => {
                 if (!(object instanceof THREE.Mesh)) return;
-                if (object.userData.arrowShadow) return;
-                const material = object.material as THREE.MeshBasicMaterial;
-                if (material.color) material.color.set(active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow);
+                const material = object.material as THREE.MeshStandardMaterial;
+                if (material.color) material.color.set(active ? SKETCH_COLORS.arrowActive : hovered ? SKETCH_COLORS.arrowHover : SKETCH_COLORS.arrow).multiplyScalar(0.65);
             });
         });
     }

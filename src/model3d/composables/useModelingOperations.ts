@@ -45,8 +45,9 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     let directBase: ModelEntity | null = null;
     let directHistoryPushed = false;
     let directFace: { vertices: Vec3[]; indices: number[] } | null = null;
-    let directCrossDistance = Infinity;
+    let directLastDistance: number | null = null;
     let directResultId: string | null = null;
+    let lastDirectBooleanSync = 0;
     let extrudeGestureMoved = false;
 
     const canBoolean = computed(() => selectedEntities.value.length === 2);
@@ -267,36 +268,28 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             if (anchor && !anchor.planar) return;
             directBase = cloneEntity(item);
             directBooleanAvailable.value = false;
+            directLastDistance = null;
             const existingResult = document.value.entities.find((entity) => entity.directSourceId === item.id);
             directResultId = existingResult?.id || null;
             directBooleanMode.value = existingResult?.operation === 'union' ? 'union' : 'subtract';
             const transform = new THREE.Object3D();
             applyEntityTransform(transform, item);
             const inverse = transform.matrixWorld.clone().invert();
-            const sameFace = item.faceOffset?.vertices && new THREE.Vector3(...item.faceOffset.normal).dot(new THREE.Vector3(...normal)) > 0.99;
-            directFace = sameFace ? { vertices: item.faceOffset!.vertices!, indices: item.faceOffset!.indices || [] } : anchor ? {
+            directFace = anchor ? {
                 vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).applyMatrix4(inverse).toArray() as Vec3),
                 indices: [...anchor.indices],
             } : null;
-            directCrossDistance = directFace ? (() => {
-                const base = cloneEntity(item);
-                base.faceOffset = null;
-                const geometry = buildEntityMesh(base, document.value).geometry;
-                const positions = geometry.attributes.position;
-                const direction = new THREE.Vector3(...normal).normalize();
-                let min = Infinity;
-                for (let index = 0; index < positions.count; index++) min = Math.min(min, new THREE.Vector3().fromBufferAttribute(positions, index).dot(direction));
-                const selected = directFace!.vertices.reduce((sum, point) => sum + new THREE.Vector3(...point).dot(direction), 0) / directFace!.vertices.length;
-                return selected - min;
-            })() : Infinity;
             directHistoryPushed = false;
             return;
         }
         if (phase === 'end') {
+            syncDirectBoolean(item, true);
+            bakeDirectEntity(item);
             if (directResultId && directBooleanMode.value === 'union') {
                 selectedIds.value = [directResultId];
                 selectionKind.value = 'body';
             }
+            viewport()?.clearGeometrySelection();
             directBase = null;
             directFace = null;
             return;
@@ -307,6 +300,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             directHistoryPushed = true;
         }
         const next = (directBase.faceOffset?.distance || 0) + delta;
+        directLastDistance = next;
         item.faceOffset = { normal: [...normal], distance: Math.round(next * 100) / 100, vertices: directFace?.vertices, indices: directFace?.indices };
         syncDirectBoolean(item);
     }
@@ -324,17 +318,30 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         directBooleanAvailable.value = false;
     }
 
-    function syncDirectBoolean(item: ModelEntity) {
-        const crossed = !!item.faceOffset && item.faceOffset.distance < -directCrossDistance - 0.001;
-        if (!crossed) { clearDirectBoolean(); return; }
+    function bakeDirectEntity(item: ModelEntity) {
+        if (!directBase || !item.faceOffset) return;
+        const geometry = buildEntityMesh(item, document.value).geometry;
+        item.meshGeometry = {
+            positions: Array.from(geometry.attributes.position.array),
+            indices: geometry.index ? Array.from(geometry.index.array) : Array.from({ length: geometry.attributes.position.count }, (_, index) => index),
+        };
+        item.faceOffset = null;
+    }
 
+    function syncDirectBoolean(item: ModelEntity, force = false) {
+        const now = performance.now();
+        if (!force && directResultId && now - lastDirectBooleanSync < 80) return;
+        lastDirectBooleanSync = now;
+        const distance = item.faceOffset?.distance ?? directLastDistance ?? 0;
+        const previousResult = directResultId ? document.value.entities.find((entity) => entity.id === directResultId) : null;
         const sourceMesh = buildEntityMesh(item, document.value);
         const sourceBounds = new THREE.Box3().setFromObject(sourceMesh);
-        const previousTargetId = directResultId ? document.value.entities.find((entity) => entity.id === directResultId)?.directTargetId : null;
+        sourceBounds.expandByScalar(-0.001);
+        const previousTargetId = previousResult?.directTargetId;
         const target = document.value.entities.find((candidate) => (candidate.visible || candidate.id === previousTargetId) && candidate.id !== item.id && candidate.kind !== 'sketch' && !candidate.directSourceId && (() => {
             try { return sourceBounds.intersectsBox(new THREE.Box3().setFromObject(buildEntityMesh(candidate, document.value))); } catch { return false; }
         })());
-        if (!target) { clearDirectBoolean(); return; }
+        if (!target || (distance >= 0 && !previousResult)) { clearDirectBoolean(); return; }
 
         directBooleanAvailable.value = true;
         let result = directResultId ? document.value.entities.find((entity) => entity.id === directResultId) : null;

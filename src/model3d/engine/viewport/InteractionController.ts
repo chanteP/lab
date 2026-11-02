@@ -58,6 +58,8 @@ export class InteractionController {
     private spaceSketchPointerBlocked = false;
     private lastPointer: { clientX: number; clientY: number } | null = null;
     private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number; anchor: GeometryAnchor | null } | null = null;
+    private directMoveFrame = 0;
+    private pendingDirectDelta: number | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
     private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
@@ -234,6 +236,18 @@ export class InteractionController {
         return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
     }
 
+    private hitSketchEntities(event: PointerEvent) {
+        this.setPointer(event);
+        const ids = new Set<string>();
+        return this.raycaster.intersectObjects(this.model.children, false).filter((item) => {
+            const id = item.object.userData.entityId;
+            if (ids.has(id) || !this.isVisible(item.object) || this.sceneSynchronizer.isSectionPointClipped(item.point)) return false;
+            if (this.document?.entities.find((entity) => entity.id === id)?.kind !== 'sketch') return false;
+            ids.add(id);
+            return true;
+        });
+    }
+
     private hitEntityEdge(event: PointerEvent) {
         this.setPointer(event);
         this.raycaster.params.Line.threshold = Math.max(0.08, this.camera.position.distanceTo(this.controls.target) * 0.004);
@@ -339,6 +353,26 @@ export class InteractionController {
 
     private capturePointer(event: PointerEvent) {
         try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* Pointer may already be released. */ }
+    }
+
+    private applyDirectMove(delta: number) {
+        if (!this.directDrag) return;
+        this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
+        if (this.directDrag.anchor) {
+            const offset = new THREE.Vector3(...this.directDrag.worldNormal).multiplyScalar(delta);
+            this.geometryAnchor = {
+                ...this.directDrag.anchor,
+                point: new THREE.Vector3(...this.directDrag.anchor.point).add(offset).toArray(),
+                vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()),
+            };
+        }
+    }
+
+    private flushDirectMove() {
+        if (this.directMoveFrame) cancelAnimationFrame(this.directMoveFrame);
+        this.directMoveFrame = 0;
+        if (this.pendingDirectDelta !== null) this.applyDirectMove(this.pendingDirectDelta);
+        this.pendingDirectDelta = null;
     }
 
     private releasePointer(event: PointerEvent) {
@@ -598,15 +632,8 @@ export class InteractionController {
             if (direction.lengthSq() < 0.000001) direction.set(0, -1);
             direction.normalize();
             const delta = ((event.clientX - this.directDrag.x) * direction.x + (event.clientY - this.directDrag.y) * direction.y) * scale;
-            this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
-            if (this.directDrag.anchor) {
-                const offset = new THREE.Vector3(...this.directDrag.worldNormal).multiplyScalar(delta);
-                this.geometryAnchor = {
-                    ...this.directDrag.anchor,
-                    point: new THREE.Vector3(...this.directDrag.anchor.point).add(offset).toArray(),
-                    vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()),
-                };
-            }
+            this.pendingDirectDelta = delta;
+            if (!this.directMoveFrame) this.directMoveFrame = requestAnimationFrame(() => this.flushDirectMove());
             return;
         }
         if (this.measureMode && this.sketchMode) {
@@ -630,7 +657,7 @@ export class InteractionController {
             const hit = this.hitEntity(event);
             const edgeHit = this.hitEntityEdge(event);
             const sketchId = hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch' ? hit.object.userData.entityId : null;
-            this.setSketchHover(sketchId);
+            this.setSketchHovers(sketchId ? this.hitSketchEntities(event).map((item) => item.object.userData.entityId) : []);
             if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
@@ -752,6 +779,7 @@ export class InteractionController {
         }
         if (this.directDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
+            this.flushDirectMove();
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
             this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: false });
             this.directDrag = null;
@@ -809,6 +837,14 @@ export class InteractionController {
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
         const hitIsSketch = !!hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch';
         if (planeHit && (!hit || (!hitIsSketch && planeHit.distance < hit.distance))) { this.callbacks.onPlaneSelect(planeHit.id); return; }
+        if (hit && hitIsSketch) {
+            const hits = this.hitSketchEntities(event);
+            const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
+            this.geometryAnchor = this.createGeometryAnchor(hit);
+            this.hoverFaceAnchor = null;
+            hits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0));
+            return;
+        }
         if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
             this.hoverFaceAnchor = null;
@@ -855,6 +891,7 @@ export class InteractionController {
     private updateAltBorder(event: PointerEvent) { this.sketchRenderer.updateAltBorder(event); }
     private updateSketchFaceHover(event: PointerEvent) { this.sketchRenderer.updateFaceHover(event); }
     private setSketchHover(id: string | null) { this.sceneSynchronizer.setSketchHover(id); }
+    private setSketchHovers(ids: string[]) { this.sceneSynchronizer.setSketchHovers(ids); }
     private refreshFaceFeedback() { this.guideRenderer.refreshFaceFeedback(); }
     private clearHoverFace() { this.measurementRenderer.clearHoverFace(); }
     private showHoverFace(hit: THREE.Intersection) { this.measurementRenderer.showHoverFace(hit); }
@@ -912,6 +949,7 @@ export class InteractionController {
     }
 
     dispose() {
+        if (this.directMoveFrame) cancelAnimationFrame(this.directMoveFrame);
         const canvas = this.renderer.domElement;
         canvas.removeEventListener('pointerdown', this.onPointerDown, true);
         canvas.removeEventListener('pointermove', this.onPointerMove, true);

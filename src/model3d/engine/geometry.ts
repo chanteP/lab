@@ -10,6 +10,49 @@ function qualityValues(quality: GeometryQuality) {
     return { radial: 128, sphere: 128 };
 }
 
+function reverseWinding(geometry: THREE.BufferGeometry) {
+    if (geometry.index) {
+        const index = geometry.index;
+        for (let offset = 0; offset < index.count; offset += 3) {
+            const b = index.getX(offset + 1);
+            index.setX(offset + 1, index.getX(offset + 2));
+            index.setX(offset + 2, b);
+        }
+        index.needsUpdate = true;
+    } else {
+        Object.values(geometry.attributes).forEach((attribute) => {
+            const array = attribute.array as unknown as number[];
+            for (let offset = 0; offset < attribute.count; offset += 3) {
+                for (let component = 0; component < attribute.itemSize; component++) {
+                    const a = (offset + 1) * attribute.itemSize + component;
+                    const b = (offset + 2) * attribute.itemSize + component;
+                    [array[a], array[b]] = [array[b], array[a]];
+                }
+            }
+            attribute.needsUpdate = true;
+        });
+    }
+}
+
+function signedVolume(geometry: THREE.BufferGeometry) {
+    const positions = geometry.attributes.position;
+    const index = geometry.index;
+    const count = index?.count || positions.count;
+    let volume = 0;
+    for (let offset = 0; offset < count; offset += 3) {
+        const a = new THREE.Vector3().fromBufferAttribute(positions, index ? index.getX(offset) : offset);
+        const b = new THREE.Vector3().fromBufferAttribute(positions, index ? index.getX(offset + 1) : offset + 1);
+        const c = new THREE.Vector3().fromBufferAttribute(positions, index ? index.getX(offset + 2) : offset + 2);
+        volume += a.dot(b.cross(c)) / 6;
+    }
+    return volume;
+}
+
+function reflectExtrusion(geometry: THREE.BufferGeometry) {
+    geometry.scale(1, 1, -1);
+    reverseWinding(geometry);
+}
+
 export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity) {
     object.position.fromArray(entity.position);
     object.rotation.set(...entity.rotation.map(THREE.MathUtils.degToRad) as Vec3);
@@ -98,14 +141,36 @@ function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>) {
     const direction = normal.clone().multiplyScalar(Math.sign(offset.distance) || 1);
     const u = loop[1].clone().sub(loop[0]).normalize();
     const v = direction.clone().cross(u).normalize();
-    const shape = new THREE.Shape(loop.map((point) => {
+    let points = loop.map((point) => {
         const relative = point.clone().sub(loop[0]);
         return new THREE.Vector2(relative.dot(u), relative.dot(v));
-    }));
-    const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.abs(offset.distance), bevelEnabled: false, steps: 1 });
+    });
+    if (offset.distance < 0) {
+        const center = points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / points.length);
+        points = points.map((point) => point.clone().sub(center).multiplyScalar(1.0001).add(center));
+    }
+    const overlap = Math.min(0.001, Math.abs(offset.distance) / 1000 || 0.001);
+    const depth = Math.abs(offset.distance) + overlap;
+    const positions: number[] = [];
+    const triangles = THREE.ShapeUtils.triangulateShape(points, []);
+    const push = (point: THREE.Vector2, z: number) => positions.push(point.x, point.y, z);
+    triangles.forEach(([a, b, c]) => {
+        push(points[a], 0); push(points[b], 0); push(points[c], 0);
+        push(points[a], depth); push(points[b], depth); push(points[c], depth);
+    });
+    for (let index = 0; index < points.length; index++) {
+        const a = points[index], b = points[(index + 1) % points.length];
+        push(a, 0); push(b, 0); push(b, depth);
+        push(a, 0); push(b, depth); push(a, depth);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(positions.length / 3 * 2), 2));
+    geometry.computeVertexNormals();
     const basis = new THREE.Matrix4().makeBasis(u, v, direction);
-    basis.setPosition(loop[0]);
+    basis.setPosition(loop[0].clone().addScaledVector(direction, -overlap));
     geometry.applyMatrix4(basis);
+    if (signedVolume(geometry) < 0) reverseWinding(geometry);
     return geometry;
 }
 
@@ -125,15 +190,49 @@ function offsetArbitraryFace(base: THREE.BufferGeometry, offset: NonNullable<Mod
     const crossed = max + offset.distance < min - 0.0001;
     let result = subtractGeometry(base.clone(), extension.clone());
     if (crossed) {
-        const outside = subtractGeometry(extension.clone(), base.clone());
+        const outside = faceExtension({ ...offset, distance: offset.distance + max - min });
+        outside.translate(...normal.clone().multiplyScalar(min - max).toArray());
         result = result.attributes.position.count ? unionGeometry(result, outside) : outside;
     }
     base.dispose();
     extension.dispose();
+    if (!result.attributes.position.count) return result;
+    const limit = crossed ? max : max + offset.distance;
+    const source = result;
+    const resultPositions = source.attributes.position;
+    const indices = source.index;
+    const kept: number[] = [];
+    for (let triangle = 0; triangle < (indices?.count || resultPositions.count); triangle += 3) {
+        const center = new THREE.Vector3();
+        for (let corner = 0; corner < 3; corner++) center.add(new THREE.Vector3().fromBufferAttribute(resultPositions, indices ? indices.getX(triangle + corner) : triangle + corner));
+        if (center.multiplyScalar(1 / 3).dot(normal) <= limit + 0.0001) {
+            for (let corner = 0; corner < 3; corner++) kept.push(indices ? indices.getX(triangle + corner) : triangle + corner);
+        }
+    }
+    if (kept.length !== (indices?.count || resultPositions.count)) {
+        const cleaned = new THREE.BufferGeometry();
+        Object.entries(source.attributes).forEach(([name, attribute]) => {
+            const values: number[] = [];
+            kept.forEach((vertex) => {
+                for (let component = 0; component < attribute.itemSize; component++) values.push(attribute.array[vertex * attribute.itemSize + component]);
+            });
+            cleaned.setAttribute(name, new THREE.Float32BufferAttribute(values, attribute.itemSize));
+        });
+        result = cleaned;
+    }
     return result;
 }
 
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
+    if (entity.meshGeometry?.positions.length) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(entity.meshGeometry.positions, 3));
+        if (entity.meshGeometry.indices.length) geometry.setIndex(entity.meshGeometry.indices);
+        geometry.computeVertexNormals();
+        geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
+        if (entity.faceOffset?.distance && entity.faceOffset.vertices) return offsetArbitraryFace(geometry, entity.faceOffset);
+        return geometry;
+    }
     const q = qualityValues(quality);
     if (entity.kind === 'box') {
         const width = entity.width!;
@@ -209,7 +308,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     if (plane) {
         if (sourceEntity.sideMode === 'one') geometry.translate(0, 0, -box.min.z);
         else geometry.translate(0, 0, -(box.min.z + box.max.z) / 2);
-        if (sourceEntity.direction === -1) geometry.scale(1, 1, -1);
+        if (sourceEntity.direction === -1) reflectExtrusion(geometry);
         const u = new THREE.Vector3(...plane.u);
         const v = new THREE.Vector3(...plane.v);
         const normal = new THREE.Vector3(...plane.normal);
@@ -298,7 +397,7 @@ export function buildEntityMesh(
     mesh.userData.entityId = entity.id;
     mesh.geometry.clearGroups();
     applyEntityTransform(mesh, entity);
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     return mesh;
 }
