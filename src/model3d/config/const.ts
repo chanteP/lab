@@ -16,7 +16,7 @@ export const INTERACTION = {
     sectorQuarterSnapThresholdDeg: 4,
     sketchGuideSnapPx: 8,
     // Screen-space arrow length; world scale is recalculated per camera and position.
-    arrowScreenLengthPx: 96,
+    arrowScreenLengthPx: 64,
     // Reconnected intersection endpoints may differ slightly from the sampled host edge.
     sketchIntersectionTolerance: 0.02,
 } as const;

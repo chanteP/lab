@@ -351,7 +351,7 @@ export class SceneSynchronizer {
     }
 
     updateSelectionAnimation(time: number) {
-        const intensity = 0.2 + (Math.sin(time * 2.4) + 1) * 0.08;
+        const intensity = 0.04 + (Math.sin(time * 2.4) + 1) * 0.16;
         this.model.children.forEach((object) => {
             if (!object.userData.bodySelected) return;
             const material = (object as THREE.Mesh).material as THREE.MeshStandardMaterial;
