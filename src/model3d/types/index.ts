@@ -77,7 +77,10 @@ export interface ModelEntity {
     draftAngle?: number;
     operation?: BooleanOperation;
     operands?: [string, string];
-    faceOffset?: { normal: Vec3; distance: number } | null;
+    faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[] } | null;
+    directSourceId?: string;
+    directTargetId?: string;
+    directTargetVisible?: boolean;
 }
 
 export interface ModelDocument {

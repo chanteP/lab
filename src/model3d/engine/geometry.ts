@@ -57,6 +57,82 @@ function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: n
     return shrink ? subtractGeometry(base, extension) : unionGeometry(base, extension);
 }
 
+function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>) {
+    const source = offset.vertices || [];
+    const sourceIndices = offset.indices || [];
+    if (source.length < 3 || !offset.distance) return new THREE.BufferGeometry();
+    const vertices: THREE.Vector3[] = [];
+    const vertexMap = new Map<string, number>();
+    source.forEach((point) => {
+        const key = point.map((value) => value.toFixed(5)).join(',');
+        if (vertexMap.has(key)) return;
+        vertexMap.set(key, vertices.length);
+        vertices.push(new THREE.Vector3(...point));
+    });
+    const edgeCounts = new Map<string, [number, number, number]>();
+    for (let index = 0; index + 2 < sourceIndices.length; index += 3) {
+        const triangle = sourceIndices.slice(index, index + 3).map((vertex) => vertexMap.get(source[vertex].map((value) => value.toFixed(5)).join(','))!);
+        [[0, 1], [1, 2], [2, 0]].forEach(([a, b]) => {
+            const key = [triangle[a], triangle[b]].sort((x, y) => x - y).join(':');
+            const edge = edgeCounts.get(key);
+            if (edge) edge[2]++;
+            else edgeCounts.set(key, [triangle[a], triangle[b], 1]);
+        });
+    }
+    const boundary = [...edgeCounts.values()].filter((edge) => edge[2] === 1);
+    if (!boundary.length) return new THREE.BufferGeometry();
+    const adjacency = new Map<number, number[]>();
+    boundary.forEach(([a, b]) => {
+        adjacency.set(a, [...adjacency.get(a) || [], b]);
+        adjacency.set(b, [...adjacency.get(b) || [], a]);
+    });
+    const ordered = [boundary[0][0], boundary[0][1]];
+    while (ordered.length <= boundary.length) {
+        const previous = ordered[ordered.length - 2], current = ordered[ordered.length - 1];
+        const next = (adjacency.get(current) || []).find((vertex) => vertex !== previous);
+        if (next === undefined || next === ordered[0]) break;
+        ordered.push(next);
+    }
+    const loop = ordered.map((index) => vertices[index]);
+    const normal = new THREE.Vector3(...offset.normal).normalize();
+    const direction = normal.clone().multiplyScalar(Math.sign(offset.distance) || 1);
+    const u = loop[1].clone().sub(loop[0]).normalize();
+    const v = direction.clone().cross(u).normalize();
+    const shape = new THREE.Shape(loop.map((point) => {
+        const relative = point.clone().sub(loop[0]);
+        return new THREE.Vector2(relative.dot(u), relative.dot(v));
+    }));
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: Math.abs(offset.distance), bevelEnabled: false, steps: 1 });
+    const basis = new THREE.Matrix4().makeBasis(u, v, direction);
+    basis.setPosition(loop[0]);
+    geometry.applyMatrix4(basis);
+    return geometry;
+}
+
+function offsetArbitraryFace(base: THREE.BufferGeometry, offset: NonNullable<ModelEntity['faceOffset']>) {
+    const extension = faceExtension(offset);
+    if (!extension.attributes.position) return base;
+    if (offset.distance > 0) return unionGeometry(base, extension);
+
+    const normal = new THREE.Vector3(...offset.normal).normalize();
+    let min = Infinity, max = -Infinity;
+    const positions = base.attributes.position;
+    for (let index = 0; index < positions.count; index++) {
+        const projection = new THREE.Vector3().fromBufferAttribute(positions, index).dot(normal);
+        min = Math.min(min, projection);
+        max = Math.max(max, projection);
+    }
+    const crossed = max + offset.distance < min - 0.0001;
+    let result = subtractGeometry(base.clone(), extension.clone());
+    if (crossed) {
+        const outside = subtractGeometry(extension.clone(), base.clone());
+        result = result.attributes.position.count ? unionGeometry(result, outside) : outside;
+    }
+    base.dispose();
+    extension.dispose();
+    return result;
+}
+
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
     const q = qualityValues(quality);
     if (entity.kind === 'box') {
@@ -70,7 +146,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const sign = Math.sign(normal.getComponent(axis)) || 1;
         const thickness = entity.faceOffset.distance;
         const dimensions = [width, height, depth];
-        dimensions[axis] += thickness;
+        dimensions[axis] = Math.abs(dimensions[axis] + thickness);
         const geometry = new THREE.BoxGeometry(...dimensions as Vec3);
         geometry.translate(...new THREE.Vector3().setComponent(axis, sign * thickness / 2).toArray());
         base.dispose();
@@ -80,7 +156,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const base = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height!, q.radial, 1, false);
         if (!entity.faceOffset?.distance || Math.abs(entity.faceOffset.normal[1]) < 0.5) return base;
         const sign = Math.sign(entity.faceOffset.normal[1]) || 1;
-        const geometry = new THREE.CylinderGeometry(entity.radius!, entity.radius!, entity.height! + entity.faceOffset.distance, q.radial, 1, false);
+        const geometry = new THREE.CylinderGeometry(entity.radius!, entity.radius!, Math.abs(entity.height! + entity.faceOffset.distance), q.radial, 1, false);
         geometry.translate(0, sign * entity.faceOffset.distance / 2, 0);
         base.dispose();
         return geometry;
@@ -89,26 +165,41 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         return new THREE.SphereGeometry(entity.radius!, q.sphere, Math.max(16, q.sphere / 2));
     }
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
-    const points = entity.points || [];
+    let sourceEntity = entity;
+    let fixedBoundary = 0;
+    const planeNormal = plane ? new THREE.Vector3(...plane.normal).normalize() : null;
+    const faceNormal = entity.faceOffset ? new THREE.Vector3(...entity.faceOffset.normal).normalize() : null;
+    const axialOffset = !!(plane && planeNormal && faceNormal && entity.faceOffset?.distance && Math.abs(faceNormal.dot(planeNormal)) > 0.9);
+    if (axialOffset && planeNormal && faceNormal) {
+        const originalDirection = entity.direction === -1 ? -1 : 1;
+        const selectedDirection = Math.sign(faceNormal.dot(planeNormal)) || 1;
+        const half = entity.sideMode === 'symmetric' ? entity.depth! / 2 : 0;
+        const selected = selectedDirection === originalDirection ? originalDirection * (entity.depth! - half) : -originalDirection * half;
+        const fixed = selectedDirection === originalDirection ? -originalDirection * half : originalDirection * (entity.depth! - half);
+        const dragged = selected + selectedDirection * entity.faceOffset!.distance;
+        const vector = dragged - fixed;
+        fixedBoundary = fixed;
+        sourceEntity = { ...entity, depth: Math.abs(vector), direction: (Math.sign(vector) || originalDirection) as 1 | -1, sideMode: 'one', faceOffset: null };
+    }
+    const points = sourceEntity.points || [];
     if (!entity.parts?.length && (points.length < 2 || (entity.profileType !== 'circle' && points.length < 3))) return new THREE.BufferGeometry();
     const shape = entity.parts?.length
         ? entity.parts.filter((part) => part.closed && part.points.length >= 3).map((part) => new THREE.Shape(part.points.map(([x, y]) => new THREE.Vector2(x, y))))
-        : profileShape(entity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, entity.curves, entity.sides, entity.sectorAngle, entity.open, entity.profileStartAngle, entity.analyticCurves);
+        : profileShape(sourceEntity.profileType || 'polygon', points, quality === 'preview' ? 64 : 128, sourceEntity.curves, sourceEntity.sides, sourceEntity.sectorAngle, sourceEntity.open, sourceEntity.profileStartAngle, sourceEntity.analyticCurves);
     if (Array.isArray(shape) && !shape.length) return new THREE.BufferGeometry();
-    const offset = entity.faceOffset?.distance && plane ? entity.faceOffset.distance : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: entity.depth! + offset,
+        depth: sourceEntity.depth!,
         steps: 1,
         bevelEnabled: false,
         curveSegments: 12,
     });
-    if (entity.draftAngle) {
+    if (sourceEntity.draftAngle) {
         const center = points.reduce((sum, point) => [sum[0] + point[0] / points.length, sum[1] + point[1] / points.length], [0, 0]);
         const radius = Math.max(1, ...points.map((point) => Math.hypot(point[0] - center[0], point[1] - center[1])));
         const positions = geometry.attributes.position;
         for (let index = 0; index < positions.count; index++) {
             const z = positions.getZ(index);
-            const factor = Math.max(0.05, 1 - z * Math.tan(THREE.MathUtils.degToRad(entity.draftAngle)) / radius);
+            const factor = Math.max(0.05, 1 - z * Math.tan(THREE.MathUtils.degToRad(sourceEntity.draftAngle)) / radius);
             positions.setX(index, center[0] + (positions.getX(index) - center[0]) * factor);
             positions.setY(index, center[1] + (positions.getY(index) - center[1]) * factor);
         }
@@ -116,9 +207,9 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
     if (plane) {
-        if (entity.sideMode === 'one') geometry.translate(0, 0, -box.min.z);
+        if (sourceEntity.sideMode === 'one') geometry.translate(0, 0, -box.min.z);
         else geometry.translate(0, 0, -(box.min.z + box.max.z) / 2);
-        if (entity.direction === -1) geometry.scale(1, 1, -1);
+        if (sourceEntity.direction === -1) geometry.scale(1, 1, -1);
         const u = new THREE.Vector3(...plane.u);
         const v = new THREE.Vector3(...plane.v);
         const normal = new THREE.Vector3(...plane.normal);
@@ -131,12 +222,10 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         const legacyBox = geometry.boundingBox!;
         geometry.translate(0, -(legacyBox.min.y + legacyBox.max.y) / 2, 0);
     }
-    if (offset && plane) {
-        const planeNormal = new THREE.Vector3(...plane.normal).normalize();
-        const direction = Math.sign(new THREE.Vector3(...entity.faceOffset.normal).dot(planeNormal)) || 1;
-        const originalDirection = entity.direction === -1 ? -1 : 1;
-        const translation = entity.sideMode === 'symmetric' || direction !== originalDirection ? direction * offset / (entity.sideMode === 'symmetric' ? 2 : 1) : 0;
-        geometry.translate(...planeNormal.multiplyScalar(translation).toArray());
+    if (axialOffset && planeNormal) geometry.translate(...planeNormal.multiplyScalar(fixedBoundary).toArray());
+    else if (entity.faceOffset?.distance && entity.faceOffset.vertices) {
+        const offsetGeometry = offsetArbitraryFace(geometry, entity.faceOffset);
+        if (offsetGeometry !== geometry) return offsetGeometry;
     }
     return geometry;
 }
@@ -198,7 +287,9 @@ export function buildEntityMesh(
         evaluator.useGroups = false;
         const operation = entity.operation === 'union' ? ADDITION : entity.operation === 'intersect' ? INTERSECTION : SUBTRACTION;
         mesh = evaluator.evaluate(brushA, brushB, operation);
-        if (entity.faceOffset?.distance) mesh.geometry = offsetBoundedFace(mesh.geometry, entity.faceOffset.normal, entity.faceOffset.distance);
+        if (entity.faceOffset?.distance) mesh.geometry = entity.faceOffset.vertices
+            ? offsetArbitraryFace(mesh.geometry, entity.faceOffset)
+            : offsetBoundedFace(mesh.geometry, entity.faceOffset.normal, entity.faceOffset.distance);
         mesh.material = createMaterial(entity.color);
         brushA.geometry.dispose();
         brushB.geometry.dispose();

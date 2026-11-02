@@ -33,6 +33,7 @@ import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
+import DirectBooleanToggle from './components/viewport/DirectBooleanToggle.vue';
 import { STORAGE_KEYS } from './config/const';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
@@ -64,6 +65,7 @@ const isolateActive = ref(false);
 const sectionActive = ref(false);
 const sectionOffset = ref(0);
 const sectionLimit = ref(100);
+const directDragPosition = ref({ x: 0, y: 0 });
 const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
 const showEdges = ref(true);
 
@@ -91,10 +93,10 @@ const {
     applySketchConstraint, toggleSketchPointLock,
 } = sketchConstraints;
 const {
-    operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
+    operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
     createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
     updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-    updateFaceOffsetInput, onDirectEdit,
+    updateFaceOffsetInput, onDirectEdit, updateDirectBooleanMode,
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
     parameterCardOpen, lastFace, viewport: () => viewport, message, pushHistory, popHistory, inputLength, setTool,
@@ -164,7 +166,7 @@ const sketchAdvanced = useSketchAdvanced({
 });
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
-const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && ((!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
+const contextVisible = computed(() => parameterCardOpen.value && !sketchMode.value && (operation.value?.type === 'extrude' || (!!selected.value && selected.value.kind !== 'sketch') || (selectedEntities.value.length > 1 && selectedSketches.value.length !== selectedEntities.value.length) || activeTool.value === 'offsetFace'));
 const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 
 function togglePanel(panel: PrimaryPanel) {
@@ -314,7 +316,6 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     const picked = document.value.entities.find((item) => item.id === id);
     if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
         operation.value.targetId = id;
-        if (operation.value.result === 'new') operation.value.result = 'union';
         return;
     }
     lastFace.value = { bodyId: id, normal, point };
@@ -486,6 +487,7 @@ const viewportCallbacks: ViewportCallbacks = {
             viewport.sync(document.value);
         },
         onDirectEdit,
+        onDirectDragState: (state) => { directDragPosition.value = { x: state.x, y: state.y }; },
         onSketchPoint: addSketchPoint,
         onSketchPointMove: moveSketchPoint,
         onSketchSegment: selectSketchSegment,
@@ -581,6 +583,7 @@ onBeforeUnmount(() => {
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
                     @history="editHistory" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
+                <DirectBooleanToggle v-if="directBooleanAvailable" :x="directDragPosition.x" :y="directDragPosition.y" :mode="directBooleanMode" @update="updateDirectBooleanMode" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean"

@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { useMessage } from 'naive-ui';
 import type { EditPhase, Viewport, ViewTool } from '../engine/Viewport';
 import { entityProfileClosed } from '../engine/profiles';
-import { buildEntityMesh } from '../engine/geometry';
+import { applyEntityTransform, buildEntityMesh } from '../engine/geometry';
+import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { uid } from '../utils/id';
 import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
@@ -39,8 +40,13 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     } = options;
     const operation = ref<OperationState | null>(null);
     const historyEditId = ref<string | null>(null);
+    const directBooleanMode = ref<'union' | 'subtract'>('subtract');
+    const directBooleanAvailable = ref(false);
     let directBase: ModelEntity | null = null;
     let directHistoryPushed = false;
+    let directFace: { vertices: Vec3[]; indices: number[] } | null = null;
+    let directCrossDistance = Infinity;
+    let directResultId: string | null = null;
     let extrudeGestureMoved = false;
 
     const canBoolean = computed(() => selectedEntities.value.length === 2);
@@ -115,15 +121,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             bodies.push(body);
         });
         const body = bodies[0];
-        let targetId: string | null = null;
-        let result: 'new' | BooleanOperation = 'new';
-        if (!existingBody) {
-            const bounds = new THREE.Box3().setFromObject(buildEntityMesh(body, document.value));
-            const target = document.value.entities.find((item) => item.visible && !bodies.some((entry) => entry.id === item.id) && item.kind !== 'sketch' && (() => {
-                try { return bounds.intersectsBox(new THREE.Box3().setFromObject(buildEntityMesh(item, document.value))); } catch { return false; }
-            })());
-            if (target) { targetId = target.id; result = body.direction === -1 ? 'subtract' : 'union'; }
-        }
+        const targetId: string | null = null;
+        const result: 'new' | BooleanOperation = 'new';
         operation.value = { type: 'extrude', profileId, bodyId: body.id, profileIds: profiles.map((item) => item.id), bodyIds: bodies.map((item) => item.id), before, result, targetId, existing: !!existingBody };
         activePanel.value = null;
         historyEditId.value = existingBody?.id || null;
@@ -151,7 +150,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         }
         if (phase === 'move' && operation.value?.type === 'extrude') {
             extrudeGestureMoved = true;
-            updateExtrude('depth', Math.max(0.1, Math.round(delta * 100) / 100));
+            updateExtrude('direction', delta < 0 ? -direction : direction);
+            updateExtrude('depth', Math.max(0.1, Math.round(Math.abs(delta) * 100) / 100));
         } else if (phase === 'end' && !extrudeGestureMoved && operation.value?.type === 'extrude') cancelOperation();
     }
     function updateExtrudeResult(result: 'new' | BooleanOperation) {
@@ -241,30 +241,15 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const item = selected.value;
         if (!item || value === null || !lastFace.value) return;
         pushHistory();
-        if (value <= 0) item.faceOffset = null;
+        if (value === 0) item.faceOffset = null;
         else {
             const rotation = new THREE.Euler(...item.rotation.map(THREE.MathUtils.degToRad) as Vec3);
             const normal = new THREE.Vector3(...lastFace.value.normal).applyQuaternion(new THREE.Quaternion().setFromEuler(rotation).invert()).normalize().toArray() as Vec3;
-            item.faceOffset = { normal, distance: Math.max(faceOffsetMinimum(item, normal), value) };
+            item.faceOffset = { normal, distance: value, vertices: item.faceOffset?.vertices, indices: item.faceOffset?.indices };
         }
-    }
-    function faceOffsetMinimum(item: ModelEntity, normal: Vec3) {
-        if (item.kind === 'box') {
-            const axis = Math.abs(normal[0]) > 0.5 ? 0 : Math.abs(normal[1]) > 0.5 ? 1 : 2;
-            return -[item.width!, item.height!, item.depth!][axis] + 0.1;
-        }
-        if (item.kind === 'cylinder') return -item.height! + 0.1;
-        if (item.kind === 'extrude') return -item.depth! + 0.1;
-        if (item.kind === 'boolean') {
-            const geometry = buildEntityMesh(item, document.value).geometry;
-            geometry.computeBoundingBox();
-            const axis = Math.abs(normal[0]) > 0.5 ? 0 : Math.abs(normal[1]) > 0.5 ? 1 : 2;
-            return -geometry.boundingBox!.getSize(new THREE.Vector3()).getComponent(axis) + 0.1;
-        }
-        return 0;
     }
 
-    function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase) {
+    function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase, anchor?: GeometryAnchor) {
         if (activeTool.value === 'extrude') {
             if (phase === 'start') directBase = extrudeBody.value ? cloneEntity(extrudeBody.value) : null;
             else if (phase === 'move' && directBase && operation.value?.type === 'extrude') operation.value.bodyIds.forEach((id) => {
@@ -279,17 +264,41 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (phase ==='start') {
             if (activeTool.value === 'select') setTool('offsetFace');
             if (!['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
-            if (item.kind === 'cylinder' && Math.abs(normal[1]) < 0.5) return message.warning('圆柱侧面暂不支持向外拉伸');
-            if (item.kind === 'extrude') {
-                const plane = document.value.planes.find((entry) => entry.id === item.planeId);
-                if (plane && Math.abs(new THREE.Vector3(...normal).dot(new THREE.Vector3(...plane.normal))) < 0.9) return message.warning('请选择拉伸体的顶面或底面');
-            }
+            if (anchor && !anchor.planar) return;
             directBase = cloneEntity(item);
+            directBooleanAvailable.value = false;
+            const existingResult = document.value.entities.find((entity) => entity.directSourceId === item.id);
+            directResultId = existingResult?.id || null;
+            directBooleanMode.value = existingResult?.operation === 'union' ? 'union' : 'subtract';
+            const transform = new THREE.Object3D();
+            applyEntityTransform(transform, item);
+            const inverse = transform.matrixWorld.clone().invert();
+            const sameFace = item.faceOffset?.vertices && new THREE.Vector3(...item.faceOffset.normal).dot(new THREE.Vector3(...normal)) > 0.99;
+            directFace = sameFace ? { vertices: item.faceOffset!.vertices!, indices: item.faceOffset!.indices || [] } : anchor ? {
+                vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).applyMatrix4(inverse).toArray() as Vec3),
+                indices: [...anchor.indices],
+            } : null;
+            directCrossDistance = directFace ? (() => {
+                const base = cloneEntity(item);
+                base.faceOffset = null;
+                const geometry = buildEntityMesh(base, document.value).geometry;
+                const positions = geometry.attributes.position;
+                const direction = new THREE.Vector3(...normal).normalize();
+                let min = Infinity;
+                for (let index = 0; index < positions.count; index++) min = Math.min(min, new THREE.Vector3().fromBufferAttribute(positions, index).dot(direction));
+                const selected = directFace!.vertices.reduce((sum, point) => sum + new THREE.Vector3(...point).dot(direction), 0) / directFace!.vertices.length;
+                return selected - min;
+            })() : Infinity;
             directHistoryPushed = false;
             return;
         }
         if (phase === 'end') {
+            if (directResultId && directBooleanMode.value === 'union') {
+                selectedIds.value = [directResultId];
+                selectionKind.value = 'body';
+            }
             directBase = null;
+            directFace = null;
             return;
         }
         if (!directBase) return;
@@ -298,14 +307,81 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             directHistoryPushed = true;
         }
         const next = (directBase.faceOffset?.distance || 0) + delta;
-        item.faceOffset = { normal: [...normal], distance: Math.round(Math.max(faceOffsetMinimum(directBase, normal), next) * 100) / 100 };
+        item.faceOffset = { normal: [...normal], distance: Math.round(next * 100) / 100, vertices: directFace?.vertices, indices: directFace?.indices };
+        syncDirectBoolean(item);
+    }
+
+    function clearDirectBoolean() {
+        const result = directResultId ? document.value.entities.find((item) => item.id === directResultId) : null;
+        if (result) {
+            const target = document.value.entities.find((item) => item.id === result.directTargetId);
+            if (target) target.visible = result.directTargetVisible ?? true;
+            const source = document.value.entities.find((item) => item.id === result.directSourceId);
+            if (source) source.visible = true;
+            document.value.entities = document.value.entities.filter((item) => item.id !== result.id);
+        }
+        directResultId = null;
+        directBooleanAvailable.value = false;
+    }
+
+    function syncDirectBoolean(item: ModelEntity) {
+        const crossed = !!item.faceOffset && item.faceOffset.distance < -directCrossDistance - 0.001;
+        if (!crossed) { clearDirectBoolean(); return; }
+
+        const sourceMesh = buildEntityMesh(item, document.value);
+        const sourceBounds = new THREE.Box3().setFromObject(sourceMesh);
+        const previousTargetId = directResultId ? document.value.entities.find((entity) => entity.id === directResultId)?.directTargetId : null;
+        const target = document.value.entities.find((candidate) => (candidate.visible || candidate.id === previousTargetId) && candidate.id !== item.id && candidate.kind !== 'sketch' && !candidate.directSourceId && (() => {
+            try { return sourceBounds.intersectsBox(new THREE.Box3().setFromObject(buildEntityMesh(candidate, document.value))); } catch { return false; }
+        })());
+        if (!target) { clearDirectBoolean(); return; }
+
+        directBooleanAvailable.value = true;
+        let result = directResultId ? document.value.entities.find((entity) => entity.id === directResultId) : null;
+        if (result && result.directTargetId !== target.id) {
+            clearDirectBoolean();
+            result = null;
+        }
+        if (!result) {
+            result = {
+                id: uid(), parentId: item.parentId, name: `推拉差集 ${document.value.entities.length + 1}`, kind: 'boolean',
+                color: target.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+                operation: directBooleanMode.value, operands: [target.id, item.id], directSourceId: item.id,
+                directTargetId: target.id, directTargetVisible: target.visible,
+            };
+            document.value.entities.push(result);
+            directResultId = result.id;
+        }
+        result.operation = directBooleanMode.value;
+        result.name = `推拉${directBooleanMode.value === 'union' ? '并集' : '差集'} ${result.id.slice(0, 4)}`;
+        target.visible = false;
+        item.visible = directBooleanMode.value === 'subtract';
+    }
+
+    function updateDirectBooleanMode(mode: 'union' | 'subtract') {
+        directBooleanMode.value = mode;
+        let source = directBase ? document.value.entities.find((entity) => entity.id === directBase!.id) : null;
+        if (!source && directResultId) {
+            const sourceId = document.value.entities.find((entity) => entity.id === directResultId)?.directSourceId;
+            source = document.value.entities.find((entity) => entity.id === sourceId) || null;
+        }
+        if (source) syncDirectBoolean(source);
+        else if (directResultId) {
+            const result = document.value.entities.find((entity) => entity.id === directResultId);
+            if (result) result.operation = mode;
+        }
+        if (directResultId) {
+            const result = document.value.entities.find((entity) => entity.id === directResultId);
+            selectedIds.value = [mode === 'union' ? directResultId : result?.directSourceId || directResultId];
+            selectionKind.value = mode === 'union' ? 'body' : 'face';
+        }
     }
 
 
     return {
-        operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
+        operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
         updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-        updateFaceOffsetInput, faceOffsetMinimum, onDirectEdit,
+        updateFaceOffsetInput, onDirectEdit, updateDirectBooleanMode,
     };
 }

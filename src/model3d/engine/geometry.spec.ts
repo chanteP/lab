@@ -48,3 +48,31 @@ test('extruded top and bottom faces keep the opposite face fixed', () => {
     assert.equal(extrude(-4, [0, -1, 0]).min.y, 4);
     assert.equal(extrude(-4, [0, -1, 0]).max.y, 10);
 });
+
+test('push-pull crosses the opposite plane and creates a reversed solid', () => {
+    const box = createEntity('box', 'box');
+    Object.assign(box, { width: 40, height: 40, depth: 40, position: [0, 0, 0], faceOffset: { normal: [0, 1, 0], distance: -45 } });
+    const boxBounds = bounds(box);
+    assert.equal(boxBounds.min.y, -25);
+    assert.equal(boxBounds.max.y, -20);
+
+    assert.equal(extrude(-15).min.y, -5);
+    assert.equal(extrude(-15).max.y, 0);
+});
+
+test('a planar extrusion side uses its actual face profile and can cross the opposite side', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const entity = createEntity('extrude', 'body');
+    const face = [[5, 0, -5], [5, 10, -5], [5, 10, 5], [5, 0, 5]] as Vec3[];
+    Object.assign(entity, {
+        points: [[-5, -5], [5, -5], [5, 5], [-5, 5]], profileType: 'rectangle', planeId: 'plane', position: [0, 0, 0], depth: 10,
+        direction: 1, sideMode: 'one', faceOffset: { normal: [1, 0, 0], distance: 2, vertices: face, indices: [0, 1, 2, 0, 2, 3] },
+    });
+    assert.equal(bounds(entity, document).max.x, 7);
+
+    entity.faceOffset!.distance = -12;
+    const reversed = bounds(entity, document);
+    assert.equal(reversed.min.x, -7);
+    assert.equal(reversed.max.x, -5);
+});

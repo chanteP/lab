@@ -476,10 +476,11 @@ export class InteractionController {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const anchor = this.geometryAnchor ? { ...this.geometryAnchor, vertices: this.geometryAnchor.vertices.map((point) => [...point] as Vec3) } : null;
                 this.directDrag = { id: arrow.id, normal, worldNormal: this.geometryAnchor?.normal || normal, x: event.clientX, y: event.clientY, anchor };
+                this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: true });
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
-                this.callbacks.onDirectEdit(arrow.id, this.directDrag.normal, 0, 'start');
+                this.callbacks.onDirectEdit(arrow.id, this.directDrag.normal, 0, 'start', this.geometryAnchor || undefined);
                 return;
             }
         }
@@ -575,7 +576,7 @@ export class InteractionController {
             if (direction.lengthSq() < 0.000001) direction.set(0, -1);
             direction.normalize();
             const delta = ((event.clientX - this.extrudeArrowDrag.x) * direction.x + (event.clientY - this.extrudeArrowDrag.y) * direction.y) * scale;
-            if (Math.hypot(event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, Math.max(0.1, delta), 'move');
+            if (Math.hypot(event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, delta, 'move');
             return;
         }
         if (this.shapeDrag && this.sketchMode) {
@@ -588,6 +589,7 @@ export class InteractionController {
         }
         if (this.directDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
+            this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: true });
             const scale = Math.max(0.025, this.camera.position.distanceTo(this.controls.target) * 0.002);
             const origin = this.geometryAnchor ? new THREE.Vector3(...this.geometryAnchor.point) : this.controls.target.clone();
             const from = origin.clone().project(this.camera);
@@ -751,6 +753,7 @@ export class InteractionController {
         if (this.directDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
+            this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: false });
             this.directDrag = null;
             this.activeArrowKey = null;
             this.container.classList.remove('is-handle-dragging');
@@ -804,7 +807,8 @@ export class InteractionController {
         const edgeHit = this.hitEntityEdge(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
-        if (planeHit && (!hit || planeHit.distance < hit.distance)) { this.callbacks.onPlaneSelect(planeHit.id); return; }
+        const hitIsSketch = !!hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch';
+        if (planeHit && (!hit || (!hitIsSketch && planeHit.distance < hit.distance))) { this.callbacks.onPlaneSelect(planeHit.id); return; }
         if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
             this.hoverFaceAnchor = null;
@@ -878,7 +882,7 @@ export class InteractionController {
             return;
         } else {
             const hit = this.hitEntity(event as unknown as PointerEvent);
-            if (hit) this.callbacks.onBodySelect(hit.object.userData.entityId);
+            if (hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind !== 'sketch') this.callbacks.onBodySelect(hit.object.userData.entityId);
         }
     }
 

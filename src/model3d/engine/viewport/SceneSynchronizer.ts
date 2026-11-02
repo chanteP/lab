@@ -98,7 +98,7 @@ export class SceneSynchronizer {
                     child.add(border);
                 });
             }
-            this.applyObjectDisplay(child);
+            if (entity?.kind !== 'sketch') this.applyObjectDisplay(child);
         });
 
         let vertices = 0, triangles = 0;
@@ -153,7 +153,7 @@ export class SceneSynchronizer {
     setDisplayMode(mode: 'shaded' | 'wireframe' | 'xray', showEdges = this.showEdges) {
         this.displayMode = mode;
         this.showEdges = showEdges;
-        this.model.children.forEach((child) => this.applyObjectDisplay(child));
+        this.model.children.forEach((child) => { if (this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind !== 'sketch') this.applyObjectDisplay(child); });
     }
 
     setSection(active: boolean, offset = 0) {
@@ -163,7 +163,7 @@ export class SceneSynchronizer {
         this.sectionOutlines.visible = active;
         if (active) this.rebuildSectionOutlines();
         else clearGroup(this.sectionOutlines);
-        this.model.children.forEach((child) => this.applyObjectDisplay(child));
+        this.model.children.forEach((child) => { if (this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind !== 'sketch') this.applyObjectDisplay(child); });
     }
 
     setSectionOffset(offset: number) {

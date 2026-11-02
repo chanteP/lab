@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { ModelEntity, Vec3 } from '../../types';
 
-export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; vertices: Vec3[]; indices: number[] };
-type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3 };
+export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; planar: boolean; vertices: Vec3[]; indices: number[] };
+type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean };
 type MeshSurfaces = { triangleSurfaces: number[]; surfaces: Surface[] };
 
 /** Converts mesh hits into stable face/edge overlays without changing the source mesh. */
@@ -67,6 +67,7 @@ export class GeometrySelector {
             const vertices: Vec3[] = [];
             const indices: number[] = [];
             const center = new THREE.Vector3();
+            const planar = [...visited].every((triangleIndex) => triangles[triangleIndex].normal.dot(triangles[start].normal) > 0.9999);
             [...visited].sort((a, b) => a - b).forEach((triangleIndex) => {
                 triangles[triangleIndex].vertices.forEach((vertex) => {
                     const point = new THREE.Vector3().fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld);
@@ -75,7 +76,7 @@ export class GeometrySelector {
                     indices.push(indices.length);
                 });
             });
-            surfaces.push({ vertices, indices, point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 });
+            surfaces.push({ vertices, indices, planar, point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 });
         }
 
         const result = { triangleSurfaces, surfaces };
@@ -91,6 +92,7 @@ export class GeometrySelector {
         let vertices = triangle;
         let indices = [0, 1, 2];
         let point = hit.point.clone();
+        let planar = true;
         let surfaceKey = 'triangle';
 
         if (entity?.kind === 'box') {
@@ -111,6 +113,7 @@ export class GeometrySelector {
         } else {
             const surface = this.collectSurface(mesh, hit);
             if (surface?.vertices.length) {
+                planar = surface.planar;
                 const cached = this.surfaceCache.get(mesh.uuid);
                 surfaceKey = String(cached?.surfaces.indexOf(surface) ?? 0);
                 vertices = surface.vertices.map((point) => new THREE.Vector3(...point));
@@ -118,7 +121,7 @@ export class GeometrySelector {
             }
         }
         const id = mesh.userData.entityId;
-        return { id, key: `${id}:face:${surfaceKey}`, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', vertices: vertices.map((vertex) => vertex.toArray()), indices };
+        return { id, key: `${id}:face:${surfaceKey}`, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', planar, vertices: vertices.map((vertex) => vertex.toArray()), indices };
     }
 
     createEdgeAnchor(hit: THREE.Intersection): GeometryAnchor {
@@ -160,6 +163,6 @@ export class GeometrySelector {
         while (owner && !owner.userData.entityId) owner = owner.parent;
         const id = owner?.userData.entityId || '';
         const edgeKey = [...new Set(ordered.map(pointKey))].sort().join('|');
-        return { id, key: `${id}:edge:${edgeKey}`, normal: [0, 1, 0], localNormal: [0, 1, 0], point: point.toArray(), type: 'edge', vertices: vertices.map((vertex) => vertex.toArray()), indices: [0, 1] };
+        return { id, key: `${id}:edge:${edgeKey}`, normal: [0, 1, 0], localNormal: [0, 1, 0], point: point.toArray(), type: 'edge', planar: false, vertices: vertices.map((vertex) => vertex.toArray()), indices: [0, 1] };
     }
 }

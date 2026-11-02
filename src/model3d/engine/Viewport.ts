@@ -7,7 +7,7 @@ import { CameraController, type ProjectionMode } from './viewport/CameraControll
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
 import { SketchRenderer } from './viewport/SketchRenderer';
 import { MeasurementRenderer } from './viewport/MeasurementRenderer';
-import { GuideRenderer } from './viewport/GuideRenderer';
+import { GuideRenderer, type GeometryAnchor } from './viewport/GuideRenderer';
 import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
@@ -26,7 +26,8 @@ export interface ViewportCallbacks {
     onPlaneTransform: (id: string, position: Vec3, quaternion: THREE.Quaternion) => void;
     onTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
     onTransformEnd: () => void;
-    onDirectEdit: (id: string, normal: Vec3, delta: number, phase: EditPhase) => void;
+    onDirectEdit: (id: string, normal: Vec3, delta: number, phase: EditPhase, anchor?: GeometryAnchor) => void;
+    onDirectDragState: (state: { x: number; y: number; active: boolean }) => void;
     onSketchPoint: (point: Point2) => void;
     onSketchPointMove: (index: number, point: Point2, phase: EditPhase) => void;
     onSketchSegment: (index: number, additive: boolean) => void;
