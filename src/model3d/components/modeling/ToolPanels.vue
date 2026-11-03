@@ -16,6 +16,8 @@ const props = defineProps<{
     selectionKind: SelectionKind;
     activeTool: ViewTool;
     canBoolean: boolean;
+    selectThrough: boolean;
+    includeTangent: boolean;
 }>();
 const emit = defineEmits<{
     closePanel: [];
@@ -28,6 +30,8 @@ const emit = defineEmits<{
     boolean: [type: BooleanOperation];
     clearSelection: [];
     extrudeHint: [];
+    'update:selectThrough': [value: boolean];
+    'update:includeTangent': [value: boolean];
 }>();
 const commandSearch = ref('');
 const selectedSketches = computed(() => props.selectedEntities.filter((item) => item.kind === 'sketch'));
@@ -36,7 +40,7 @@ const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
         { id: 'extrude', label: '拉伸', hint: '将闭合草图轮廓拉伸为实体', keys: '拉伸 挤出 extrude' },
-        { id: 'offsetFace', label: '偏移面', hint: '推拉所选实体平面', keys: '推拉 偏移面 offset' },
+        { id: 'offsetFace', label: '推拉面', hint: '沿所选平面法向拉伸实体', keys: '推拉 拉伸面 extrude face' },
         { id: 'translate', label: '移动 / 旋转', hint: '移动或旋转所选对象', keys: '移动 旋转 transform' },
         { id: 'scale', label: '缩放', hint: '缩放所选实体', keys: '缩放 scale' },
         { id: 'plane', label: '构造平面', hint: '添加构造平面', keys: '平面 构造 plane' },
@@ -77,7 +81,7 @@ function runCommand(id: string) {
             </template>
             <template v-else-if="activePanel === 'tools'">
                 <button class="menu-command" :disabled="!selectedSketches.length" @click="emit('extrudeHint')"><NIcon><ArrowUpOutline /></NIcon><span><strong>拉伸</strong><small>选择封闭轮廓后拖动双向粗箭头</small></span></button>
-                <button class="menu-command" :disabled="selectionKind !== 'face'" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>沿面法向推拉实体</small></span></button>
+                <button class="menu-command" :disabled="selectionKind !== 'face'" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>推拉面</strong><small>沿完整平面法向拉伸实体</small></span></button>
                 <div class="panel-section-label">布尔运算 · 选择两个实体</div>
                 <div class="inline-command-row"><button :disabled="!canBoolean" @click="emit('boolean', 'union')">并集</button><button :disabled="!canBoolean" @click="emit('boolean', 'subtract')">差集</button><button :disabled="!canBoolean" @click="emit('boolean', 'intersect')">交集</button></div>
             </template>
@@ -88,8 +92,12 @@ function runCommand(id: string) {
             <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
             <template v-else-if="selectedEntities.length > 1"><div class="inline-command-row vertical"><button @click="emit('boolean', 'union')">并集</button><button @click="emit('boolean', 'subtract')">差集</button><button @click="emit('boolean', 'intersect')">交集</button></div></template>
             <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button><button class="menu-command" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong></span></button></template>
-            <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>偏移面</strong><small>拖动模型面或输入尺寸</small></span></button><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
+            <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>推拉面</strong><small>拖动模型平面或输入距离</small></span></button><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
             <template v-else><button class="menu-command" :class="{ active: activeTool === 'translate' }" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon><span><strong>移动 / 旋转</strong><small>移动整个实体</small></span></button><button class="menu-command" :class="{ active: activeTool === 'rotate' }" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon><span><strong>旋转</strong></span></button><button class="menu-command" :class="{ active: activeTool === 'scale' }" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon><span><strong>缩放</strong></span></button></template>
+            <div v-if="selectionKind === 'face' || selectionKind === 'edge'" class="inline-command-row vertical">
+                <button :class="{ active: includeTangent }" @click="emit('update:includeTangent', !includeTangent)">相切扩选</button>
+                <button :class="{ active: selectThrough }" @click="emit('update:selectThrough', !selectThrough)">穿透选择</button>
+            </div>
             <button class="more-tools" @click="emit('command', 'tools')">更多工具 <span>›</span></button>
         </aside>
     </div>

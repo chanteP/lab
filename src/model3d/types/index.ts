@@ -79,12 +79,11 @@ export interface ModelEntity {
     operation?: BooleanOperation;
     operands?: [string, string];
     faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[] } | null;
-    directSourceId?: string;
-    directTargetId?: string;
-    directTargetVisible?: boolean;
-    meshGeometry?: { positions: number[]; indices: number[] };
+    meshGeometry?: { positions: number[]; indices: number[]; mergeFromVert?: number[]; mergeToVert?: number[] };
     axisBox?: { min: Vec3; max: Vec3 };
     compositeGeometry?: boolean;
+    /** Monotonic body revision used to invalidate direct-edit gestures and topology references. */
+    revision?: number;
 }
 
 export interface ModelDocument {

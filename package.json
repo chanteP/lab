@@ -38,6 +38,7 @@
         "gl-matrix": "^3.4.3",
         "gradient-parser": "^1.0.2",
         "html2canvas": "^1.4.1",
+        "manifold-3d": "3.5.4",
         "markdown-it": "^14.1.0",
         "mime": "^4.0.4",
         "naive-ui": "^2.39.0",
@@ -47,8 +48,6 @@
         "qrcode": "^1.5.4",
         "sass": "^1.84.0",
         "three": "^0.171.0",
-        "three-bvh-csg": "0.0.17",
-        "three-mesh-bvh": "0.8.3",
         "tone": "^15.1.22",
         "vue": "3",
         "vue-color": "^2.7.0"

@@ -68,7 +68,7 @@ async function runPageSpecs(page) {
         const name = spec.slice(join(rootDir, 'src', page).length + 1).replaceAll(/[\\/]/g, '-').replace(/\.ts$/, '.mjs');
         const outfile = join(rootDir, '.temp', 'spec', page, name);
         mkdirSync(join(outfile, '..'), { recursive: true });
-        await bundle({ entryPoints: [spec], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['@wasmedia/wlibraw'], logLevel: 'silent' });
+        await bundle({ entryPoints: [spec], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['@wasmedia/wlibraw'], loader: { '.wasm': 'file' }, logLevel: 'silent' });
         console.log(`[lab] spec ${page}: ${name}`);
         const result = spawnSync(process.execPath, ['--test', outfile], { stdio: 'inherit' });
         if (result.status !== 0) throw new Error(`Page spec failed: ${spec}`);

@@ -6,6 +6,10 @@ import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 import type { DisplayMode, ModelDocument, SelectionKind, SketchPlane } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createDisplayEdgeGeometry, createFatLine } from './renderUtils';
+import { buildMeshTopology } from '../topology/MeshTopology';
+import { reconcileTopology } from '../topology/TopologyTracker';
+import { createTopologyEdgeGeometry } from './TopologyEdges';
+import type { BodyTopology } from '../topology/types';
 
 /** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
 export function measureSectionRadius(objects: THREE.Object3D[]) {
@@ -66,6 +70,8 @@ export class SceneSynchronizer {
         this.document = document;
         this.options.onClearAltBorder();
         this.options.transform.detach();
+        const previousTopology = new Map<string, BodyTopology>();
+        this.model.children.forEach((child) => { if (child.userData.topology) previousTopology.set(child.userData.entityId, child.userData.topology); });
         clearGroup(this.sectionOutlines);
         clearGroup(this.model);
         const next = buildScene(document);
@@ -73,8 +79,12 @@ export class SceneSynchronizer {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && entity?.kind !== 'sketch') {
-                const edges = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
+                const topology = reconcileTopology(previousTopology.get(entity.id), buildMeshTopology(child.geometry, entity.id, entity, document));
+                child.userData.topology = topology;
+                const display = createTopologyEdgeGeometry(topology);
+                const edges = new THREE.LineSegments(display.geometry, new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
                 edges.userData.displayEdge = true;
+                edges.userData.segmentEdgeIds = display.segmentEdgeIds;
                 child.add(edges);
             } else if (entity?.kind === 'sketch' && this.options.isSketchMode()) {
                 child.traverse((object) => { if (object.userData.compoundOutline) object.visible = false; });

@@ -48,3 +48,8 @@ declare module '*.json' {
     export default content;
 }
 declare module 'piexifjs';
+
+declare module '*.wasm' {
+    const content: string;
+    export default content;
+}

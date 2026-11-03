@@ -13,6 +13,8 @@ import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { advanceGizmoOrbit } from './gizmoOrbit';
+import { pickLogicalEdge } from './EdgePicker';
+import { DirectDragController } from './DirectDragController';
 
 type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
 
@@ -59,9 +61,7 @@ export class InteractionController {
     private sketchSelectionGuardPointerUp = false;
     private spaceSketchPointerBlocked = false;
     private lastPointer: { clientX: number; clientY: number } | null = null;
-    private directDrag: { id: string; normal: Vec3; worldNormal: Vec3; x: number; y: number; anchor: GeometryAnchor | null } | null = null;
-    private directMoveFrame = 0;
-    private pendingDirectDelta: number | null = null;
+    private readonly directEditor: DirectDragController;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
     private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean; spherical: THREE.Spherical } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
@@ -71,6 +71,8 @@ export class InteractionController {
     private spaceDragMoved = false;
     private spaceHover: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private sketchGuideSnapEnabled = true;
+    private selectThrough = false;
+    private includeTangent = false;
 
     private get renderer() { return this.engine.renderer; }
     private get camera() { return this.cameraController.camera; }
@@ -113,6 +115,14 @@ export class InteractionController {
         this.measurementRenderer = options.measurementRenderer;
         this.transform = options.transform;
         this.callbacks = options.callbacks;
+        this.directEditor = new DirectDragController({
+            onEdit: options.callbacks.onDirectEdit,
+            onState: options.callbacks.onDirectDragState,
+            onPreview: (anchor, delta, worldNormal) => {
+                const offset = new THREE.Vector3(...worldNormal).multiplyScalar(delta);
+                this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
+            },
+        });
         this.getTool = options.getTool;
         this.isSketchMode = options.isSketchMode;
 
@@ -124,6 +134,7 @@ export class InteractionController {
         this.onPointerDown = this.onPointerDown.bind(this);
         this.onPointerMove = this.onPointerMove.bind(this);
         this.onPointerUp = this.onPointerUp.bind(this);
+        this.onPointerCancel = this.onPointerCancel.bind(this);
         this.onDoubleClick = this.onDoubleClick.bind(this);
         this.onContextMenu = this.onContextMenu.bind(this);
         this.onKeyDown = this.onKeyDown.bind(this);
@@ -135,27 +146,32 @@ export class InteractionController {
         canvas.addEventListener('pointerdown', this.onPointerDown, true);
         canvas.addEventListener('pointermove', this.onPointerMove, true);
         canvas.addEventListener('pointerup', this.onPointerUp, true);
-        canvas.addEventListener('pointercancel', this.onPointerUp, true);
-        canvas.addEventListener('pointerleave', this.onPointerLeave);
-        canvas.addEventListener('dblclick', this.onDoubleClick);
+        canvas.addEventListener('pointercancel', this.onPointerCancel, true);
+        canvas.addEventListener('pointerleave', this.onPointerLeave); canvas.addEventListener('dblclick', this.onDoubleClick);
         canvas.addEventListener('contextmenu', this.onContextMenu);
-        window.addEventListener('keydown', this.onKeyDown);
-        window.addEventListener('keyup', this.onKeyUp);
-        window.addEventListener('keydown', this.onAltKey);
-        window.addEventListener('keyup', this.onAltKey);
-        window.addEventListener('blur', this.onKeyUp);
-        window.addEventListener('blur', this.onWindowBlur);
+        window.addEventListener('keydown', this.onKeyDown); window.addEventListener('keyup', this.onKeyUp);
+        window.addEventListener('keydown', this.onAltKey); window.addEventListener('keyup', this.onAltKey);
+        window.addEventListener('blur', this.onKeyUp); window.addEventListener('blur', this.onWindowBlur);
     }
 
-    private onWindowBlur() {
-        if (!this.directDrag) return;
-        this.flushDirectMove();
-        this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
-        this.directDrag = null;
+    private cancelDirectGesture() {
+        if (!this.directEditor.active) return;
+        this.directEditor.cancel();
         this.activeArrowKey = null;
         this.container.classList.remove('is-handle-dragging');
         this.updateArrowColors();
         this.controls.enabled = true;
+    }
+
+    private onWindowBlur() { this.cancelDirectGesture(); }
+
+    private onPointerCancel(event: PointerEvent) {
+        this.releasePointer(event);
+        if (this.directEditor.active) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            this.cancelDirectGesture();
+        } else this.onPointerUp(event);
     }
 
     private onPointerLeave() {
@@ -174,6 +190,11 @@ export class InteractionController {
     }
 
     private onKeyDown(event: KeyboardEvent) {
+        if (event.code === 'Escape' && this.directEditor.active) {
+            event.preventDefault();
+            this.cancelDirectGesture();
+            return;
+        }
         if (event.code !== 'Space' || this.isTypingTarget(event.target)) return;
         event.preventDefault();
         if (!this.spacePressed) {
@@ -279,9 +300,8 @@ export class InteractionController {
     }
 
     private hitEntityEdge(event: PointerEvent) {
-        this.setPointer(event);
-        this.raycaster.params.Line.threshold = Math.max(0.08, this.camera.position.distanceTo(this.controls.target) * 0.004);
-        return this.raycaster.intersectObjects(this.model.children, true).find((item) => item.object.userData.displayEdge && this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
+        const hit = pickLogicalEdge({ camera: this.camera, canvas: this.renderer.domElement, model: this.model, event, thresholdPx: INTERACTION.edgeSelectionPx, selectThrough: this.selectThrough });
+        return hit && this.isVisible(hit.object) && !this.sceneSynchronizer.isSectionPointClipped(hit.point) ? hit : null;
     }
 
     private hitExtrudeArrow(event: PointerEvent) {
@@ -341,6 +361,8 @@ export class InteractionController {
     private sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
 
     setSketchGuideSnapEnabled(active: boolean) { this.sketchGuideSnapEnabled = active; }
+    setSelectThrough(active: boolean) { this.selectThrough = active; }
+    setIncludeTangent(active: boolean) { this.includeTangent = active; }
 
     private sketchOperationPoint(event: PointerEvent, options: SketchGuideOptions = {}) {
         const point = this.sketchPoint(event);
@@ -383,26 +405,6 @@ export class InteractionController {
 
     private capturePointer(event: PointerEvent) {
         try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* Pointer may already be released. */ }
-    }
-
-    private applyDirectMove(delta: number) {
-        if (!this.directDrag) return;
-        this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, delta, 'move');
-        if (this.directDrag.anchor) {
-            const offset = new THREE.Vector3(...this.directDrag.worldNormal).multiplyScalar(delta);
-            this.geometryAnchor = {
-                ...this.directDrag.anchor,
-                point: new THREE.Vector3(...this.directDrag.anchor.point).add(offset).toArray(),
-                vertices: this.directDrag.anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()),
-            };
-        }
-    }
-
-    private flushDirectMove() {
-        if (this.directMoveFrame) cancelAnimationFrame(this.directMoveFrame);
-        this.directMoveFrame = 0;
-        if (this.pendingDirectDelta !== null) this.applyDirectMove(this.pendingDirectDelta);
-        this.pendingDirectDelta = null;
     }
 
     private releasePointer(event: PointerEvent) {
@@ -540,12 +542,10 @@ export class InteractionController {
             if (arrow && normal) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const anchor = this.geometryAnchor ? { ...this.geometryAnchor, vertices: this.geometryAnchor.vertices.map((point) => [...point] as Vec3) } : null;
-                this.directDrag = { id: arrow.id, normal, worldNormal: this.geometryAnchor?.normal || normal, x: event.clientX, y: event.clientY, anchor };
-                this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: true });
+                this.directEditor.start(event, arrow.id, normal, this.geometryAnchor?.normal || normal, anchor);
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
-                this.callbacks.onDirectEdit(arrow.id, this.directDrag.normal, 0, 'start', this.geometryAnchor || undefined);
                 return;
             }
         }
@@ -652,19 +652,9 @@ export class InteractionController {
             }
             return;
         }
-        if (this.directDrag) {
+        if (this.directEditor.active) {
             event.preventDefault(); event.stopImmediatePropagation();
-            this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: true });
-            const scale = Math.max(0.025, this.camera.position.distanceTo(this.controls.target) * 0.002);
-            const origin = this.geometryAnchor ? new THREE.Vector3(...this.geometryAnchor.point) : this.controls.target.clone();
-            const from = origin.clone().project(this.camera);
-            const to = origin.clone().add(new THREE.Vector3(...this.directDrag.worldNormal)).project(this.camera);
-            const direction = new THREE.Vector2(to.x - from.x, -(to.y - from.y));
-            if (direction.lengthSq() < 0.000001) direction.set(0, -1);
-            direction.normalize();
-            const delta = ((event.clientX - this.directDrag.x) * direction.x + (event.clientY - this.directDrag.y) * direction.y) * scale;
-            this.pendingDirectDelta = delta;
-            if (!this.directMoveFrame) this.directMoveFrame = requestAnimationFrame(() => this.flushDirectMove());
+            this.directEditor.move(event, this.camera, this.controls.target);
             return;
         }
         if (this.measureMode && this.sketchMode) {
@@ -699,7 +689,7 @@ export class InteractionController {
             }
             if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
                 this.hoverGeometry = null;
-                this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
+                this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             } else if (hit) {
                 const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
                 this.hoverGeometry = { id: hit.object.userData.entityId, normal, point: hit.point.toArray() };
@@ -816,12 +806,10 @@ export class InteractionController {
             this.controls.enabled = true;
             return;
         }
-        if (this.directDrag) {
+        if (this.directEditor.active) {
             event.preventDefault(); event.stopImmediatePropagation();
-            this.flushDirectMove();
-            this.callbacks.onDirectEdit(this.directDrag.id, this.directDrag.normal, 0, 'end');
+            this.directEditor.end();
             this.callbacks.onDirectDragState({ x: event.clientX, y: event.clientY, active: false });
-            this.directDrag = null;
             this.activeArrowKey = null;
             this.container.classList.remove('is-handle-dragging');
             this.updateArrowColors();
@@ -887,7 +875,7 @@ export class InteractionController {
             return;
         }
         if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
-            this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit);
+            this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);
         } else if (hit) {
@@ -901,7 +889,7 @@ export class InteractionController {
 
     private createGeometryAnchor(hit: THREE.Intersection): GeometryAnchor {
         const entity = this.document?.entities.find((item) => item.id === hit.object.userData.entityId);
-        return this.geometrySelector.createFaceAnchor(hit, entity);
+        return this.geometrySelector.createFaceAnchor(hit, entity, this.includeTangent);
     }
 
     private updateSketchCursor(event: PointerEvent) {
@@ -990,12 +978,12 @@ export class InteractionController {
     }
 
     dispose() {
-        if (this.directMoveFrame) cancelAnimationFrame(this.directMoveFrame);
+        this.directEditor.dispose();
         const canvas = this.renderer.domElement;
         canvas.removeEventListener('pointerdown', this.onPointerDown, true);
         canvas.removeEventListener('pointermove', this.onPointerMove, true);
         canvas.removeEventListener('pointerup', this.onPointerUp, true);
-        canvas.removeEventListener('pointercancel', this.onPointerUp, true);
+        canvas.removeEventListener('pointercancel', this.onPointerCancel, true);
         canvas.removeEventListener('pointerleave', this.onPointerLeave);
         canvas.removeEventListener('dblclick', this.onDoubleClick);
         canvas.removeEventListener('contextmenu', this.onContextMenu);

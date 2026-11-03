@@ -12,6 +12,7 @@ export const INTERACTION = {
     sketchSelectionGuardMs: 300,
     cameraTransitionMs: 600,
     clickTolerancePx: 5,
+    edgeSelectionPx: 8,
     sketchDragThresholdPx: 4,
     sectorQuarterSnapThresholdDeg: 4,
     sketchGuideSnapPx: 8,

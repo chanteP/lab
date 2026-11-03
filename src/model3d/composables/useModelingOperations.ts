@@ -5,6 +5,7 @@ import type { EditPhase, Viewport, ViewTool } from '../engine/Viewport';
 import { entityProfileClosed } from '../engine/profiles';
 import { applyEntityTransform, buildEntityMesh } from '../engine/geometry';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
+import { DirectEditTransaction } from '../engine/modeling/DirectEditTransaction';
 import { uid } from '../utils/id';
 import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
@@ -41,14 +42,12 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     } = options;
     const operation = ref<OperationState | null>(null);
     const historyEditId = ref<string | null>(null);
-    const directBooleanMode = ref<'union' | 'subtract'>('subtract');
-    const directBooleanAvailable = ref(false);
-    let directBase: ModelEntity | null = null;
+    let extrudeBase: ModelEntity | null = null;
+    let directTransaction: DirectEditTransaction | null = null;
     let directHistoryPushed = false;
-    let directFace: { vertices: Vec3[]; indices: number[] } | null = null;
-    let directLastDistance: number | null = null;
-    let directResultId: string | null = null;
-    let lastDirectBooleanSync = 0;
+    let directRequestedDistance: number | null = null;
+    let directErrorShown = false;
+    const directDisplayDistance = ref<number | null>(null);
     let extrudeGestureMoved = false;
 
     const canBoolean = computed(() => selectedEntities.value.length === 2);
@@ -255,181 +254,149 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         }
     }
 
+    function directFaceInLocal(item: ModelEntity, transaction: DirectEditTransaction) {
+        const transform = new THREE.Object3D();
+        applyEntityTransform(transform, item);
+        const inverse = transform.matrixWorld.clone().invert();
+        return {
+            vertices: transaction.anchor.vertices.map((point) => new THREE.Vector3(...point).applyMatrix4(inverse).toArray() as Vec3),
+            indices: [...transaction.anchor.indices],
+        };
+    }
+
+    function applyDirectDistance(item: ModelEntity, distance: number) {
+        const transaction = directTransaction!;
+        const request = transaction.request(distance, item);
+        const face = directFaceInLocal(item, transaction);
+        const localNormal = new THREE.Vector3(...transaction.normal).normalize();
+        const worldPerLocal = localNormal.clone().multiply(new THREE.Vector3(...item.scale)).length();
+        if (worldPerLocal < 1e-9) throw new Error('实体缩放导致拉伸方向退化');
+        distance /= worldPerLocal;
+        item.faceOffset = { normal: [...transaction.normal], distance: request.distance, ...face };
+        const preview = buildEntityMesh(item, document.value);
+        preview.geometry.dispose();
+        (Array.isArray(preview.material) ? preview.material : [preview.material]).forEach((material) => material.dispose());
+    }
+
     function updateFaceOffsetInput(value: number | null) {
         const item = selected.value;
-        if (!item || value === null || !lastFace.value) return;
-        pushHistory();
-        if (value === 0) item.faceOffset = null;
-        else {
-            const rotation = new THREE.Euler(...item.rotation.map(THREE.MathUtils.degToRad) as Vec3);
-            const normal = new THREE.Vector3(...lastFace.value.normal).applyQuaternion(new THREE.Quaternion().setFromEuler(rotation).invert()).normalize().toArray() as Vec3;
-            item.faceOffset = { normal, distance: value, vertices: item.faceOffset?.vertices, indices: item.faceOffset?.indices };
-        }
+        const anchor = viewport()?.getGeometryAnchor();
+        if (!item || value === null || !anchor || anchor.type !== 'face') return message.warning('请先选择一个实体平面');
+        onDirectEdit(item.id, anchor.localNormal, 0, 'start', anchor);
+        onDirectEdit(item.id, anchor.localNormal, value, 'move');
+        onDirectEdit(item.id, anchor.localNormal, value, 'end');
     }
 
     function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase, anchor?: GeometryAnchor) {
         if (activeTool.value === 'extrude') {
-            if (phase === 'start') directBase = extrudeBody.value ? cloneEntity(extrudeBody.value) : null;
-            else if (phase === 'move' && directBase && operation.value?.type === 'extrude') operation.value.bodyIds.forEach((id) => {
+            if (phase === 'start') extrudeBase = extrudeBody.value ? cloneEntity(extrudeBody.value) : null;
+            else if (phase === 'move' && extrudeBase && operation.value?.type === 'extrude') operation.value.bodyIds.forEach((id) => {
                 const body = document.value.entities.find((item) => item.id === id);
-                if (body) body.depth = Math.round(Math.max(0.1, (directBase!.depth || 10) + delta) * 10000) / 10000;
+                if (body) body.depth = Math.round(Math.max(0.1, (extrudeBase!.depth || 10) + delta) * 10000) / 10000;
             });
-            else directBase = null;
+            else extrudeBase = null;
             return;
         }
         const item = document.value.entities.find((entity) => entity.id === id);
         if (!item) return;
-        if (phase ==='start') {
+        if (phase === 'start') {
+            if (!anchor || anchor.type !== 'face' || !anchor.planar || !anchor.vertices.length) return message.warning('只有完整平面区域支持推拉');
             if (activeTool.value === 'select') setTool('offsetFace');
-            if (!['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
-            if (anchor && !anchor.planar) return;
-            const axisAligned = Math.abs(normal[0]) > 0.999 || Math.abs(normal[1]) > 0.999 || Math.abs(normal[2]) > 0.999;
-            if (item.kind === 'box' || item.axisBox || (item.kind === 'extrude' && item.profileType === 'rectangle' && !item.compositeGeometry && axisAligned)) {
-                const geometry = buildEntityMesh(item, document.value).geometry;
-                geometry.computeBoundingBox();
-                item.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
-            } else if (item.axisBox && !axisAligned) delete item.axisBox;
-            directBase = cloneEntity(item);
-            directBooleanAvailable.value = false;
-            directLastDistance = null;
-            const existingResult = document.value.entities.find((entity) => entity.directSourceId === item.id);
-            directResultId = existingResult?.id || null;
-            directBooleanMode.value = existingResult?.operation === 'union' ? 'union' : 'subtract';
-            const transform = new THREE.Object3D();
-            applyEntityTransform(transform, item);
-            const inverse = transform.matrixWorld.clone().invert();
-            directFace = anchor ? {
-                vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).applyMatrix4(inverse).toArray() as Vec3),
-                indices: [...anchor.indices],
-            } : null;
+            directTransaction = new DirectEditTransaction(item, anchor, normal);
+            directRequestedDistance = null;
             directHistoryPushed = false;
+            directErrorShown = false;
+            return;
+        }
+        if (!directTransaction || directTransaction.baseEntity.id !== id) return;
+        if (phase === 'cancel') {
+            item.faceOffset = directTransaction.baseEntity.faceOffset || null;
+            if (directHistoryPushed) popHistory();
+            directTransaction.close();
+            directTransaction = null;
+            directRequestedDistance = null;
+            directDisplayDistance.value = null;
+            viewport()?.clearGeometrySelection();
             return;
         }
         if (phase === 'end') {
             finishDirectEdit();
             return;
         }
-        if (!directBase) return;
+        const distance = (directTransaction.baseEntity.faceOffset?.distance || 0) + delta;
+        directRequestedDistance = distance;
+        directDisplayDistance.value = distance;
+        const previousOffset = item.faceOffset;
         if (!directHistoryPushed) {
             pushHistory();
             directHistoryPushed = true;
         }
-        const next = (directBase.faceOffset?.distance || 0) + delta;
-        directLastDistance = next;
-        item.faceOffset = { normal: [...normal], distance: Math.round(next * 100) / 100, vertices: directFace?.vertices, indices: directFace?.indices };
-        syncDirectBoolean(item);
-    }
-
-    function clearDirectBoolean() {
-        const result = directResultId ? document.value.entities.find((item) => item.id === directResultId) : null;
-        if (result) {
-            const target = document.value.entities.find((item) => item.id === result.directTargetId);
-            if (target) target.visible = result.directTargetVisible ?? true;
-            const source = document.value.entities.find((item) => item.id === result.directSourceId);
-            if (source) source.visible = true;
-            document.value.entities = document.value.entities.filter((item) => item.id !== result.id);
+        try {
+            applyDirectDistance(item, distance);
+            directErrorShown = false;
+        } catch (error) {
+            item.faceOffset = previousOffset;
+            if (!directErrorShown) message.error(error instanceof Error ? error.message : '无法计算当前面拉伸');
+            directErrorShown = true;
         }
-        directResultId = null;
-        directBooleanAvailable.value = false;
     }
 
     function bakeDirectEntity(item: ModelEntity) {
-        if (!directBase || !item.faceOffset) return;
-        if (item.axisBox) {
-            const geometry = buildEntityMesh(item, document.value).geometry;
-            geometry.computeBoundingBox();
-            item.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
-            delete item.meshGeometry;
-            delete item.compositeGeometry;
-            item.faceOffset = null;
-            return;
-        }
-        const geometry = buildEntityMesh(item, document.value).geometry;
+        const mesh = buildEntityMesh(item, document.value);
         item.meshGeometry = {
-            positions: Array.from(geometry.attributes.position.array),
-            indices: geometry.index ? Array.from(geometry.index.array) : Array.from({ length: geometry.attributes.position.count }, (_, index) => index),
+            positions: Array.from(mesh.geometry.attributes.position?.array || []),
+            indices: mesh.geometry.index ? Array.from(mesh.geometry.index.array) : Array.from({ length: mesh.geometry.attributes.position?.count || 0 }, (_, index) => index),
+            mergeFromVert: Array.from(mesh.geometry.userData.mergeFromVert || []),
+            mergeToVert: Array.from(mesh.geometry.userData.mergeToVert || []),
         };
         item.compositeGeometry = true;
         item.faceOffset = null;
+        delete item.axisBox;
+        item.revision = (directTransaction?.baseRevision || 0) + 1;
+        mesh.geometry.dispose();
+        (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
+    }
+
+    function cancelDirectEdit() {
+        const transaction = directTransaction;
+        if (!transaction) return;
+        onDirectEdit(transaction.baseEntity.id, transaction.normal, 0, 'cancel');
     }
 
     function finishDirectEdit() {
-        if (!directBase) return;
-        const item = document.value.entities.find((entity) => entity.id === directBase!.id);
-        if (item) {
-            syncDirectBoolean(item, true);
-            bakeDirectEntity(item);
-            if (directResultId && directBooleanMode.value === 'union') {
-                selectedIds.value = [directResultId];
-                selectionKind.value = 'body';
+        const transaction = directTransaction;
+        if (!transaction) return;
+        const item = document.value.entities.find((entity) => entity.id === transaction.baseEntity.id);
+        if (item && directRequestedDistance !== null) {
+            try {
+                // Commit is a fresh evaluation of S0 at the final requested value, never a baked preview.
+                item.faceOffset = transaction.baseEntity.faceOffset || null;
+                if (Math.abs(directRequestedDistance) > 1e-7) {
+                    applyDirectDistance(item, directRequestedDistance);
+                    bakeDirectEntity(item);
+                } else if (directHistoryPushed) {
+                    popHistory();
+                }
+            } catch (error) {
+                item.faceOffset = transaction.baseEntity.faceOffset || null;
+                if (directHistoryPushed) popHistory();
+                message.error(error instanceof Error ? `提交失败：${error.message}` : '提交失败，已保留原实体');
             }
         }
+        transaction.close();
+        directTransaction = null;
+        directRequestedDistance = null;
+        directDisplayDistance.value = null;
+        directHistoryPushed = false;
         viewport()?.clearGeometrySelection();
-        directBase = null;
-        directFace = null;
     }
 
-    function syncDirectBoolean(item: ModelEntity, force = false) {
-        const now = performance.now();
-        if (!force && directResultId && now - lastDirectBooleanSync < 80) return;
-        lastDirectBooleanSync = now;
-        const distance = item.faceOffset?.distance ?? directLastDistance ?? 0;
-        const previousResult = directResultId ? document.value.entities.find((entity) => entity.id === directResultId) : null;
-        const sourceMesh = buildEntityMesh(item, document.value);
-        const sourceBounds = new THREE.Box3().setFromObject(sourceMesh);
-        sourceBounds.expandByScalar(-0.001);
-        const previousTargetId = previousResult?.directTargetId;
-        const target = document.value.entities.find((candidate) => (candidate.visible || candidate.id === previousTargetId) && candidate.id !== item.id && candidate.kind !== 'sketch' && !candidate.directSourceId && (() => {
-            try { return sourceBounds.intersectsBox(new THREE.Box3().setFromObject(buildEntityMesh(candidate, document.value))); } catch { return false; }
-        })());
-        if (!target || (distance >= 0 && !previousResult)) { clearDirectBoolean(); return; }
-
-        directBooleanAvailable.value = true;
-        let result = directResultId ? document.value.entities.find((entity) => entity.id === directResultId) : null;
-        if (result && result.directTargetId !== target.id) {
-            clearDirectBoolean();
-            result = null;
-        }
-        if (!result) {
-            result = {
-                id: uid(), parentId: item.parentId, name: `推拉差集 ${document.value.entities.length + 1}`, kind: 'boolean',
-                color: target.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
-                operation: directBooleanMode.value, operands: [target.id, item.id], directSourceId: item.id,
-                directTargetId: target.id, directTargetVisible: target.visible,
-            };
-            document.value.entities.push(result);
-            directResultId = result.id;
-        }
-        result.operation = directBooleanMode.value;
-        result.name = `推拉${directBooleanMode.value === 'union' ? '并集' : '差集'} ${result.id.slice(0, 4)}`;
-        target.visible = false;
-        item.visible = directBooleanMode.value === 'subtract';
-    }
-
-    function updateDirectBooleanMode(mode: 'union' | 'subtract') {
-        directBooleanMode.value = mode;
-        let source = directBase ? document.value.entities.find((entity) => entity.id === directBase!.id) : null;
-        if (!source && directResultId) {
-            const sourceId = document.value.entities.find((entity) => entity.id === directResultId)?.directSourceId;
-            source = document.value.entities.find((entity) => entity.id === sourceId) || null;
-        }
-        if (source) syncDirectBoolean(source);
-        else if (directResultId) {
-            const result = document.value.entities.find((entity) => entity.id === directResultId);
-            if (result) result.operation = mode;
-        }
-        if (directResultId) {
-            const result = document.value.entities.find((entity) => entity.id === directResultId);
-            selectedIds.value = [mode === 'union' ? directResultId : result?.directSourceId || directResultId];
-            selectionKind.value = mode === 'union' ? 'body' : 'face';
-        }
-    }
 
 
     return {
-        operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
+        operation, historyEditId, directDisplayDistance, canBoolean, extrudeBody, booleanDraft, operationTargets,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
         updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-        updateFaceOffsetInput, onDirectEdit, finishDirectEdit, updateDirectBooleanMode,
+        updateFaceOffsetInput, onDirectEdit, finishDirectEdit, cancelDirectEdit,
     };
 }

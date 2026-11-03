@@ -101,12 +101,11 @@
 - 长度/角度输入的 step 使用整数，小数值先按操作方向取整再步进；未 hover/focus 时透明度为 50%。
 - 所有 number input / NInputNumber 都必须支持滚轮增减，并阻止滚轮冒泡到画布造成视图缩放；步进遵循控件 step，长度和角度继续沿用整数取整规则，禁用状态不得响应。
 - 颜色统一从 `colors.ts` 的色表读取；hover/选中使用透明橙色系列。
-- 面拉伸使用独立的 `faceOffset`，只向所选面外侧新增几何，不修改基础 Body 的尺寸、位置和旋转。
-- 面偏移支持正负值：正向拼接外侧实体，反向用局部布尔切削从该面向内收缩；粗箭头跟随当前面位置，并按箭头屏幕投影方向计算拖动距离。
-- 自动布尔后的 `boolean` 实体也必须支持面偏移，使用其实际几何包围范围生成局部扩展/切削，不得再以实体类型为由拦截。
-- 粗箭头使用天蓝色，hover 使用深蓝色，拖动使用绿色，描边固定为黑色；箭头只绘制整体外形轮廓，不使用三角化几何的 `EdgesGeometry`。箭头正常写入深度，避免透明网格叠加到箭头表面。
-- 面选择按相邻面片法向夹角扩展为连续平面/曲面，缓存按网格和连通面共享，不为每个三角面片重复生成高亮。高亮参与深度测试并使用 polygon offset，背面不得透画到其他面。
-- 轮廓线从模型的 `displayEdge` 拾取，选中后使用独立粗线高亮；不再根据三角面片边判断轮廓。
+- 面拉伸使用独立的 `faceOffset` 预览参数；正位移对 owner body 执行 Union，负位移执行 Subtract，松开后烘焙为当前 `meshGeometry`。
+- 粗箭头跟随手势起始面，世界拖拽距离按固定屏幕投影计算并转换到局部实体缩放；不得逐帧累加 preview。
+- 粗箭头使用天蓝色，hover 使用深蓝色，拖动使用绿色，描边固定为黑色；箭头只绘制整体外形轮廓，不使用三角化几何的 `EdgesGeometry`。
+- 面选择由 `MeshTopology` 按共享边和 SameDomain 计算，高亮参与深度测试并使用 polygon offset；背面不得透画到其他面。
+- 轮廓显示与拾取共享 logical edge graph，三角剖分边和周期 seam 不成为独立模型边。
 - 倒角/圆角交互与对应数据字段已移除，后续按新的交互计划重新实现。
 
 ## 数据与存储
@@ -147,3 +146,16 @@
 - 旋转/缩放中心及临时圆形中心拖动必须复用 `matchSketchGuide` 和 `sketchGuideSnapEnabled`，保留自身语义角点，支持平面/世界原点与其他草图参考点；开关关闭时不得吸附。变换输入复用 `sketch-length-input`，长度带单位选择、角度为 deg、缩放为 x，位置不得覆盖对应手柄。
 - 对称第三步的选择工具必须提供临时形状整体移动和控制点编辑。`SketchProfilePart.editor` 只保存临时语义点，圆/椭圆/正多边形不得把渲染采样点暴露为控制点；完成裁剪后的复合 `parts` 不保留该编辑元数据。
 - `parts` 是同一草图实体的多个独立轮廓，border、面、显示、拉伸和选择逻辑必须保持实体级聚合；不得退化为多个临时 Items。
+
+## 实体拓扑与直接编辑
+
+- 实体几何内核使用 `manifold-3d` WASM，页面挂载前完成初始化。Three.js 只负责渲染和交互；WASM 输出数组必须复制，Manifold 对象显式 `delete()`。
+- `engine/topology/` 独立维护 render vertex、topological vertex、half-edge 邻接、logical face 和 logical edge。`faceIndex` 与显示线段序号只允许用于当次命中，不得作为持久身份。
+- 默认面选择是同一 body 内、共享边连通的 SameDomain patch；不合并不连通共面岛或点接触面。解析圆柱/球面优先使用 surface metadata，其他 mesh 曲面只提供 smooth patch 近似。
+- 显示边和拾取边来自同一个 logical edge graph。三角剖分边、共面分割边和周期 seam 不进入可选边；细分直线和圆弧由度数、切向和邻面关系合并。
+- 边拾取使用 CSS 像素阈值，默认进行遮挡过滤；“穿透选择”是显式开关。面/边的“相切扩选”也是显式开关，不能改变默认 SameDomain 语义。
+- 实体平面直接编辑只声明 Face Extrude：从手势开始时的 S0/F0/n0 构造闭合扫掠体，正位移 Union、负位移 Subtract，仅修改 owner body。切穿可返回空实体，禁止反向生成新实体。
+- `DirectEditTransaction` 固定 baseEntity、baseRevision、gestureId 和递增 sequence；每次 preview 都从 S0 计算。pointerup 重新计算最终参数，cancel/Esc/失焦恢复 S0，失败不提交坏模型。
+- 世界拖拽距离转换到实体局部距离时考虑缩放；UI 始终显示世界单位。烘焙结果同时保存 position/index 与内核 merge vectors，normal/UV seam 对应的 render vertices 不得直接当作拓扑顶点。
+- `GeometryValidator` 在提交前检查 finite、索引、属性版本、groups/drawRange、定向共享边、闭合性、体积和 components；合法小三角面不能靠放大 epsilon 删除。
+- 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。

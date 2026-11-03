@@ -45,7 +45,7 @@ test('only planar surfaces expose planar geometry anchors', () => {
     assert.equal(selector.createFaceAnchor(capHit).planar, true);
 });
 
-test('coplanar disconnected fragments are merged into one current planar face', () => {
+test('coplanar disconnected fragments remain independent logical faces', () => {
     const geometry = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1),
         new THREE.Vector3(2, 0, 0), new THREE.Vector3(3, 0, 0), new THREE.Vector3(2, 0, 1),
@@ -55,7 +55,8 @@ test('coplanar disconnected fragments are merged into one current planar face', 
     const anchor = selector.createFaceAnchor(hit(mesh, 0));
 
     assert.equal(anchor.planar, true);
-    assert.equal(anchor.vertices.length, 6);
+    assert.equal(anchor.vertices.length, 3);
+    assert.notEqual(selector.createFaceAnchor(hit(mesh, 0)).key, selector.createFaceAnchor(hit(mesh, 1)).key);
 });
 
 test('outline hit uses the actual display-edge segment rather than a mesh triangle', () => {

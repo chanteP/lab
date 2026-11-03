@@ -16,7 +16,7 @@ import { applyTransformControlColors } from './viewport/transformColors';
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude';
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
-export type EditPhase = 'start' | 'move' | 'end';
+export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
 export type SketchDimension = { kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 
 export interface ViewportCallbacks {
@@ -233,6 +233,9 @@ export class Viewport {
     setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) { this.sketchRenderer.setSelectionState(edges, points); }
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
     clearGeometrySelection() { this.interaction.clearGeometrySelection(); }
+    getGeometryAnchor() { return this.interaction.geometryAnchor; }
+    setSelectThrough(active: boolean) { this.interaction.setSelectThrough(active); }
+    setIncludeTangent(active: boolean) { this.interaction.setIncludeTangent(active); }
 
     setTool(tool: ViewTool) {
         this.tool = tool;

@@ -3,14 +3,32 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildEntityMesh } from './geometry';
+import { initializeManifold } from './modeling/ManifoldKernel';
 import { GeometrySelector } from './viewport/GeometrySelector';
 import { createDisplayEdgeGeometry } from './viewport/renderUtils';
-import { createDocument, createEntity, type ModelEntity, type Vec3 } from '../types';
+import { createDocument, createEntity, type ModelDocument, type ModelEntity, type Vec3 } from '../types';
+
+await initializeManifold();
 
 function bounds(entity: ModelEntity, document = createDocument()) {
     const mesh = buildEntityMesh(entity, document);
     mesh.geometry.computeBoundingBox();
     return mesh.geometry.boundingBox!;
+}
+
+function faceOffset(entity: ModelEntity, document: ModelDocument, normal: Vec3, distance: number) {
+    const mesh = buildEntityMesh(entity, document);
+    const positions = mesh.geometry.attributes.position, index = mesh.geometry.index;
+    for (let cursor = 0; cursor < (index?.count || positions.count); cursor += 3) {
+        const ids = [0, 1, 2].map((corner) => index ? index.getX(cursor + corner) : cursor + corner);
+        const points = ids.map((id) => new THREE.Vector3().fromBufferAttribute(positions, id));
+        const faceNormal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+        if (faceNormal.dot(new THREE.Vector3(...normal)) < 0.999) continue;
+        const hit = { object: mesh, faceIndex: cursor / 3, face: { a: ids[0], b: ids[1], c: ids[2], normal: faceNormal }, point: points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+        const anchor = new GeometrySelector().createFaceAnchor(hit, entity);
+        return { normal, distance, vertices: anchor.vertices, indices: anchor.indices };
+    }
+    throw new Error(`Missing face ${normal.join(',')}`);
 }
 
 function extrude(distance: number, normal: Vec3 = [0, 1, 0]) {
@@ -19,8 +37,9 @@ function extrude(distance: number, normal: Vec3 = [0, 1, 0]) {
     const entity = createEntity('extrude', 'body');
     Object.assign(entity, {
         points: [[-5, -5], [5, -5], [5, 5], [-5, 5]], profileType: 'rectangle', planeId: 'plane',
-        position: [0, 0, 0], depth: 10, direction: 1, sideMode: 'one', faceOffset: { normal, distance },
+        position: [0, 0, 0], depth: 10, direction: 1, sideMode: 'one',
     });
+    entity.faceOffset = faceOffset(entity, document, normal, distance);
     return bounds(entity, document);
 }
 
@@ -28,7 +47,7 @@ test('primitive push-pull changes one continuous solid in both directions', () =
     const cylinder = createEntity('cylinder', 'cylinder');
     Object.assign(cylinder, { radius: 5, height: 10, position: [0, 0, 0] });
     const original = buildEntityMesh(cylinder, createDocument());
-    cylinder.faceOffset = { normal: [0, 1, 0], distance: 5 };
+    cylinder.faceOffset = faceOffset(cylinder, createDocument(), [0, 1, 0], 5);
     const extended = buildEntityMesh(cylinder, createDocument());
     extended.geometry.computeBoundingBox();
 
@@ -36,7 +55,8 @@ test('primitive push-pull changes one continuous solid in both directions', () =
     assert.deepEqual(extended.geometry.boundingBox!.max.toArray(), [5, 10, 5]);
     assert.equal(new THREE.EdgesGeometry(extended.geometry, 28).attributes.position.count, new THREE.EdgesGeometry(original.geometry, 28).attributes.position.count);
 
-    cylinder.faceOffset.distance = -4;
+    cylinder.faceOffset = null;
+    cylinder.faceOffset = faceOffset(cylinder, createDocument(), [0, 1, 0], -4);
     const shrunk = bounds(cylinder);
     assert.equal(shrunk.min.y, -5);
     assert.equal(shrunk.max.y, 1);
@@ -52,15 +72,12 @@ test('extruded top and bottom faces keep the opposite face fixed', () => {
     assert.equal(extrude(-4, [0, -1, 0]).max.y, 10);
 });
 
-test('push-pull crosses the opposite plane and creates a reversed solid', () => {
+test('push-pull cutting through the opposite plane produces an empty solid', () => {
     const box = createEntity('box', 'box');
-    Object.assign(box, { width: 40, height: 40, depth: 40, position: [0, 0, 0], faceOffset: { normal: [0, 1, 0], distance: -45 } });
-    const boxBounds = bounds(box);
-    assert.equal(boxBounds.min.y, -25);
-    assert.equal(boxBounds.max.y, -20);
-
-    assert.equal(extrude(-15).min.y, -5);
-    assert.equal(extrude(-15).max.y, 0);
+    Object.assign(box, { width: 40, height: 40, depth: 40, position: [0, 0, 0] });
+    box.faceOffset = faceOffset(box, createDocument(), [0, 1, 0], -45);
+    assert.equal(bounds(box).isEmpty(), true);
+    assert.equal(extrude(-15).isEmpty(), true);
 });
 
 test('a planar extrusion side uses its actual face profile and can cross the opposite side', () => {
@@ -75,9 +92,7 @@ test('a planar extrusion side uses its actual face profile and can cross the opp
     assert.equal(bounds(entity, document).max.x, 7);
 
     entity.faceOffset!.distance = -12;
-    const reversed = bounds(entity, document);
-    assert(Math.abs(reversed.min.x + 7) < 0.0011, String(reversed.min.x));
-    assert(Math.abs(reversed.max.x + 5) < 0.0011);
+    assert.equal(bounds(entity, document).isEmpty(), true);
 });
 
 test('negative extrusion keeps triangle winding and normals facing outward', () => {
@@ -170,14 +185,12 @@ test('three consecutive box faces always come from the current baked mesh', () =
         assert(hit, `missing selected face ${normal.join(',')}`);
         const anchor = selector.createFaceAnchor(hit!, entity);
         mesh.geometry.computeBoundingBox();
-        entity.axisBox = { min: mesh.geometry.boundingBox!.min.toArray() as Vec3, max: mesh.geometry.boundingBox!.max.toArray() as Vec3 };
         entity.faceOffset = { normal, distance, vertices: anchor.vertices, indices: anchor.indices };
         const geometry = buildEntityMesh(entity, document).geometry;
         geometry.computeBoundingBox();
-        entity.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
         entity.meshGeometry = { positions: Array.from(geometry.attributes.position.array), indices: geometry.index ? Array.from(geometry.index.array) : [] };
         entity.faceOffset = null;
-        assert.equal(entity.meshGeometry.positions.length / 3, 24, 'axis-aligned box edits must not accumulate CSG fragments');
+        assert.equal(new GeometrySelector().createFaceAnchor(hit!, entity).faceIds?.length, 1, 'logical face identity remains singular');
     };
 
     apply([1, 0, 0], 4);

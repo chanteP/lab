@@ -33,7 +33,6 @@ import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
-import DirectBooleanToggle from './components/viewport/DirectBooleanToggle.vue';
 import { STORAGE_KEYS } from './config/const';
 import { LENGTH_UNITS } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
@@ -71,6 +70,8 @@ const directDragPosition = ref({ x: 0, y: 0 });
 const displayMode = ref<DisplayMode>('shaded');
 let displayModeBeforeSketch: DisplayMode = 'shaded';
 const showEdges = ref(true);
+const selectThrough = ref(false);
+const includeTangent = ref(false);
 
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
 const selectedSketches = computed(() => selectedEntities.value.filter((item) => item.kind === 'sketch'));
@@ -96,10 +97,10 @@ const {
     applySketchConstraint, toggleSketchPointLock,
 } = sketchConstraints;
 const {
-    operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets, directBooleanMode, directBooleanAvailable,
+    operation, historyEditId, directDisplayDistance, canBoolean, extrudeBody, booleanDraft, operationTargets,
     createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
     updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
-    updateFaceOffsetInput, onDirectEdit, finishDirectEdit, updateDirectBooleanMode,
+    updateFaceOffsetInput, onDirectEdit, finishDirectEdit, cancelDirectEdit,
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
     parameterCardOpen, lastFace, viewport: () => viewport, message, pushHistory, popHistory, inputLength, setTool,
@@ -280,6 +281,9 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
+function undoModel() { cancelDirectEdit(); viewport?.clearGeometrySelection(); undo(); }
+function redoModel() { cancelDirectEdit(); viewport?.clearGeometrySelection(); redo(); }
+
 function onMarqueeSelect(ids: string[], additive: boolean) {
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
     selectionKind.value = selectedIds.value.length === 1 ? 'body' : selectedIds.value.length > 1 ? 'mixed' : null;
@@ -395,7 +399,7 @@ function onKeyDown(event: KeyboardEvent) {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
     if ((event.metaKey || event.ctrlKey) && ['Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract'].includes(event.code)) { event.preventDefault(); return; }
     if ((event.metaKey || event.ctrlKey) && event.code === 'KeyS') { event.preventDefault(); flushSave(); return; }
-    if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
+    if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') { event.preventDefault(); event.shiftKey ? redoModel() : undoModel(); return; }
     if (event.metaKey || event.ctrlKey || event.code === 'Space') return;
     if (event.code === 'Enter' && operation.value) doneOperation();
     else if (event.code === 'Enter' && sketchMode.value) finishSketch();
@@ -445,6 +449,8 @@ watch(sketchMode, (active) => {
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
+watch(selectThrough, (value) => viewport?.setSelectThrough(value));
+watch(includeTangent, (value) => viewport?.setIncludeTangent(value));
 watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
     if (!active) stopMeasure();
     if (!active) return;
@@ -586,7 +592,7 @@ onBeforeUnmount(() => {
 <template>
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
         <AppTopBar :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
-            @name="project.name = $event" @undo="undo" @redo="redo" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
+            @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
         <div class="workspace">
             <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
@@ -601,10 +607,9 @@ onBeforeUnmount(() => {
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
                     @history="editHistory" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
-                <DirectBooleanToggle v-if="directBooleanAvailable" :x="directDragPosition.x" :y="directDragPosition.y" :mode="directBooleanMode" @update="updateDirectBooleanMode" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
-                    :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean"
+                    :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent"
                     @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @import="importProject" @create-plane="createPlane"
                     @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')" />
 
@@ -618,7 +623,7 @@ onBeforeUnmount(() => {
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><NSelect class="unit-select" size="small" aria-label="全局长度单位" :value="lengthUnit" :options="LENGTH_UNITS" :consistent-menu-width="false" @update:value="setLengthUnit" /></div>
 
-                <ModelingOperationBar v-if="contextVisible" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
+                <ModelingOperationBar v-if="contextVisible" :operation="operation" :direct-distance="directDisplayDistance" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
                     :operation-targets="operationTargets" :document="document" :selected="selected" :selected-entities="selectedEntities" :active-tool="activeTool" :display-length="displayLength" :input-length="inputLength"
                     @close="closeOperationBar" @done="doneOperation" @cancel="cancelOperation" @update-extrude-length="updateExtrudeLength" @update-extrude="updateExtrude"
                     @update-extrude-result="updateExtrudeResult" @update-extrude-target="operation?.type === 'extrude' && (operation.targetId = $event)"

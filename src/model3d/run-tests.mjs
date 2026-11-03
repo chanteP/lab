@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const outdir = resolve(root, '.temp/test/model3d');
-const entries = ['sketchCurves', 'sketchBorders', 'sketchAdvanced', 'geometry', 'geometrySelection', 'measurement', 'section', 'profileIntersection', 'gizmoOrbit', 'transformColors'];
+const entries = ['sketchCurves', 'sketchBorders', 'entityTopology', 'faceExtrusion', 'directEditTransaction', 'edgePicker', 'sketchAdvanced', 'geometry', 'geometrySelection', 'measurement', 'section', 'profileIntersection', 'gizmoOrbit', 'transformColors'];
 await build({
     entryPoints: entries.map((name) => resolve(root, `src/model3d/engine/${name}.spec.ts`)),
     bundle: true,
@@ -14,6 +14,7 @@ await build({
     outdir,
     outExtension: { '.js': '.mjs' },
     logLevel: 'warning',
+    loader: { '.wasm': 'file' },
 });
 const result = spawnSync(process.execPath, ['--test', ...entries.map((name) => resolve(outdir, `${name}.spec.mjs`))], { stdio: 'inherit' });
 process.exit(result.status ?? 1);

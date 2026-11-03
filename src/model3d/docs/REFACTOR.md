@@ -47,7 +47,17 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 
 新增组件使用 scoped SCSS、原生 button、可见焦点样式和 aria-label。既有全局样式逐步收敛，不在一次重构中做无关视觉重排。
 
+## 实体几何与交互模块
+
+- `engine/topology/`：渲染顶点对应、实体邻接、surface domain、逻辑面/边及版本来源映射。
+- `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务。
+- `engine/viewport/DirectDragController.ts`：面箭头的绝对拖拽投影、RAF 合并、结束与取消。
+- `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
+- `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
+
 ## Changelog
+
+- 2026-11-03：重做实体拓扑、面/边选择和事务式 Face Extrude，接入 Manifold WASM，保留孔环、merge vectors 和逻辑身份，移除旧 CSG 与自动跨 body 推拉。
 
 - 2026-11-03：修复复杂面拖拽放手后从旧布尔 operands 回退的问题；负向推拉改为仅裁剪当前面及相邻侧壁，当前并集数据验证其他顶面 69 个三角形完全不变，新增不同高度顶面回归。
 

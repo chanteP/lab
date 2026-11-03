@@ -16,6 +16,7 @@ const props = defineProps<{
     selected: ModelEntity | null;
     selectedEntities: ModelEntity[];
     activeTool: ViewTool;
+    directDistance: number | null;
     displayLength: (value: number) => number;
     inputLength: (value: number | null) => number | null;
 }>();
@@ -86,13 +87,13 @@ const booleanOperation = computed(() => props.booleanDraft ? props.document.enti
             <div class="context-fields"><NButton size="small" secondary @click="emit('boolean', 'union')">并集</NButton><NButton size="small" secondary @click="emit('boolean', 'subtract')">差集</NButton><NButton size="small" secondary @click="emit('boolean', 'intersect')">交集</NButton></div>
         </template>
         <template v-else-if="selected">
-            <div class="context-title"><input :value="selected.name" aria-label="实体名称" @change="emit('updateName', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入厚度</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
+            <div class="context-title"><input :value="selected.name" aria-label="实体名称" @change="emit('updateName', ($event.target as HTMLInputElement).value)" /><span v-if="activeTool === 'offsetFace'">拖动箭头或输入拉伸距离</span><span v-else>{{ ENTITY_NAMES[selected.kind] }}</span></div>
             <div v-if="activeVector" class="context-fields vector-fields">
                 <label v-for="axis in ['X', 'Y', 'Z']" :key="axis">{{ axis }}<IntegerInputNumber :precision="4" :value="activeVector.key === 'position' ? displayLength(activeVector.value[['X','Y','Z'].indexOf(axis)]) : activeVector.value[['X','Y','Z'].indexOf(axis)]" size="small" :show-button="false" :step="activeVector.step" :min="activeVector.key === 'scale' ? 0.01 : undefined" @update:value="emit('updateVector', activeVector.key, ['X','Y','Z'].indexOf(axis), $event)" /></label>
             </div>
             <div v-else-if="activeTool === 'offsetFace'" class="context-fields">
-                <label>面偏移<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(selected.faceOffset?.distance || 0)" size="small" @update:value="emit('updateFaceOffset', inputLength($event))" /></label>
-                <button class="text-button" @click="emit('updateFaceOffset', 0)">清除面拉伸</button>
+                <label>推拉距离<IntegerInputNumber class="direct-distance-input" :precision="2" :value="displayLength(directDistance ?? selected.faceOffset?.distance ?? 0)" size="small" @update:value="emit('updateFaceOffset', inputLength($event))" /></label>
+                <button class="text-button" @click="emit('updateFaceOffset', 0)">重置推拉</button>
             </div>
             <div v-else class="context-fields">
                 <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<IntegerInputNumber :precision="4" :value="displayLength(field.value)" :min="displayLength(0.1)" size="small" :show-button="false" @update:value="emit('updateDimension', field.key, $event)" /></label>

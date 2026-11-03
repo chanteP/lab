@@ -1,187 +1,120 @@
 import * as THREE from 'three';
-import type { ModelEntity, Point2, Vec3 } from '../../types';
+import { buildMeshTopology } from '../topology/MeshTopology';
+import { domainsEqual } from '../topology/SurfaceDomains';
+import { expandTangentEdges, expandTangentFaces } from '../topology/TopologySelection';
+import type { BodyTopology, LogicalFace } from '../topology/types';
+import { createDocument, createEntity, type ModelEntity, type Point2, type Vec3 } from '../../types';
 
-export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; planar: boolean; vertices: Vec3[]; indices: number[]; profilePoints?: Point2[] };
-type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[] };
-type MeshSurfaces = { triangleSurfaces: number[]; surfaces: Surface[] };
+export type GeometryAnchor = {
+    id: string;
+    key: string;
+    normal: Vec3;
+    localNormal: Vec3;
+    point: Vec3;
+    type: 'face' | 'edge';
+    planar: boolean;
+    vertices: Vec3[];
+    indices: number[];
+    profilePoints?: Point2[];
+    faceIds?: string[];
+    edgeIds?: string[];
+    revision?: number;
+};
+export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
 
-/** Converts mesh hits into stable face/edge overlays without changing the source mesh. */
+/** Resolves raycast hits to logical topology. Triangle and display-segment indices never become persistent IDs. */
 export class GeometrySelector {
-    private readonly surfaceCache = new Map<string, MeshSurfaces>();
+    private surfaceCache = new WeakMap<BodyTopology, Map<string, Surface>>();
+    clear() { this.surfaceCache = new WeakMap(); }
 
-    clear() {
-        this.surfaceCache.clear();
+    private topology(mesh: THREE.Mesh): BodyTopology {
+        const existing = mesh.userData.topology as BodyTopology | undefined;
+        if (existing) return existing;
+        const entity = createEntity('box', mesh.userData.entityId || mesh.uuid);
+        const topology = buildMeshTopology(mesh.geometry, entity.id, entity, createDocument());
+        mesh.userData.topology = topology;
+        return topology;
+    }
+
+    private surface(mesh: THREE.Mesh, face: LogicalFace): Surface {
+        const topology = this.topology(mesh);
+        const cached = this.surfaceCache.get(topology);
+        if (cached?.has(face.id)) return cached.get(face.id)!;
+        mesh.updateWorldMatrix(true, false);
+        const vertices: Vec3[] = [];
+        const indices: number[] = [];
+        face.triangleIds.forEach((triangleId) => {
+            topology.triangles[triangleId].renderVertices.forEach((renderVertex) => {
+                vertices.push(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, renderVertex).applyMatrix4(mesh.matrixWorld).toArray());
+                indices.push(indices.length);
+            });
+        });
+        const surface = { id: face.id, vertices, indices, point: face.point, planar: face.planar, normal: face.normal, triangles: face.triangleIds, face };
+        const cache = this.surfaceCache.get(topology) || new Map<string, Surface>();
+        cache.set(face.id, surface);
+        this.surfaceCache.set(topology, cache);
+        return surface;
     }
 
     collectSurface(mesh: THREE.Mesh, hit: THREE.Intersection): Surface {
-        const cached = this.surfaceCache.get(mesh.uuid) || this.buildSurfaces(mesh);
-        const start = hit.faceIndex ?? Math.floor((hit.face?.a || 0) / 3);
-        return cached.surfaces[cached.triangleSurfaces[start]] || cached.surfaces[0];
+        const topology = this.topology(mesh);
+        const triangleId = hit.faceIndex ?? 0;
+        const faceId = topology.triangleFaceIds[triangleId];
+        const face = topology.faces.find((item) => item.id === faceId) || topology.faces[0];
+        return this.surface(mesh, face);
     }
 
-    private buildSurfaces(mesh: THREE.Mesh) {
-        mesh.updateWorldMatrix(true, false);
-        const geometry = mesh.geometry;
-        const positions = geometry.attributes.position;
-        const index = geometry.index;
-        const triangles: { vertices: number[]; normal: THREE.Vector3 }[] = [];
-        const vertexToTriangles = new Map<string, number[]>();
-        const triangleCount = Math.floor((index?.count || positions?.count || 0) / 3);
-
-        // Adjacency is shared by every hit on this mesh; each connected surface is built only once.
-        for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-            const vertices = [0, 1, 2].map((offset) => index ? index.getX(triangleIndex * 3 + offset) : triangleIndex * 3 + offset);
-            const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(positions, vertex));
-            const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
-            triangles.push({ vertices, normal });
-            vertices.forEach((vertex, offset) => {
-                const key = points[offset].toArray().map((value) => value.toFixed(4)).join(',');
-                const list = vertexToTriangles.get(key) || [];
-                list.push(triangleIndex);
-                vertexToTriangles.set(key, list);
-            });
-        }
-
-        const triangleSurfaces = Array.from({ length: triangleCount }, () => -1);
-        const sourceSurfaces: Surface[] = [];
-        const threshold = Math.cos(THREE.MathUtils.degToRad(15));
-        for (let start = 0; start < triangleCount; start++) {
-            if (triangleSurfaces[start] >= 0) continue;
-            const surfaceIndex = sourceSurfaces.length;
-            const queue = [start];
-            const visited = new Set<number>();
-            for (let cursor = 0; cursor < queue.length; cursor++) {
-                const current = queue[cursor];
-                if (visited.has(current)) continue;
-                visited.add(current);
-                triangleSurfaces[current] = surfaceIndex;
-                triangles[current].vertices.forEach((vertex) => {
-                    const point = new THREE.Vector3().fromBufferAttribute(positions, vertex);
-                    const key = point.toArray().map((value) => value.toFixed(4)).join(',');
-                    (vertexToTriangles.get(key) || []).forEach((neighbor) => {
-                        if (!visited.has(neighbor) && triangles[current].normal.dot(triangles[neighbor].normal) >= threshold) queue.push(neighbor);
-                    });
-                });
-            }
-
-            const vertices: Vec3[] = [];
-            const indices: number[] = [];
-            const center = new THREE.Vector3();
-            const planar = [...visited].every((triangleIndex) => Math.abs(triangles[triangleIndex].normal.dot(triangles[start].normal)) > 0.9999);
-            [...visited].sort((a, b) => a - b).forEach((triangleIndex) => {
-                triangles[triangleIndex].vertices.forEach((vertex) => {
-                    const point = new THREE.Vector3().fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld);
-                    center.add(point);
-                    vertices.push(point.toArray());
-                    indices.push(indices.length);
-                });
-            });
-            sourceSurfaces.push({ vertices, indices, planar, normal: triangles[start].normal.toArray(), triangles: [...visited], point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 });
-        }
-
-        // CSG leaves coplanar T-junction fragments; they still belong to one selectable planar face.
-        const merged: Surface[] = [];
-        sourceSurfaces: for (const surface of sourceSurfaces) {
-            if (surface.planar) {
-                for (const target of merged) {
-                    const alignment = new THREE.Vector3(...target.normal).dot(new THREE.Vector3(...surface.normal));
-                    const planeDistance = new THREE.Vector3(...target.normal).dot(new THREE.Vector3(...surface.point).sub(new THREE.Vector3(...target.point)));
-                    if (target.planar && Math.abs(alignment) > 0.9999 && Math.abs(planeDistance) < 0.001) {
-                        const offset = target.vertices.length;
-                        target.vertices.push(...surface.vertices);
-                        target.indices.push(...surface.indices.map((index) => index + offset));
-                        target.triangles.push(...surface.triangles);
-                        continue sourceSurfaces;
-                    }
-                }
-            }
-            merged.push(surface);
-        }
-        merged.forEach((surface) => surface.triangles.forEach((triangle) => triangleSurfaces[triangle] = merged.indexOf(surface)));
-        const result = { triangleSurfaces, surfaces: merged };
-        this.surfaceCache.set(mesh.uuid, result);
-        return result;
-    }
-
-    createFaceAnchor(hit: THREE.Intersection, entity?: ModelEntity): GeometryAnchor {
+    createFaceAnchor(hit: THREE.Intersection, entity?: ModelEntity, includeTangent = false): GeometryAnchor {
         const mesh = hit.object as THREE.Mesh;
-        const localNormal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone();
-        const normal = localNormal.clone().transformDirection(mesh.matrixWorld);
-        const triangle = hit.face ? [hit.face.a, hit.face.b, hit.face.c].map((index) => new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld)) : [hit.point.clone()];
-        let vertices = triangle;
-        let indices = [0, 1, 2];
-        let point = hit.point.clone();
-        let planar = true;
-        let surfaceKey = 'triangle';
-
-        if (entity?.kind === 'box' && !entity.meshGeometry) {
-            const dimensions = [entity.width!, entity.height!, entity.depth!];
-            const axis = Math.abs(localNormal.x) > 0.5 ? 0 : Math.abs(localNormal.y) > 0.5 ? 1 : 2;
-            surfaceKey = `${axis}:${Math.sign(localNormal.getComponent(axis)) || 1}`;
-            const u = (axis + 1) % 3, v = (axis + 2) % 3;
-            const sign = Math.sign(localNormal.getComponent(axis)) || 1;
-            vertices = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => {
-                const local = [0, 0, 0];
-                local[axis] = sign * dimensions[axis] / 2;
-                local[u] = su * dimensions[u] / 2;
-                local[v] = sv * dimensions[v] / 2;
-                return new THREE.Vector3(...local as Vec3).applyMatrix4(mesh.matrixWorld);
-            });
-            point = vertices.reduce((center, vertex) => center.add(vertex), new THREE.Vector3()).multiplyScalar(0.25);
-            indices = [0, 1, 2, 0, 2, 3];
-        } else {
-            const surface = this.collectSurface(mesh, hit);
-            if (surface?.vertices.length) {
-                planar = surface.planar;
-                const cached = this.surfaceCache.get(mesh.uuid);
-                surfaceKey = String(cached?.surfaces.indexOf(surface) ?? 0);
-                vertices = surface.vertices.map((point) => new THREE.Vector3(...point));
-                indices = surface.indices;
-            }
-        }
-        const id = mesh.userData.entityId;
-        return { id, key: `${id}:face:${surfaceKey}`, normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', planar, vertices: vertices.map((vertex) => vertex.toArray()), indices };
+        const topology = this.topology(mesh);
+        const selected = this.collectSurface(mesh, hit);
+        const seedFace = selected.face;
+        const faces = includeTangent ? expandTangentFaces(topology, [seedFace]) : [seedFace];
+        const surfaces = faces.map((face) => this.surface(mesh, face));
+        const vertices = surfaces.flatMap((surface) => surface.vertices);
+        const indices: number[] = [];
+        surfaces.forEach((surface) => {
+            const offset = indices.length;
+            indices.push(...surface.indices.map((index) => index + offset));
+        });
+        const localNormal = (hit.face?.normal || new THREE.Vector3(...seedFace.normal)).clone();
+        const worldTriangle = hit.face ? [hit.face.a, hit.face.b, hit.face.c].map((index) => new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld)) : [];
+        const normal = worldTriangle.length === 3
+            ? worldTriangle[1].clone().sub(worldTriangle[0]).cross(worldTriangle[2].clone().sub(worldTriangle[0])).normalize()
+            : localNormal.clone().transformDirection(mesh.matrixWorld);
+        const samePlane = faces.every((face) => face.planar && domainsEqual(face.domain, seedFace.domain));
+        const point = new THREE.Vector3(...selected.point).applyMatrix4(mesh.matrixWorld);
+        return {
+            id: mesh.userData.entityId || entity?.id || '', key: `${mesh.userData.entityId}:face:${faces.map((face) => face.id).sort().join(',')}`,
+            normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', planar: samePlane,
+            vertices, indices, faceIds: faces.map((face) => face.id), revision: topology.revision,
+        };
     }
 
-    createEdgeAnchor(hit: THREE.Intersection): GeometryAnchor {
-        const positions = (hit.object as THREE.LineSegments).geometry.attributes.position;
-        hit.object.updateWorldMatrix(true, false);
-        const pointKey = (index: number) => [positions.getX(index), positions.getY(index), positions.getZ(index)].map((value) => value.toFixed(4)).join(',');
-        const adjacency = new Map<string, number[]>();
-        for (let segment = 0; segment < Math.floor(positions.count / 2); segment++) {
-            [segment * 2, segment * 2 + 1].forEach((index) => {
-                const key = pointKey(index);
-                adjacency.set(key, [...adjacency.get(key) || [], segment]);
-            });
-        }
-
-        // Degree-two display edges form circles and other smooth loops; box corners still select one segment.
-        const startSegment = Math.floor((hit.index || 0) / 2);
-        const visited = new Set([startSegment]);
-        const ordered = [startSegment * 2, startSegment * 2 + 1];
-        const extend = (fromStart: boolean) => {
-            let current = fromStart ? ordered[0] : ordered[ordered.length - 1];
-            while (true) {
-                const connected = adjacency.get(pointKey(current)) || [];
-                if (connected.length !== 2) break;
-                const next = connected.find((segment) => !visited.has(segment));
-                if (next === undefined) break;
-                visited.add(next);
-                const a = next * 2, b = a + 1;
-                const other = pointKey(a) === pointKey(current) ? b : a;
-                if (fromStart) ordered.unshift(other);
-                else ordered.push(other);
-                current = other;
-            }
-        };
-        extend(false);
-        extend(true);
-        const vertices = ordered.map((index) => new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(hit.object.matrixWorld));
-        const point = vertices[0].clone().lerp(vertices[1], 0.5);
-        let owner: THREE.Object3D | null = hit.object;
+    createEdgeAnchor(hit: THREE.Intersection, includeTangent = false): GeometryAnchor {
+        const line = hit.object as THREE.LineSegments;
+        const segmentIndex = Math.floor((hit.index || 0) / 2);
+        let owner: THREE.Object3D | null = line;
         while (owner && !owner.userData.entityId) owner = owner.parent;
-        const id = owner?.userData.entityId || '';
-        const edgeKey = [...new Set(ordered.map(pointKey))].sort().join('|');
-        return { id, key: `${id}:edge:${edgeKey}`, normal: [0, 1, 0], localNormal: [0, 1, 0], point: point.toArray(), type: 'edge', planar: false, vertices: vertices.map((vertex) => vertex.toArray()), indices: [0, 1] };
+        const mesh = owner as THREE.Mesh;
+        const topology = this.topology(mesh);
+        const edgeId = line.userData.segmentEdgeIds?.[segmentIndex] || line.userData.logicalEdgeId;
+        const seed = topology.logicalEdges.find((edge) => edge.id === edgeId) || topology.logicalEdges[0];
+        const edges = expandTangentEdges(topology, [seed]);
+        const selectedEdges = includeTangent ? edges : [seed];
+        line.updateWorldMatrix(true, false);
+        const vertices = selectedEdges.flatMap((edge) => edge.segments.flatMap((segment) => [segment.a, segment.b]))
+            .map((point) => new THREE.Vector3(...point).applyMatrix4(line.matrixWorld).toArray() as Vec3);
+        const point = new THREE.Vector3(...vertices[Math.floor(vertices.length / 2)] || [0, 0, 0]);
+        const localNormal = seed.faceIds.length === 2 ? seed.faceIds.reduce((sum, id) => {
+            const face = topology.faces.find((item) => item.id === id);
+            return face ? sum.add(new THREE.Vector3(...face.normal)) : sum;
+        }, new THREE.Vector3()).normalize() : new THREE.Vector3(0, 1, 0);
+        const normal = localNormal.clone().transformDirection(mesh.matrixWorld);
+        return {
+            id: mesh.userData.entityId || '', key: `${mesh.userData.entityId}:edge:${selectedEdges.map((edge) => edge.id).sort().join(',')}`,
+            normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'edge', planar: false,
+            vertices, indices: vertices.map((_, index) => index), edgeIds: selectedEdges.map((edge) => edge.id), revision: topology.revision,
+        };
     }
 }
