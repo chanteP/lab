@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
-import { AddOutline, BuildOutline, CutOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
+import { AddOutline, BuildOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
@@ -9,7 +9,6 @@ defineProps<{
     activePanel: string | null;
     activeTool: string;
     sketchMode: boolean;
-    sectionActive: boolean;
     isolateActive: boolean;
     selectionKind: string | null;
     canIsolate: boolean;
@@ -20,7 +19,6 @@ const emit = defineEmits<{
     sketch: [];
     construct: [];
     tool: [tool: string];
-    section: [];
     isolate: [];
     history: [id: string];
 }>();
@@ -43,7 +41,6 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
         </div>
         <div class="toolbar-spacer"></div>
         <div class="tool-group primary-tools">
-            <ViewportToolItem :description-on-hover="false" label="剖视图" :active="sectionActive" @click="emit('section')"><NIcon><CutOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
             <NPopover trigger="click" placement="right-start">
                 <template #trigger><span class="history-trigger"><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></span></template>

@@ -180,3 +180,4 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 - 2026-10-29：修复 composable 拆分后的初始化顺序；草图拖动改为结束时同步场景，统一椭圆参数角和双半径方向，支持圆/椭圆裁边重闭合、扇形磁吸与双击复位、直线/贝塞尔复位；填充改为平面 UV，场景与界面颜色集中到 colors.ts。
 - 2026-10-28：建立 engine/types/stores/config/utils 分层；抽出 useUnits、useUndoHistory；新增 ToolButton、MenuCommand、AppTopBar、EntitySidebar、ModelingToolbar、SketchToolbar、SketchConstraints；拉伸完成后隐藏原草图平面；退出草图仅图标使用红色背景。
 - 2026-11-03：底部新增五种图标显示模式与通用箭头浮层，草图强制渲染并可恢复；加入全局单位下拉、完整正负轴、统一 TransformControls 轴色和连续磁吸拖动，粗箭头标注外移，品牌更名 Builder 3D。
+- 2026-11-04：剖视入口移至底部测量按钮旁，进入草图自动退出剖视并禁用，退出草图保持非剖视。

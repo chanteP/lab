@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue';
 import { onClickOutside, useEventListener } from '@vueuse/core';
 import { NCheckbox, NIcon, NTooltip } from 'naive-ui';
-import { CameraOutline, CloseOutline, GridOutline, ScanOutline } from '@vicons/ionicons5';
+import { CameraOutline, CloseOutline, CutOutline, GridOutline, ScanOutline } from '@vicons/ionicons5';
 import SvgIcon from '../ui/SvgIcon.vue';
 import FloatingPanel from '../ui/FloatingPanel.vue';
 import { DISPLAY_MODES } from '../../config/configs';
@@ -10,6 +10,7 @@ import type { DisplayMode } from '../../types';
 
 defineProps<{
     measureMode: boolean;
+    sectionActive: boolean;
     sketchMode: boolean;
     projectionMode: 'perspective' | 'orthographic';
     scaleBar: { width: number; value: number };
@@ -21,6 +22,7 @@ defineProps<{
 }>();
 const emit = defineEmits<{
     measure: [];
+    section: [];
     fit: [];
     projection: [];
     displayMode: [mode: DisplayMode];
@@ -64,6 +66,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </template>
         <div class="measure-actions">
             <NTooltip><template #trigger><button aria-label="测量" :class="{ active: measureMode }" @click.stop="emit('measure')"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
+            <NTooltip><template #trigger><button aria-label="剖视图" :aria-pressed="sectionActive && !sketchMode" :disabled="sketchMode" :class="{ active: sectionActive && !sketchMode }" @click.stop="emit('section')"><NIcon><CutOutline /></NIcon></button></template>{{ sketchMode ? '草图模式下不可用' : '剖视图' }}</NTooltip>
             <div class="settings-control">
                 <NTooltip><template #trigger><button ref="settingsButton" aria-label="显示与相机设置" :aria-expanded="settingsOpen" :class="{ active: settingsOpen }" @click.stop="settingsOpen = !settingsOpen"><NIcon><component :is="projectionMode === 'perspective' ? CameraOutline : GridOutline" /></NIcon></button></template>显示与相机设置</NTooltip>
                 <FloatingPanel v-if="settingsOpen" ref="settingsPanel" class="display-settings" arrow="bottom" label="显示与相机设置" @click.stop>
@@ -101,6 +104,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 .display-mode-actions .svg-icon { width: 19px; height: 19px; }
 .utility-divider { width: 1px; height: 19px; margin: 0 2px; background: var(--model3d-ui-d4dfd8); }
 .settings-control { position: relative; width: 24px; height: 28px; display: grid; place-items: center; }
+.measure-actions button:disabled, .measure-actions button:disabled:hover { color: var(--model3d-ui-607168); opacity: .3; cursor: not-allowed; }
 .display-settings { right: 50%; bottom: 40px; width: 224px; transform: translateX(50%); }
 .display-settings :deep(.n-checkbox) { display: flex; margin: 11px 3px; }
 .display-settings .display-mode-grid { margin-bottom: 0; }

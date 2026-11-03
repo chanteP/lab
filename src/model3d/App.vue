@@ -247,12 +247,16 @@ function toggleIsolate() {
     activePanel.value = null;
 }
 function toggleSection() {
-    sectionActive.value = !sectionActive.value;
-    if (sectionActive.value) {
+    if (sketchMode.value) return;
+    setSectionActive(!sectionActive.value);
+}
+function setSectionActive(active: boolean) {
+    sectionActive.value = active;
+    if (active) {
         sectionLimit.value = Math.max(1, viewport?.getSectionRadius() || 100);
         sectionOffset.value = 0;
     }
-    viewport?.setSection(sectionActive.value, sectionOffset.value);
+    viewport?.setSection(active, sectionOffset.value);
 }
 function updateSectionOffset(value: number) {
     sectionOffset.value = value;
@@ -441,6 +445,7 @@ watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLi
 watch(sketchGuideSnapEnabled, (value) => viewport?.setSketchGuideSnapEnabled(value));
 watch(sketchMode, (active) => {
     if (active) {
+        if (sectionActive.value) setSectionActive(false);
         displayModeBeforeSketch = displayMode.value;
         updateDisplayMode('shaded');
     } else {
@@ -606,9 +611,9 @@ onBeforeUnmount(() => {
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
-                <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :section-active="sectionActive" :isolate-active="isolateActive"
+                <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
-                    @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @section="toggleSection" @isolate="toggleIsolate"
+                    @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @isolate="toggleIsolate"
                     @history="editHistory" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
@@ -635,9 +640,9 @@ onBeforeUnmount(() => {
                     @swap-boolean-roles="swapBooleanRoles" @update-name="updateEntity('name', $event)"
                     @update-vector="updateVector" @update-face-offset="updateFaceOffsetInput" @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" @edit-profile="startSketch(true)" @boolean="applyBoolean" />
 
-                <ViewportUtilities :measure-mode="measureMode" :sketch-mode="sketchMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
+                <ViewportUtilities :measure-mode="measureMode" :section-active="sectionActive" :sketch-mode="sketchMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
                     :display-mode="displayMode" :show-edges="showEdges" :shadow-visible="shadowVisible" :grid-visible="gridVisible"
-                    @measure="toggleMeasure" @fit="fitView" @projection="toggleProjection" @display-mode="updateDisplayMode"
+                    @measure="toggleMeasure" @section="toggleSection" @fit="fitView" @projection="toggleProjection" @display-mode="updateDisplayMode"
                     @show-edges="showEdges = $event" @shadow-visible="shadowVisible = $event" @grid-visible="gridVisible = $event" />
                 <div v-if="!sketchMode" class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
             </main>
