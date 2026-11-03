@@ -105,7 +105,7 @@ export function buildFaceExtrusionTool(offset: FaceOffset, zeroTolerance = 1e-7)
     const u = vertices[1].clone().sub(origin).normalize();
     if (u.lengthSq() < 0.5 || Math.abs(u.dot(direction)) > 0.999) throw new Error('选中面坐标系退化');
     // Real penetration into S0 avoids coplanar-only CSG at curved trim edges; the final cap remains exactly at d.
-    const overlap = Math.min(1e-3, Math.abs(offset.distance) * 1e-3);
+    const overlap = Math.min(1e-3, Math.abs(offset.distance) / 2);
     const depth = Math.abs(offset.distance) + overlap;
     const positions: number[] = [];
     const push = (vertex: number, z: number) => {

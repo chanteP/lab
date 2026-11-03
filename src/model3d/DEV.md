@@ -154,16 +154,16 @@
 - 默认面选择是同一 body 内、共享边连通的 SameDomain patch；不合并不连通共面岛或点接触面。解析圆柱/球面优先使用 surface metadata，其他 mesh 曲面只提供 smooth patch 近似。
 - 显示边和拾取边来自同一个 logical edge graph。三角剖分边、共面分割边和周期 seam 不进入可选边；细分直线和圆弧由度数、切向和邻面关系合并。
 - 边拾取使用 CSS 像素阈值，默认进行遮挡过滤；“穿透选择”是显式开关。面/边的“相切扩选”也是显式开关，不能改变默认 SameDomain 语义。
-- 实体平面直接编辑只声明 Face Extrude：从手势开始时的 S0/F0/n0 构造闭合扫掠体，正位移 Union、负位移 Subtract，仅修改 owner body。切穿可返回空实体，禁止反向生成新实体。
+- 非平面实体面的推拉入口必须禁用，不显示粗箭头；曲面 Offset 需要独立实现。实体平面直接编辑只声明 Face Extrude：从手势开始时的 S0/F0/n0 构造闭合扫掠体，正位移 Union、负位移 Subtract，仅修改 owner body。切穿可返回空实体，禁止反向生成新实体。
 - `DirectEditTransaction` 固定 baseEntity、baseRevision、gestureId 和递增 sequence；每次 preview 都从 S0 计算。pointerup 重新计算最终参数，cancel/Esc/失焦恢复 S0，失败不提交坏模型。
 - 世界拖拽距离转换到实体局部距离时考虑缩放；UI 始终显示世界单位。烘焙结果同时保存 position/index 与内核 merge vectors，normal/UV seam 对应的 render vertices 不得直接当作拓扑顶点。
 - `GeometryValidator` 在提交前检查 finite、索引、属性版本、groups/drawRange、定向共享边、闭合性、体积和 components；合法小三角面不能靠放大 epsilon 删除。
 
-- Face Extrude 工具体先由真实外环/孔环重新三角化 cap，不继承 Boolean 面内部碎边。工具体向 S0 内穿透最多 `0.001` 的几何重叠用于避免曲边共面接触；它不是逐步放大的误差公差，最终 cap 仍精确位于 d。
+- Face Extrude 工具体先由真实外环/孔环重新三角化 cap，不继承 Boolean 面内部碎边。工具体向 S0 内穿透使用 `min(0.001, |d| / 2)` 的几何重叠用于避免曲边共面接触；它不是逐步放大的误差公差，最终 cap 仍精确位于 d。
 - Extrude/Boolean 完成时通过 `bakeEntityGeometry` 保存独立网格。`profileId / operands` 只用于显式 History 回改，不再参与已提交模型的日常重建。
 - 删除源草图或源实体时由 `detachFeatureReferences` 先确保结果已烘焙，再移除失效的 History 引用；不得因为源对象被删除而阻止操作或破坏结果。
 
 - 3D 草图材质创建时保存真实 `sketchBaseOpacity`；编辑态临时透明化不得成为 hover 离开后的恢复值。hover 只改变颜色/临时透明度，不负责草图可见性。
-- 实体默认使用中性灰色、无贴图、无金属的粗糙材质；不得为得到默认质感而加载 RoomEnvironment 或其他环境贴图。
+- 实体默认使用中性灰色、无贴图、无金属的粗糙材质；不得加载 RoomEnvironment 或其他环境贴图。Boolean 输出使用 `calculateNormals(0, 60)` 在锐边拆分法线，禁止用跨锐边平均的 smooth vertex normal 制造平面云纹。
 - Boolean 输入在每次操作前先执行 Manifold `simplify()`，避免上一轮共面分割进入下一轮；`faceEdit` 只允许在相邻 revision 间映射被拖动的平面，禁止对任意平行面猜测绑定。
 - 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。

@@ -59,15 +59,18 @@ function outputGeometry(mesh: InstanceType<ManifoldToplevel['Mesh']>) {
     const mergeToVert = new Uint32Array(mesh.mergeToVert);
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(mesh.numVert * 3);
+    const normals = mesh.numProp >= 6 ? new Float32Array(mesh.numVert * 3) : null;
     for (let vertex = 0; vertex < mesh.numVert; vertex++) {
         positions[vertex * 3] = properties[vertex * mesh.numProp];
         positions[vertex * 3 + 1] = properties[vertex * mesh.numProp + 1];
         positions[vertex * 3 + 2] = properties[vertex * mesh.numProp + 2];
+        if (normals) for (let axis = 0; axis < 3; axis++) normals[vertex * 3 + axis] = properties[vertex * mesh.numProp + 3 + axis];
     }
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(mesh.numVert * 2), 2));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    geometry.computeVertexNormals();
+    if (normals) geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    else geometry.computeVertexNormals();
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData.sourceFaceIDs = faceIDs;
@@ -100,40 +103,14 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         result.delete();
         result = simplified;
         if (result.status() !== 'NoError') throw new Error(`结果清理失败：${result.status()}`);
-        const mesh = result.getMesh();
+        const shaded = result.calculateNormals(0, 60);
+        result.delete();
+        result = shaded;
+        const mesh = result.getMesh(0);
         return outputGeometry(mesh);
     } finally {
         result?.delete();
         baseSolid?.delete();
         toolSolid?.delete();
-    }
-}
-
-/** Normalizes planar contours with Manifold before extruding; self-intersecting CSG fragments never enter the sweep. */
-export function extrudeNormalizedFaceLoops(
-    loops: THREE.Vector2[][],
-    depth: number,
-    u: THREE.Vector3,
-    v: THREE.Vector3,
-    direction: THREE.Vector3,
-    origin: THREE.Vector3,
-) {
-    const { CrossSection } = getManifold();
-    const polygons = loops.map((loop) => loop.map((point) => [point.x, point.y] as [number, number]));
-    const section = CrossSection.ofPolygons(polygons, 'EvenOdd');
-    let solid: InstanceType<ReturnType<typeof getManifold>['Manifold']> | null = null;
-    let transformed: typeof solid = null;
-    try {
-        if (section.isEmpty()) throw new Error('选中面的有效轮廓为空');
-        solid = section.extrude(depth);
-        const matrix = new THREE.Matrix4().makeBasis(u, v, direction).setPosition(origin);
-        transformed = solid.transform(matrix.elements as unknown as import('manifold-3d').Mat4);
-        if (transformed.status() !== 'NoError') throw new Error(`扫掠体无效：${transformed.status()}`);
-        const mesh = transformed.getMesh();
-        return outputGeometry(mesh);
-    } finally {
-        transformed?.delete();
-        solid?.delete();
-        section.delete();
     }
 }

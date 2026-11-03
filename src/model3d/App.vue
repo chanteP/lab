@@ -58,6 +58,7 @@ const measureMode = ref(false);
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
 const selectedProfileFace = ref<Point2[] | null>(null);
+const selectedFacePlanar = ref(false);
 const viewportMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
 const activePanel = ref<PrimaryPanel | null>(null);
 const selectionKind = ref<SelectionKind>(null);
@@ -331,6 +332,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     }
     lastFace.value = { bodyId: id, normal, point };
     selectedProfileFace.value = profileFace?.map((point) => [...point]) || null;
+    selectedFacePlanar.value = type === 'face' && !!viewport?.getGeometryAnchor()?.planar;
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : picked?.kind === 'sketch' ? 'sketch' : type;
     activePanel.value = null;
@@ -609,7 +611,7 @@ onBeforeUnmount(() => {
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
-                    :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent"
+                    :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent" :selected-face-planar="selectedFacePlanar"
                     @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @import="importProject" @create-plane="createPlane"
                     @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')" />
 
