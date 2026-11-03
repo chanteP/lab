@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildEntityMesh } from './geometry';
 import { GeometrySelector } from './viewport/GeometrySelector';
 import { createDisplayEdgeGeometry } from './viewport/renderUtils';
@@ -146,6 +147,7 @@ test('a baked cylinder remains a valid subtraction tool on the next boolean oper
     const result = Object.assign(createEntity('box', 'result'), { kind: 'boolean' as const, operation: 'subtract' as const, operands: ['box', 'cylinder'] as [string, string], position: [0, 0, 0] });
     document.entities.push(box, source, result);
     const mesh = buildEntityMesh(result, document);
+    mesh.material.side = THREE.DoubleSide;
     const raycaster = new THREE.Raycaster(new THREE.Vector3(0, 21, 0), new THREE.Vector3(0, -1, 0));
     const hit = raycaster.intersectObject(mesh)[0];
     assert.equal(hit, undefined, 'the center ray must pass through the entire cylinder hole');
@@ -208,4 +210,64 @@ test('concave planar faces preserve their notch when extended', () => {
 
     const notch = new THREE.Raycaster(new THREE.Vector3(7, 16, -7), new THREE.Vector3(0, -1, 0)).intersectObject(result)[0];
     assert.equal(notch, undefined, 'the concave notch must remain empty');
+});
+
+test('baked boolean entities do not rebuild from stale operands on release', () => {
+    const document = createDocument();
+    const box = Object.assign(createEntity('box', 'box'), { position: [0, 0, 0] });
+    const cylinder = Object.assign(createEntity('cylinder', 'cylinder'), { position: [0, 20, 0], height: 80 });
+    const result = Object.assign(createEntity('box', 'result'), { kind: 'boolean' as const, operation: 'union' as const, operands: ['box', 'cylinder'] as [string, string], position: [0, 0, 0] });
+    document.entities.push(box, cylinder, result);
+    const original = buildEntityMesh(result, document).geometry;
+    original.translate(0, 5, 0);
+    original.computeBoundingBox();
+    result.meshGeometry = { positions: Array.from(original.attributes.position.array), indices: original.index ? Array.from(original.index.array) : [] };
+
+    const baked = buildEntityMesh(result, document).geometry;
+    baked.computeBoundingBox();
+    assert.equal(baked.boundingBox!.max.y, original.boundingBox!.max.y);
+});
+
+test('lowering one combined top face does not move the other top face', () => {
+    const document = createDocument();
+    const box = Object.assign(createEntity('box', 'box'), { position: [0, 0, 0], width: 20, height: 60, depth: 20 });
+    const cylinder = Object.assign(createEntity('cylinder', 'cylinder'), { position: [30, 0, 0], radius: 10, height: 40 });
+    const result = Object.assign(createEntity('box', 'result'), { kind: 'boolean' as const, operation: 'union' as const, operands: ['box', 'cylinder'] as [string, string], position: [0, 0, 0] });
+    document.entities.push(box, cylinder, result);
+    const boxMesh = buildEntityMesh(box, document), cylinderMesh = buildEntityMesh(cylinder, document);
+    const boxGeometry = boxMesh.geometry.clone().applyMatrix4(boxMesh.matrixWorld);
+    const cylinderGeometry = cylinderMesh.geometry.clone().applyMatrix4(cylinderMesh.matrixWorld);
+    const combined = mergeGeometries([boxGeometry, cylinderGeometry], false)!;
+    result.meshGeometry = { positions: Array.from(combined.attributes.position.array), indices: combined.index ? Array.from(combined.index.array) : [] };
+    const mesh = buildEntityMesh(result, document);
+    mesh.material.side = THREE.DoubleSide;
+    const circleTop = (target: THREE.Mesh) => {
+        const positions = target.geometry.attributes.position;
+        const index = target.geometry.index;
+        const triangles: string[] = [];
+        for (let cursor = 0; cursor < (index?.count || positions.count); cursor += 3) {
+            const points = [0, 1, 2].map((corner) => new THREE.Vector3().fromBufferAttribute(positions, index ? index.getX(cursor + corner) : cursor + corner));
+            const center = points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3);
+            if (center.x > 20 && points.every((point) => Math.abs(point.y - 40) < 0.001)) triangles.push(points.map((point) => point.toArray().join(',')).sort().join('|'));
+        }
+        return triangles.sort();
+    };
+    const beforeCircle = circleTop(mesh);
+    const positions = mesh.geometry.attributes.position;
+    const meshIndex = mesh.geometry.index;
+    let hit: THREE.Intersection | null = null;
+    for (let index = 0; index < (meshIndex?.count || positions.count); index += 3) {
+        const a = new THREE.Vector3().fromBufferAttribute(positions, meshIndex ? meshIndex.getX(index) : index), b = new THREE.Vector3().fromBufferAttribute(positions, meshIndex ? meshIndex.getX(index + 1) : index + 1), c = new THREE.Vector3().fromBufferAttribute(positions, meshIndex ? meshIndex.getX(index + 2) : index + 2);
+        const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+        const point = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+        if (normal.y > 0.999 && Math.abs(point.y - 30) < 0.001) { hit = { object: mesh, faceIndex: index / 3, face: { normal }, point } as unknown as THREE.Intersection; break; }
+    }
+    const anchor = new GeometrySelector().createFaceAnchor(hit!, result);
+    assert(anchor.vertices.every((point) => Math.abs(point[1] - 30) < 0.001));
+    result.faceOffset = { normal: anchor.localNormal, distance: -35, vertices: anchor.vertices, indices: anchor.indices };
+    const edited = buildEntityMesh(result, document);
+    edited.material.side = THREE.DoubleSide;
+    assert.deepEqual(circleTop(edited), beforeCircle);
+    const positionsAfter = edited.geometry.attributes.position;
+    assert(Array.from({ length: positionsAfter.count }, (_, index) => positionsAfter.getY(index)).some((value) => Math.abs(value + 5) < 0.001));
 });
