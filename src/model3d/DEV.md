@@ -158,4 +158,8 @@
 - `DirectEditTransaction` 固定 baseEntity、baseRevision、gestureId 和递增 sequence；每次 preview 都从 S0 计算。pointerup 重新计算最终参数，cancel/Esc/失焦恢复 S0，失败不提交坏模型。
 - 世界拖拽距离转换到实体局部距离时考虑缩放；UI 始终显示世界单位。烘焙结果同时保存 position/index 与内核 merge vectors，normal/UV seam 对应的 render vertices 不得直接当作拓扑顶点。
 - `GeometryValidator` 在提交前检查 finite、索引、属性版本、groups/drawRange、定向共享边、闭合性、体积和 components；合法小三角面不能靠放大 epsilon 删除。
+
+- Face Extrude 工具体先由真实外环/孔环重新三角化 cap，不继承 Boolean 面内部碎边。工具体向 S0 内穿透最多 `0.001` 的几何重叠用于避免曲边共面接触；它不是逐步放大的误差公差，最终 cap 仍精确位于 d。
+- Extrude/Boolean 完成时通过 `bakeEntityGeometry` 保存独立网格。`profileId / operands` 只用于显式 History 回改，不再参与已提交模型的日常重建。
+- 删除源草图或源实体时由 `detachFeatureReferences` 先确保结果已烘焙，再移除失效的 History 引用；不得因为源对象被删除而阻止操作或破坏结果。
 - 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。

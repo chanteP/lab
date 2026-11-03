@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { initializeManifold, evaluateBoolean } from './modeling/ManifoldKernel';
 import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
+import { buildEntityMesh } from './geometry';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { GeometrySelector } from './viewport/GeometrySelector';
 import { createDocument, createEntity, type ModelEntity } from '../types';
@@ -71,4 +72,28 @@ test('direct and multi-step gesture evaluation produce the same geometry', () =>
     for (const distance of [0.2, 1.7, -0.5, 2.4, 3]) stepped = evaluateFaceExtrusion(mesh.geometry, faceOffset(mesh, entity, [0, 1, 0], distance)).geometry;
     assert.equal(volume(stepped!), volume(direct));
     assert.deepEqual(direct.boundingBox, stepped!.boundingBox);
+});
+
+test('curved intersection patches accept both outward and inward extrusion', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const common = { parentId: null, color: '#8ca3b0', visible: true, position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number], sideMode: 'one' as const, direction: 1 as const, sectorAngle: 360, curves: {}, planeId: 'plane' };
+    const rectangle = { ...common, id: 'rectangle', name: 'rectangle', kind: 'extrude', profileType: 'rectangle', points: [[-35.4, 8.7], [29.8, 8.7], [29.8, -46.5], [-35.4, -46.5]], depth: 57.8 } as ModelEntity;
+    const circle = { ...common, id: 'circle', name: 'circle', kind: 'extrude', profileType: 'circle', points: [[-51.9, 25.5], [-10.6, 0]], depth: 161.87 } as ModelEntity;
+    const intersection = { ...common, id: 'intersection', name: 'intersection', kind: 'boolean', operation: 'intersect', operands: ['rectangle', 'circle'] } as ModelEntity;
+    document.entities.push(rectangle, circle, intersection);
+    const mesh = buildEntityMesh(intersection, document);
+    const topology = buildMeshTopology(mesh.geometry, intersection.id, intersection, document);
+    mesh.userData.topology = topology;
+    for (const face of topology.faces.filter((face) => face.planar)) {
+        const vertices: [number, number, number][] = [], indices: number[] = [];
+        face.triangleIds.forEach((id) => topology.triangles[id].renderVertices.forEach((renderVertex) => {
+            vertices.push(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, renderVertex).toArray());
+            indices.push(indices.length);
+        }));
+        for (const distance of [1, -1]) {
+            const result = evaluateFaceExtrusion(mesh.geometry, { normal: face.normal, distance, vertices, indices });
+            assert(result.validation.valid, `${face.id} at ${distance}: ${result.validation.errors.join(', ')}`);
+        }
+    }
 });

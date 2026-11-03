@@ -6,6 +6,7 @@ import { entityProfileClosed } from '../engine/profiles';
 import { applyEntityTransform, buildEntityMesh } from '../engine/geometry';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { DirectEditTransaction } from '../engine/modeling/DirectEditTransaction';
+import { bakeEntityGeometry } from '../engine/modeling/BakedGeometry';
 import { uid } from '../utils/id';
 import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
@@ -107,17 +108,26 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 body = createEntity('extrude', uid());
                 body.name = uniqueEntityName(document.value, 'extrude');
                 body.parentId = profile.parentId;
-                body.profileId = activeIntersection ? undefined : profile.id;
-                body.points = (activeIntersection || profile.points!).map((point) => [...point]);
-                body.profileType = activeIntersection ? 'polygon' : profile.profileType;
-                body.planeId = profile.planeId;
                 body.depth = 10;
                 body.sideMode = 'one';
                 body.direction = 1;
                 body.position = [0, 0, 0];
-                body.sectorAngle = profile.sectorAngle;
                 document.value.entities.push(body);
             }
+            body.profileId = activeIntersection ? undefined : profile.id;
+            body.points = (activeIntersection || profile.points!).map((point) => [...point]);
+            body.parts = profile.parts?.map((part) => ({ ...part, points: part.points.map((point) => [...point]) }));
+            body.profileType = activeIntersection ? 'polygon' : profile.profileType;
+            body.planeId = profile.planeId;
+            body.curves = cloneEntity(profile).curves;
+            body.analyticCurves = cloneEntity(profile).analyticCurves;
+            body.sides = profile.sides;
+            body.sectorAngle = profile.sectorAngle;
+            body.open = profile.open;
+            body.profileStartAngle = profile.profileStartAngle;
+            delete body.meshGeometry;
+            delete body.axisBox;
+            delete body.compositeGeometry;
             profile.visible = true;
             body.visible = true;
             bodies.push(body);
@@ -208,12 +218,18 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 document.value.entities.push(result);
                 selectedId = result.id;
             }
+            [...current.bodyIds, current.combinedResultId].forEach((id) => {
+                const entity = document.value.entities.find((item) => item.id === id);
+                if (entity) bakeEntityGeometry(entity, document.value);
+            });
             selectedIds.value = [selectedId];
         } else {
             const target = document.value.entities.find((item) => item.id === current.targetId);
             const tool = document.value.entities.find((item) => item.id === current.toolId);
             if (target) target.visible = current.keepTarget;
             if (tool) tool.visible = current.keepTool;
+            const result = document.value.entities.find((item) => item.id === current.resultId);
+            if (result) bakeEntityGeometry(result, document.value);
             selectedIds.value = [current.resultId];
             viewport()?.setBooleanRoles(null);
         }
@@ -245,6 +261,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (entity.kind === 'boolean' && entity.operands) {
             const before = cloneDocument(document.value);
             pushHistory();
+            delete entity.meshGeometry;
+            delete entity.compositeGeometry;
             operation.value = { type: 'boolean', resultId: entity.id, targetId: entity.operands[0], toolId: entity.operands[1], before,
                 keepTarget: !!document.value.entities.find((item) => item.id === entity.operands![0])?.visible,
                 keepTool: !!document.value.entities.find((item) => item.id === entity.operands![1])?.visible, existing: true };
@@ -342,19 +360,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     }
 
     function bakeDirectEntity(item: ModelEntity) {
-        const mesh = buildEntityMesh(item, document.value);
-        item.meshGeometry = {
-            positions: Array.from(mesh.geometry.attributes.position?.array || []),
-            indices: mesh.geometry.index ? Array.from(mesh.geometry.index.array) : Array.from({ length: mesh.geometry.attributes.position?.count || 0 }, (_, index) => index),
-            mergeFromVert: Array.from(mesh.geometry.userData.mergeFromVert || []),
-            mergeToVert: Array.from(mesh.geometry.userData.mergeToVert || []),
-        };
-        item.compositeGeometry = true;
-        item.faceOffset = null;
-        delete item.axisBox;
-        item.revision = (directTransaction?.baseRevision || 0) + 1;
-        mesh.geometry.dispose();
-        (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
+        bakeEntityGeometry(item, document.value);
     }
 
     function cancelDirectEdit() {

@@ -180,9 +180,8 @@ export function buildEntityMesh(
             mesh.add(outline);
         }
     } else if (entity.kind !== 'boolean' || entity.meshGeometry) {
-        const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : null;
-        const geometryEntity = profile ? { ...entity, points: profile.points, parts: profile.parts, profileType: profile.profileType, planeId: profile.planeId, curves: profile.curves, sides: profile.sides, sectorAngle: profile.sectorAngle, open: profile.open, profileStartAngle: profile.profileStartAngle, analyticCurves: profile.analyticCurves } : entity;
-        mesh = new THREE.Mesh(baseGeometry(geometryEntity, quality, document), createMaterial(entity.color));
+        // Committed bodies use their own profile snapshot; source sketches are History references only.
+        mesh = new THREE.Mesh(baseGeometry(entity, quality, document), createMaterial(entity.color));
     } else {
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);

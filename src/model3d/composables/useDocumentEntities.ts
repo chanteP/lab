@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useMessage } from 'naive-ui';
 import type { OutlinerNode } from '../components/entity/EntityTree.vue';
 import type { Viewport, ViewTool } from '../engine/Viewport';
+import { detachFeatureReferences } from '../engine/modeling/FeatureReferences';
 import { constraintRules } from '../engine/sketchConstraints';
 import { uid } from '../utils/id';
 import { cloneEntity } from '../utils/entity';
@@ -137,10 +138,9 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         const allIds = [...new Set([...ids, ...planeSketchIds])];
         const remainingSelectedIds = selectedIds.value.filter((id) => !allIds.includes(id));
         const removedEditedSketch = !!editingSketchId.value && allIds.includes(editingSketchId.value);
-        const referenced = document.value.entities.find((item) => !allIds.includes(item.id) && ((item.kind === 'boolean' && item.operands?.some((id) => allIds.includes(id))) || (item.profileId && allIds.includes(item.profileId))));
-        if (referenced) return message.warning(`请先删除依赖它的「${referenced.name}」`);
         allIds.forEach(removeConstraintsForEntity);
         pushHistory();
+        detachFeatureReferences(document.value, allIds);
         if (sketchMode.value && activePlaneId.value && ids.includes(activePlaneId.value)) cancelSketch();
         allIds.forEach((id) => {
             const item = document.value.entities.find((entity) => entity.id === id);

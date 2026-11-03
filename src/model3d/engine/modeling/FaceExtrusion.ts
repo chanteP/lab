@@ -6,9 +6,61 @@ import { assertValidSolid, type GeometryValidation } from './GeometryValidator';
 export type FaceOffset = NonNullable<ModelEntity['faceOffset']>;
 export interface FaceExtrusionResult { geometry: THREE.BufferGeometry; validation: GeometryValidation; operation: 'union' | 'subtract' | 'none' }
 
-function reverseTriangle(points: THREE.Vector3[]) { return [points[0], points[2], points[1]]; }
 
-/** Builds one closed, oriented sweep from the complete face triangulation, including inner loops. */
+function triangulateBoundary(
+    boundary: Map<string, { a: number; b: number; count: number }>,
+    vertices: THREE.Vector3[],
+    normal: THREE.Vector3,
+) {
+    const outgoing = new Map<number, number[]>();
+    boundary.forEach((edge) => {
+        if (edge.count !== 1) return;
+        outgoing.set(edge.a, [...outgoing.get(edge.a) || [], edge.b]);
+    });
+    const unused = new Set([...boundary.values()].filter((edge) => edge.count === 1).map((edge) => `${edge.a}:${edge.b}`));
+    const loops: number[][] = [];
+    while (unused.size) {
+        const first = [...unused][0];
+        const [start, following] = first.split(':').map(Number);
+        const loop = [start];
+        let current = start, next = following;
+        while (true) {
+            const key = `${current}:${next}`;
+            if (!unused.has(key)) throw new Error('选中面的边界环不完整');
+            unused.delete(key);
+            loop.push(next);
+            current = next;
+            if (current === start) break;
+            const candidates = (outgoing.get(current) || []).filter((target) => unused.has(`${current}:${target}`));
+            if (candidates.length !== 1) throw new Error('选中面的边界存在分叉');
+            next = candidates[0];
+        }
+        loop.pop();
+        if (loop.length < 3) throw new Error('选中面的边界环点数不足');
+        loops.push(loop);
+    }
+
+    const origin = vertices[0];
+    const u = vertices[1].clone().sub(origin).normalize();
+    const v = normal.clone().cross(u).normalize();
+    const project = (id: number) => {
+        const point = vertices[id].clone().sub(origin);
+        return new THREE.Vector2(point.dot(u), point.dot(v));
+    };
+    const projected = loops.map((loop) => loop.map(project));
+    const area = (loop: THREE.Vector2[]) => Math.abs(THREE.ShapeUtils.area(loop));
+    const outerIndex = projected.reduce((best, _, index) => area(projected[index]) > area(projected[best]) ? index : best, 0);
+    const ordered = [loops[outerIndex], ...loops.filter((_, index) => index !== outerIndex)];
+    const orderedProjected = [projected[outerIndex], ...projected.filter((_, index) => index !== outerIndex)];
+    const flatIds = ordered.flat();
+    return THREE.ShapeUtils.triangulateShape(orderedProjected[0], orderedProjected.slice(1)).map((triangle) => {
+        const ids = triangle.map((index) => flatIds[index]) as [number, number, number];
+        const [a, b, c] = ids.map((id) => vertices[id]);
+        return b.clone().sub(a).cross(c.clone().sub(a)).dot(normal) < 0 ? [ids[0], ids[2], ids[1]] : ids;
+    }) as [number, number, number][];
+}
+
+/** Builds one closed, oriented sweep from real boundary loops, excluding patch-internal triangulation edges. */
 export function buildFaceExtrusionTool(offset: FaceOffset, zeroTolerance = 1e-7) {
     const source = offset.vertices || [], sourceIndices = offset.indices || [];
     if (source.length < 3 || sourceIndices.length < 3 || sourceIndices.length % 3 !== 0) throw new Error('选中面缺少完整三角面片');
@@ -52,7 +104,8 @@ export function buildFaceExtrusionTool(offset: FaceOffset, zeroTolerance = 1e-7)
     const origin = vertices[0];
     const u = vertices[1].clone().sub(origin).normalize();
     if (u.lengthSq() < 0.5 || Math.abs(u.dot(direction)) > 0.999) throw new Error('选中面坐标系退化');
-    const overlap = Math.min(1e-4, Math.abs(offset.distance) * 1e-3);
+    // Real penetration into S0 avoids coplanar-only CSG at curved trim edges; the final cap remains exactly at d.
+    const overlap = Math.min(1e-3, Math.abs(offset.distance) * 1e-3);
     const depth = Math.abs(offset.distance) + overlap;
     const positions: number[] = [];
     const push = (vertex: number, z: number) => {
@@ -65,7 +118,8 @@ export function buildFaceExtrusionTool(offset: FaceOffset, zeroTolerance = 1e-7)
         oriented.forEach((vertex) => push(vertex, z));
     };
     const positive = offset.distance > 0;
-    orientedTriangles.forEach((triangle) => {
+    const capTriangles = triangulateBoundary(boundary, vertices, normal);
+    capTriangles.forEach((triangle) => {
         emit(triangle, 0, positive);
         emit(triangle, depth, !positive);
     });

@@ -4,6 +4,7 @@ import type { EditPhase, Viewport } from '../../engine/Viewport';
 import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../engine/profiles';
 import { borderEditingPoints, borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
+import { detachFeatureReferences } from '../../engine/modeling/FeatureReferences';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
 import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
@@ -167,13 +168,10 @@ export function useSketchEditing(options: SketchEditingOptions) {
     function deleteSketchFromContext() {
         const id = sketchContextMenu.value?.id;
         if (!id) return;
-        const dependent = document.value.entities.find((item) => item.profileId === id);
-        if (dependent) {
-            sketchContextMenu.value = null;
-            return message.warning(`请先删除引用此草图的「${dependent.name}」`);
-        }
+        sketchContextMenu.value = null;
         removeConstraintsForEntity(id);
         pushHistory();
+        detachFeatureReferences(document.value, [id]);
         document.value.entities = document.value.entities.filter((item) => item.id !== id);
         clearSketchSelection();
     }
@@ -437,13 +435,14 @@ export function useSketchEditing(options: SketchEditingOptions) {
     function deleteSketchBorder(entityId: string, index: number, start: number, end: number) {
         const entity = document.value.entities.find((item) => item.id === entityId && item.kind === 'sketch');
         if (!entity) return;
-        const dependent = document.value.entities.find((item) => item.profileId === entityId);
-        if (dependent) return message.warning(`请先删除引用此草图的「${dependent.name}」`);
         removeConstraintsForEdge(entityId, index);
         const type = entity.profileType || 'polygon';
         pushHistory();
         if (type === 'circle' || type === 'ellipse') {
-            if (start <= 0 && end >= 1) document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
+            if (start <= 0 && end >= 1) {
+                detachFeatureReferences(document.value, [entityId]);
+                document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
+            }
             else {
                 const center = entity.points![0], edge = entity.points![1];
                 const startAngle = entity.profileStartAngle ?? (type === 'ellipse' ? 0 : Math.atan2(edge[1] - center[1], edge[0] - center[0]));
