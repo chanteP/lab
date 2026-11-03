@@ -82,6 +82,8 @@ export interface ModelEntity {
     directTargetId?: string;
     directTargetVisible?: boolean;
     meshGeometry?: { positions: number[]; indices: number[] };
+    axisBox?: { min: Vec3; max: Vec3 };
+    compositeGeometry?: boolean;
 }
 
 export interface ModelDocument {

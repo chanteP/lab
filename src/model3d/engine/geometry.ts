@@ -76,12 +76,14 @@ function offsetAxisBox(base: THREE.BufferGeometry, offset: NonNullable<ModelEnti
     base.computeBoundingBox();
     const box = base.boundingBox!;
     const positions = base.attributes.position;
-    const epsilon = 0.001;
+    const epsilon = 0.01;
     for (let index = 0; index < positions.count; index++) {
+        let onBoundary = false;
         for (let component = 0; component < 3; component++) {
             const value = positions.array[index * 3 + component];
-            if (Math.abs(value - box.min.getComponent(component)) > epsilon && Math.abs(value - box.max.getComponent(component)) > epsilon) return null;
+            if (Math.abs(value - box.min.getComponent(component)) <= epsilon || Math.abs(value - box.max.getComponent(component)) <= epsilon) onBoundary = true;
         }
+        if (!onBoundary) return null;
     }
 
     const selected = normal.getComponent(axis) > 0 ? box.max.getComponent(axis) : box.min.getComponent(axis);
@@ -284,6 +286,14 @@ function offsetArbitraryFace(base: THREE.BufferGeometry, offset: NonNullable<Mod
 }
 
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
+    if (entity.axisBox) {
+        const box = entity.axisBox;
+        const size = new THREE.Vector3(...box.max).sub(new THREE.Vector3(...box.min));
+        const center = new THREE.Vector3(...box.max).add(new THREE.Vector3(...box.min)).multiplyScalar(0.5);
+        const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+        geometry.translate(...center.toArray());
+        return entity.faceOffset?.distance ? offsetAxisBox(geometry, entity.faceOffset) || geometry : geometry;
+    }
     if (entity.meshGeometry?.positions.length) {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(entity.meshGeometry.positions, 3));

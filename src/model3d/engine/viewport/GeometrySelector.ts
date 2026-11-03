@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { ModelEntity, Point2, Vec3 } from '../../types';
 
 export type GeometryAnchor = { id: string; key: string; normal: Vec3; localNormal: Vec3; point: Vec3; type: 'face' | 'edge'; planar: boolean; vertices: Vec3[]; indices: number[]; profilePoints?: Point2[] };
-type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean };
+type Surface = { vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[] };
 type MeshSurfaces = { triangleSurfaces: number[]; surfaces: Surface[] };
 
 /** Converts mesh hits into stable face/edge overlays without changing the source mesh. */
@@ -43,11 +43,11 @@ export class GeometrySelector {
         }
 
         const triangleSurfaces = Array.from({ length: triangleCount }, () => -1);
-        const surfaces: Surface[] = [];
+        const sourceSurfaces: Surface[] = [];
         const threshold = Math.cos(THREE.MathUtils.degToRad(15));
         for (let start = 0; start < triangleCount; start++) {
             if (triangleSurfaces[start] >= 0) continue;
-            const surfaceIndex = surfaces.length;
+            const surfaceIndex = sourceSurfaces.length;
             const queue = [start];
             const visited = new Set<number>();
             for (let cursor = 0; cursor < queue.length; cursor++) {
@@ -76,10 +76,29 @@ export class GeometrySelector {
                     indices.push(indices.length);
                 });
             });
-            surfaces.push({ vertices, indices, planar, point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 });
+            sourceSurfaces.push({ vertices, indices, planar, normal: triangles[start].normal.toArray(), triangles: [...visited], point: center.multiplyScalar(1 / Math.max(1, vertices.length)).toArray() as Vec3 });
         }
 
-        const result = { triangleSurfaces, surfaces };
+        // CSG leaves coplanar T-junction fragments; they still belong to one selectable planar face.
+        const merged: Surface[] = [];
+        sourceSurfaces: for (const surface of sourceSurfaces) {
+            if (surface.planar) {
+                for (const target of merged) {
+                    const alignment = new THREE.Vector3(...target.normal).dot(new THREE.Vector3(...surface.normal));
+                    const planeDistance = new THREE.Vector3(...target.normal).dot(new THREE.Vector3(...surface.point).sub(new THREE.Vector3(...target.point)));
+                    if (target.planar && Math.abs(alignment) > 0.9999 && Math.abs(planeDistance) < 0.001) {
+                        const offset = target.vertices.length;
+                        target.vertices.push(...surface.vertices);
+                        target.indices.push(...surface.indices.map((index) => index + offset));
+                        target.triangles.push(...surface.triangles);
+                        continue sourceSurfaces;
+                    }
+                }
+            }
+            merged.push(surface);
+        }
+        merged.forEach((surface) => surface.triangles.forEach((triangle) => triangleSurfaces[triangle] = merged.indexOf(surface)));
+        const result = { triangleSurfaces, surfaces: merged };
         this.surfaceCache.set(mesh.uuid, result);
         return result;
     }

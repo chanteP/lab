@@ -86,7 +86,11 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
     function updateEntity(key: keyof ModelEntity, value: any) {
         if (!selected.value || value === null) return;
         pushHistory();
-        if (['width', 'height', 'depth', 'radius', 'points', 'parts', 'profileType', 'planeId', 'direction', 'sideMode', 'draftAngle'].includes(key)) delete selected.value.meshGeometry;
+        if (['width', 'height', 'depth', 'radius', 'points', 'parts', 'profileType', 'planeId', 'direction', 'sideMode', 'draftAngle'].includes(key)) {
+            delete selected.value.meshGeometry;
+            delete selected.value.axisBox;
+            delete selected.value.compositeGeometry;
+        }
         (selected.value as any)[key] = value;
     }
     function updateLengthEntity(key: keyof ModelEntity, value: number | null) { updateEntity(key, inputLength(value)); }

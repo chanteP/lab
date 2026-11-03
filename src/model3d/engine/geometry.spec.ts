@@ -167,8 +167,12 @@ test('three consecutive box faces always come from the current baked mesh', () =
         }
         assert(hit, `missing selected face ${normal.join(',')}`);
         const anchor = selector.createFaceAnchor(hit!, entity);
+        mesh.geometry.computeBoundingBox();
+        entity.axisBox = { min: mesh.geometry.boundingBox!.min.toArray() as Vec3, max: mesh.geometry.boundingBox!.max.toArray() as Vec3 };
         entity.faceOffset = { normal, distance, vertices: anchor.vertices, indices: anchor.indices };
         const geometry = buildEntityMesh(entity, document).geometry;
+        geometry.computeBoundingBox();
+        entity.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
         entity.meshGeometry = { positions: Array.from(geometry.attributes.position.array), indices: geometry.index ? Array.from(geometry.index.array) : [] };
         entity.faceOffset = null;
         assert.equal(entity.meshGeometry.positions.length / 3, 24, 'axis-aligned box edits must not accumulate CSG fragments');

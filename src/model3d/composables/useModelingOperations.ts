@@ -283,6 +283,12 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             if (activeTool.value === 'select') setTool('offsetFace');
             if (!['box', 'cylinder', 'extrude', 'boolean'].includes(item.kind)) return message.warning('该面暂不支持向外拉伸');
             if (anchor && !anchor.planar) return;
+            const axisAligned = Math.abs(normal[0]) > 0.999 || Math.abs(normal[1]) > 0.999 || Math.abs(normal[2]) > 0.999;
+            if (item.kind === 'box' || item.axisBox || (item.kind === 'extrude' && item.profileType === 'rectangle' && !item.compositeGeometry && axisAligned)) {
+                const geometry = buildEntityMesh(item, document.value).geometry;
+                geometry.computeBoundingBox();
+                item.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
+            } else if (item.axisBox && !axisAligned) delete item.axisBox;
             directBase = cloneEntity(item);
             directBooleanAvailable.value = false;
             directLastDistance = null;
@@ -329,11 +335,21 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
 
     function bakeDirectEntity(item: ModelEntity) {
         if (!directBase || !item.faceOffset) return;
+        if (item.axisBox) {
+            const geometry = buildEntityMesh(item, document.value).geometry;
+            geometry.computeBoundingBox();
+            item.axisBox = { min: geometry.boundingBox!.min.toArray() as Vec3, max: geometry.boundingBox!.max.toArray() as Vec3 };
+            delete item.meshGeometry;
+            delete item.compositeGeometry;
+            item.faceOffset = null;
+            return;
+        }
         const geometry = buildEntityMesh(item, document.value).geometry;
         item.meshGeometry = {
             positions: Array.from(geometry.attributes.position.array),
             indices: geometry.index ? Array.from(geometry.index.array) : Array.from({ length: geometry.attributes.position.count }, (_, index) => index),
         };
+        item.compositeGeometry = true;
         item.faceOffset = null;
     }
 
