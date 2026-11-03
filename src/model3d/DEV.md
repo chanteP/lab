@@ -170,4 +170,16 @@
 - Boolean preview 与提交烘焙必须共享 normals、merge vectors 和 sourceFaceIDs；放手后不得重新 `computeVertexNormals()`。旧烘焙数据缺少 normals 时由 `normalizeBakedGeometryNormals` 经 Manifold 恢复，禁止用自定义拆点改变建模输入。
 - 接缝平面 cap 使用 Manifold `triangulate(polygons, 1e-9, false)`，支持孔洞和共线边界；Three.js ShapeUtils 的退化 cap 不得进入工具体。烘焙发布前再次执行完整实体校验。
 - Logical edge 同时保存无序拾取 segments 和有序 points；`EdgePicker` 返回的 index 就是原始顶点下标，不得再次乘 2。圆弧 hover/选中使用 points 连续路径，Select Through 下每条边都应能命中自身。
+### Face Extrude 提交顺序（不可调整）
+
+1. 固定手势的 S0/F0/n0、body revision；每次 preview 均从同一个 S0 求值。
+2. Boolean 输入先分别 `simplify()`，再执行 owner body 的 Union/Subtract。
+3. 输出先 `asOriginal()` 合并同域关系，再 `simplify()` 清理三角化；顺序不可反转。
+4. 使用 `calculateNormals(0, 60)` 生成锐边法线。
+5. 校验有限坐标、索引、定向共享边、闭合性、体积和 components。
+6. 一次性保存 positions、indices、normals、merge vectors、sourceFaceIDs，并递增 revision。
+7. 由同一次场景同步重建 render geometry、拓扑、显示边与 picking 数据。
+
+禁止在 mouseup 后 sleep 或等待下一次拖拽来补合并。preview 与 committed mesh 只能有 revision/事务状态差异，不得有几何、法线或拓扑差异；`same-domain faces are merged before release simplification` 和 `release preserves the exact preview geometry...` 两项 spec 必须同时通过。
+
 - 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。
