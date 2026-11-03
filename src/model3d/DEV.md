@@ -162,4 +162,8 @@
 - Face Extrude 工具体先由真实外环/孔环重新三角化 cap，不继承 Boolean 面内部碎边。工具体向 S0 内穿透最多 `0.001` 的几何重叠用于避免曲边共面接触；它不是逐步放大的误差公差，最终 cap 仍精确位于 d。
 - Extrude/Boolean 完成时通过 `bakeEntityGeometry` 保存独立网格。`profileId / operands` 只用于显式 History 回改，不再参与已提交模型的日常重建。
 - 删除源草图或源实体时由 `detachFeatureReferences` 先确保结果已烘焙，再移除失效的 History 引用；不得因为源对象被删除而阻止操作或破坏结果。
+
+- 3D 草图材质创建时保存真实 `sketchBaseOpacity`；编辑态临时透明化不得成为 hover 离开后的恢复值。hover 只改变颜色/临时透明度，不负责草图可见性。
+- 实体默认使用中性灰色、无贴图、无金属的粗糙材质；不得为得到默认质感而加载 RoomEnvironment 或其他环境贴图。
+- Boolean 输入在每次操作前先执行 Manifold `simplify()`，避免上一轮共面分割进入下一轮；`faceEdit` 只允许在相邻 revision 间映射被拖动的平面，禁止对任意平行面猜测绑定。
 - 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。

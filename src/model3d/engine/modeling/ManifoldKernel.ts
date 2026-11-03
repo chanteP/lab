@@ -87,6 +87,12 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         try { toolSolid = new Manifold(toolMesh); } catch (error) { throw new Error(`拉伸工具体无效：${error instanceof Error ? error.message : error}`); }
         if (baseSolid.status() !== 'NoError') throw new Error(`目标实体无效：${baseSolid.status()}`);
         if (toolSolid.status() !== 'NoError') throw new Error(`工具体无效：${toolSolid.status()}`);
+        const simplifiedBase = baseSolid.simplify();
+        const simplifiedTool = toolSolid.simplify();
+        baseSolid.delete();
+        toolSolid.delete();
+        baseSolid = simplifiedBase;
+        toolSolid = simplifiedTool;
         result = operation === 'union' ? baseSolid.add(toolSolid) : operation === 'subtract' ? baseSolid.subtract(toolSolid) : baseSolid.intersect(toolSolid);
         if (result.status() !== 'NoError') throw new Error(`布尔运算失败：${result.status()}`);
         if (result.isEmpty()) return new THREE.BufferGeometry();
@@ -100,5 +106,34 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         result?.delete();
         baseSolid?.delete();
         toolSolid?.delete();
+    }
+}
+
+/** Normalizes planar contours with Manifold before extruding; self-intersecting CSG fragments never enter the sweep. */
+export function extrudeNormalizedFaceLoops(
+    loops: THREE.Vector2[][],
+    depth: number,
+    u: THREE.Vector3,
+    v: THREE.Vector3,
+    direction: THREE.Vector3,
+    origin: THREE.Vector3,
+) {
+    const { CrossSection } = getManifold();
+    const polygons = loops.map((loop) => loop.map((point) => [point.x, point.y] as [number, number]));
+    const section = CrossSection.ofPolygons(polygons, 'EvenOdd');
+    let solid: InstanceType<ReturnType<typeof getManifold>['Manifold']> | null = null;
+    let transformed: typeof solid = null;
+    try {
+        if (section.isEmpty()) throw new Error('选中面的有效轮廓为空');
+        solid = section.extrude(depth);
+        const matrix = new THREE.Matrix4().makeBasis(u, v, direction).setPosition(origin);
+        transformed = solid.transform(matrix.elements as unknown as import('manifold-3d').Mat4);
+        if (transformed.status() !== 'NoError') throw new Error(`扫掠体无效：${transformed.status()}`);
+        const mesh = transformed.getMesh();
+        return outputGeometry(mesh);
+    } finally {
+        transformed?.delete();
+        solid?.delete();
+        section.delete();
     }
 }

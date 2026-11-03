@@ -79,7 +79,7 @@ export class SceneSynchronizer {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && entity?.kind !== 'sketch') {
-                const topology = reconcileTopology(previousTopology.get(entity.id), buildMeshTopology(child.geometry, entity.id, entity, document));
+                const topology = reconcileTopology(previousTopology.get(entity.id), buildMeshTopology(child.geometry, entity.id, entity, document), entity.faceEdit);
                 child.userData.topology = topology;
                 const display = createTopologyEdgeGeometry(topology);
                 const edges = new THREE.LineSegments(display.geometry, new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
@@ -275,7 +275,7 @@ export class SceneSynchronizer {
             const materials = Array.isArray((object as THREE.Mesh).material) ? (object as THREE.Mesh).material as THREE.Material[] : [(object as THREE.Mesh).material as THREE.Material];
             materials.forEach((material: any) => {
                 if (!material?.color) return;
-                if (!material.userData.sketchBaseColor) {
+                if (material.userData.sketchBaseColor === undefined) {
                     material.userData.sketchBaseColor = material.color.getHex();
                     material.userData.sketchBaseOpacity = material.opacity;
                 }

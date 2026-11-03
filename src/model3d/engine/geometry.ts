@@ -142,7 +142,7 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
 }
 
 export function createMaterial(color: string) {
-    return new THREE.MeshStandardMaterial({ color, roughness: 0.36, metalness: 0.08 });
+    return new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
 }
 
 export function buildEntityMesh(
@@ -173,6 +173,8 @@ export function buildEntityMesh(
         const material = closed
             ? new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
             : new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line });
+        material.userData.sketchBaseColor = material.color.getHex();
+        material.userData.sketchBaseOpacity = material.opacity;
         mesh = closed ? new THREE.Mesh(geometry, material) : new THREE.Line(geometry, material) as unknown as THREE.Mesh;
         if (openGeometry) {
             const outline = new THREE.LineSegments(openGeometry, new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line }));
@@ -197,6 +199,7 @@ export function buildEntityMesh(
         geometryA.geometry.dispose();
         geometryB.geometry.dispose();
         mesh = new THREE.Mesh(resultGeometry);
+        if (entity.faceOffset?.distance) mesh.geometry = evaluateFaceExtrusion(mesh.geometry, entity.faceOffset).geometry;
         mesh.material = createMaterial(entity.color);
     }
     mesh.name = entity.name;

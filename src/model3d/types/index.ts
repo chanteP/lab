@@ -78,7 +78,9 @@ export interface ModelEntity {
     draftAngle?: number;
     operation?: BooleanOperation;
     operands?: [string, string];
-    faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[] } | null;
+    faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[]; faceIds?: string[] } | null;
+    /** Last committed direct edit, consumed only when reconciling the immediately following body revision. */
+    faceEdit?: { faceId: string; normal: Vec3; distance: number; revision: number };
     meshGeometry?: { positions: number[]; indices: number[]; mergeFromVert?: number[]; mergeToVert?: number[] };
     axisBox?: { min: Vec3; max: Vec3 };
     compositeGeometry?: boolean;

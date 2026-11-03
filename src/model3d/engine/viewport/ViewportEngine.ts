@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import type { OrientationGizmo } from '../OrientationGizmo';
 import { VIEWPORT_COLORS } from '../../config/colors';
 
@@ -31,12 +30,6 @@ export class ViewportEngine {
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.autoClear = false;
         container.appendChild(this.renderer.domElement);
-
-        const pmrem = new THREE.PMREMGenerator(this.renderer);
-        const room = new RoomEnvironment();
-        this.scene.environment = pmrem.fromScene(room, 0.04).texture;
-        room.dispose();
-        pmrem.dispose();
 
         this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
         this.grid.position.y = -0.02;
@@ -109,7 +102,6 @@ export class ViewportEngine {
     dispose() {
         cancelAnimationFrame(this.frame);
         this.resizeObserver.disconnect();
-        this.scene.environment?.dispose();
         this.grid.geometry.dispose();
         (this.grid.material as THREE.Material).dispose();
         this.shadow.geometry.dispose();

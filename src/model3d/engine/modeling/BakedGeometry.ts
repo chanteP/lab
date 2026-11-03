@@ -11,6 +11,9 @@ export function bakeEntityGeometry(entity: ModelEntity, document: ModelDocument)
         mergeToVert: Array.from(mesh.geometry.userData.mergeToVert || []),
     };
     entity.compositeGeometry = true;
+    if (entity.faceOffset?.faceIds?.length === 1) {
+        entity.faceEdit = { faceId: entity.faceOffset.faceIds[0], normal: [...entity.faceOffset.normal], distance: entity.faceOffset.distance, revision: (entity.revision || 0) + 1 };
+    }
     entity.faceOffset = null;
     delete entity.axisBox;
     entity.revision = (entity.revision || 0) + 1;

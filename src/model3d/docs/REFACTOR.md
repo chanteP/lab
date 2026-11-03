@@ -57,6 +57,8 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 
 ## Changelog
 
+- 2026-11-03：修复 3D 草图 hover 后透明度归零，实体改为无环境贴图的中性灰材质；修复未烘焙 Boolean 面拖拽漏应用参数，增加移动面 revision 映射和 Boolean 输入 simplify，覆盖并集模型多面连续正负拖拽。
+
 - 2026-11-03：修复交集曲边平面正向拉伸的退化结果，cap 改用真实边界环重三角化并保留真实几何重叠；Extrude/Boolean 提交后烘焙独立网格，删除源草图或源实体不再受 History 引用阻止。
 
 - 2026-11-03：重做实体拓扑、面/边选择和事务式 Face Extrude，接入 Manifold WASM，保留孔环、merge vectors 和逻辑身份，移除旧 CSG 与自动跨 body 推拉。

@@ -290,7 +290,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const worldPerLocal = localNormal.clone().multiply(new THREE.Vector3(...item.scale)).length();
         if (worldPerLocal < 1e-9) throw new Error('实体缩放导致拉伸方向退化');
         distance /= worldPerLocal;
-        item.faceOffset = { normal: [...transaction.normal], distance: request.distance, ...face };
+        item.faceOffset = { normal: [...transaction.normal], distance: request.distance, faceIds: transaction.anchor.faceIds, ...face };
         const preview = buildEntityMesh(item, document.value);
         preview.geometry.dispose();
         (Array.isArray(preview.material) ? preview.material : [preview.material]).forEach((material) => material.dispose());

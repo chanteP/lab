@@ -97,3 +97,16 @@ test('curved intersection patches accept both outward and inward extrusion', () 
         }
     }
 });
+
+test('all six box faces honor outward union and inward subtraction', () => {
+    const entity = Object.assign(createEntity('box', 'body'), { width: 10, height: 10, depth: 10, position: [0, 0, 0] as [number, number, number] });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    mesh.userData.entityId = entity.id;
+    for (const normal of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as [number, number, number][]) {
+        for (const [distance, expected] of [[2, 1200], [-2, 800]]) {
+            const result = evaluateFaceExtrusion(mesh.geometry, faceOffset(mesh, entity, normal, distance));
+            assert(result.validation.valid);
+            assert(Math.abs(volume(result.geometry) - expected) < 1e-7);
+        }
+    }
+});

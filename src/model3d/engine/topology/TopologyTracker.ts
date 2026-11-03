@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { uid } from '../../utils/id';
 import { domainsEqual } from './SurfaceDomains';
 import type { BodyTopology, LogicalEdge, LogicalFace, TopologyChange, TopologyChangeKind } from './types';
+import type { ModelEntity } from '../../types';
 
 function faceKey(topology: BodyTopology, face: LogicalFace) {
     const points = face.triangleIds.flatMap((id) => topology.triangles[id].vertexIds).map((id) => topology.vertices.find((vertex) => vertex.id === id)!.point);
@@ -30,7 +31,7 @@ function change(previousIds: string[], nextIds: string[], forced?: TopologyChang
 }
 
 /** Geometry is matching evidence only. Persistent IDs are retained or issued independently of coordinates. */
-export function reconcileTopology(previous: BodyTopology | null | undefined, next: BodyTopology): BodyTopology {
+export function reconcileTopology(previous: BodyTopology | null | undefined, next: BodyTopology, faceEdit?: ModelEntity['faceEdit']): BodyTopology {
     if (!previous || previous.bodyId !== next.bodyId) return next;
     const initialFaceIds = next.faces.map((face) => face.id);
     const vertexIds = new Map(previous.vertices.map((vertex) => [vertex.point.map((value) => Number(value.toFixed(5))).join(','), vertex.id]));
@@ -61,6 +62,19 @@ export function reconcileTopology(previous: BodyTopology | null | undefined, nex
 
     // Candidate pairs form provenance components. Many-to-many relationships stay explicitly ambiguous.
     const pairs: [string, string][] = [];
+    const editedFace = faceEdit && faceEdit.revision === next.revision && previous.revision + 1 === next.revision
+        ? previous.faces.find((face) => face.id === faceEdit.faceId && face.domain.kind === 'plane') : undefined;
+    if (editedFace && faceEdit) {
+        const normal = new THREE.Vector3(...faceEdit.normal).normalize();
+        const oldDomain = editedFace.domain as Extract<LogicalFace['domain'], { kind: 'plane' }>;
+        const expectedOffset = oldDomain.offset + faceEdit.distance;
+        const expectedBounds = faceBounds(previous, editedFace).translate(normal.clone().multiplyScalar(faceEdit.distance));
+        next.faces.filter((face) => nextUnmatched.has(face.id) && face.domain.kind === 'plane').forEach((face) => {
+            const domain = face.domain as Extract<LogicalFace['domain'], { kind: 'plane' }>;
+            if (new THREE.Vector3(...domain.normal).dot(normal) > 0.9999 && Math.abs(domain.offset - expectedOffset) < 1e-3
+                && overlaps(expectedBounds, faceBounds(next, face))) pairs.push([editedFace.id, face.id]);
+        });
+    }
     previous.faces.filter((face) => previousUnmatched.has(face.id)).forEach((oldFace) => next.faces.filter((face) => nextUnmatched.has(face.id)).forEach((newFace) => {
         if (oldFace.domain.kind !== 'smooth' && domainsEqual(oldFace.domain, newFace.domain) && overlaps(faceBounds(previous, oldFace), faceBounds(next, newFace))) pairs.push([oldFace.id, newFace.id]);
     }));
