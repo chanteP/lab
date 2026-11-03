@@ -166,4 +166,8 @@
 - 3D 草图材质创建时保存真实 `sketchBaseOpacity`；编辑态临时透明化不得成为 hover 离开后的恢复值。hover 只改变颜色/临时透明度，不负责草图可见性。
 - 实体默认使用中性灰色、无贴图、无金属的粗糙材质；不得加载 RoomEnvironment 或其他环境贴图。Boolean 输出使用 `calculateNormals(0, 60)` 在锐边拆分法线，禁止用跨锐边平均的 smooth vertex normal 制造平面云纹。
 - Boolean 输入在每次操作前先执行 Manifold `simplify()`，避免上一轮共面分割进入下一轮；`faceEdit` 只允许在相邻 revision 间映射被拖动的平面，禁止对任意平行面猜测绑定。
+
+- Boolean preview 与提交烘焙必须共享 normals、merge vectors 和 sourceFaceIDs；放手后不得重新 `computeVertexNormals()`。旧烘焙数据缺少 normals 时由 `normalizeBakedGeometryNormals` 经 Manifold 恢复，禁止用自定义拆点改变建模输入。
+- 接缝平面 cap 使用 Manifold `triangulate(polygons, 1e-9, false)`，支持孔洞和共线边界；Three.js ShapeUtils 的退化 cap 不得进入工具体。烘焙发布前再次执行完整实体校验。
+- Logical edge 同时保存无序拾取 segments 和有序 points；`EdgePicker` 返回的 index 就是原始顶点下标，不得再次乘 2。圆弧 hover/选中使用 points 连续路径，Select Through 下每条边都应能命中自身。
 - 通用 Offset Face、Move Face、Chamfer、Fillet 当前不属于已支持能力。后续若实现，必须基于 feature/surface 定义或可靠的 B-rep 内核，不得以 smooth normal 或网格雕刻冒充。

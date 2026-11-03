@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { GeometrySelector } from './viewport/GeometrySelector';
+import { buildMeshTopology } from './topology/MeshTopology';
+import { createTopologyEdgeGeometry } from './viewport/TopologyEdges';
+import { createDocument, createEntity } from '../types';
 
 function hit(mesh: THREE.Mesh, faceIndex: number) {
     const geometry = mesh.geometry;
@@ -90,4 +93,22 @@ test('cylinder cap outline selects the complete circular loop', () => {
     assert(anchor.vertices.length > 32);
     assert(anchor.vertices.every((point) => Math.abs(point[1] - 10) < 0.0001));
     assert(anchor.vertices[0].every((value, axis) => Math.abs(value - anchor.vertices[anchor.vertices.length - 1][axis]) < 0.0001));
+});
+
+test('circular logical-edge highlighting follows the ordered seam without cross-loop jumps', () => {
+    const radius = 10;
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 20, 32));
+    mesh.userData.entityId = 'cylinder';
+    const topology = buildMeshTopology(mesh.geometry, 'cylinder', Object.assign(createEntity('cylinder', 'cylinder'), { radius }), createDocument());
+    mesh.userData.topology = topology;
+    const display = createTopologyEdgeGeometry(topology);
+    const lines = new THREE.LineSegments(display.geometry);
+    lines.userData.segmentEdgeIds = display.segmentEdgeIds;
+    mesh.add(lines);
+    mesh.updateMatrixWorld(true);
+    const anchor = new GeometrySelector().createEdgeAnchor({ object: lines, index: 0 } as unknown as THREE.Intersection);
+    const maxChord = 2 * radius * Math.sin(Math.PI / 32) + 0.001;
+    for (let index = 1; index < anchor.vertices.length; index++) {
+        assert(new THREE.Vector3(...anchor.vertices[index]).distanceTo(new THREE.Vector3(...anchor.vertices[index - 1])) <= maxChord, 'highlight must not connect unrelated arc vertices');
+    }
 });

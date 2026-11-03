@@ -1,11 +1,16 @@
 import type { ModelDocument, ModelEntity } from '../../types';
 import { buildEntityMesh } from '../geometry';
+import { assertValidSolid } from './GeometryValidator';
 
 /** Publishes a committed body independently of its feature operands. */
 export function bakeEntityGeometry(entity: ModelEntity, document: ModelDocument) {
     const mesh = buildEntityMesh(entity, document);
+    // The release result gets its own validation; the next gesture must not be responsible for repairing it.
+    assertValidSolid(mesh.geometry);
     entity.meshGeometry = {
         positions: Array.from(mesh.geometry.attributes.position?.array || []),
+        normals: Array.from(mesh.geometry.attributes.normal?.array || []),
+        sourceFaceIDs: Array.from(mesh.geometry.userData.sourceFaceIDs || []),
         indices: mesh.geometry.index ? Array.from(mesh.geometry.index.array) : Array.from({ length: mesh.geometry.attributes.position?.count || 0 }, (_, index) => index),
         mergeFromVert: Array.from(mesh.geometry.userData.mergeFromVert || []),
         mergeToVert: Array.from(mesh.geometry.userData.mergeToVert || []),

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { evaluateBoolean } from './ManifoldKernel';
+import { evaluateBoolean, getManifold } from './ManifoldKernel';
 import type { ModelEntity, Vec3 } from '../../types';
 import { assertValidSolid, type GeometryValidation } from './GeometryValidator';
 
@@ -53,7 +53,8 @@ function triangulateBoundary(
     const ordered = [loops[outerIndex], ...loops.filter((_, index) => index !== outerIndex)];
     const orderedProjected = [projected[outerIndex], ...projected.filter((_, index) => index !== outerIndex)];
     const flatIds = ordered.flat();
-    return THREE.ShapeUtils.triangulateShape(orderedProjected[0], orderedProjected.slice(1)).map((triangle) => {
+    const polygons = orderedProjected.map((loop) => loop.map((point) => [point.x, point.y] as [number, number]));
+    return getManifold().triangulate(polygons, 1e-9, false).map((triangle) => {
         const ids = triangle.map((index) => flatIds[index]) as [number, number, number];
         const [a, b, c] = ids.map((id) => vertices[id]);
         return b.clone().sub(a).cross(c.clone().sub(a)).dot(normal) < 0 ? [ids[0], ids[2], ids[1]] : ids;

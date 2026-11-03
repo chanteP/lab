@@ -81,7 +81,7 @@ export interface ModelEntity {
     faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[]; faceIds?: string[] } | null;
     /** Last committed direct edit, consumed only when reconciling the immediately following body revision. */
     faceEdit?: { faceId: string; normal: Vec3; distance: number; revision: number };
-    meshGeometry?: { positions: number[]; indices: number[]; mergeFromVert?: number[]; mergeToVert?: number[] };
+    meshGeometry?: { positions: number[]; indices: number[]; normals?: number[]; mergeFromVert?: number[]; mergeToVert?: number[]; sourceFaceIDs?: number[] };
     axisBox?: { min: Vec3; max: Vec3 };
     compositeGeometry?: boolean;
     /** Monotonic body revision used to invalidate direct-edit gestures and topology references. */

@@ -51,6 +51,8 @@ export interface LogicalEdge {
     faceIds: string[];
     rawEdgeIds: string[];
     segments: EdgeDisplaySegment[];
+    /** Ordered centerline for continuous hover/selection rendering, including closed-loop closure. */
+    points: Vec3[];
     kind: 'sharp' | 'feature' | 'open' | 'nonmanifold';
     sourceIds: string[];
 }

@@ -114,3 +114,21 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         toolSolid?.delete();
     }
 }
+
+/** Restores sharp render normals through the same owned kernel representation used by Boolean operations. */
+export function normalizeBakedGeometryNormals(geometry: THREE.BufferGeometry) {
+    if (!geometry.attributes.position?.count) return geometry;
+    const { Manifold } = getManifold();
+    const mesh = inputMesh(geometry);
+    let solid: InstanceType<typeof Manifold> | null = null;
+    let shaded: InstanceType<typeof Manifold> | null = null;
+    try {
+        solid = new Manifold(mesh);
+        if (solid.status() !== 'NoError') throw new Error(`烘焙实体无效：${solid.status()}`);
+        shaded = solid.calculateNormals(0, 60);
+        return outputGeometry(shaded.getMesh(0));
+    } finally {
+        shaded?.delete();
+        solid?.delete();
+    }
+}

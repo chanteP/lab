@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { evaluateBoolean } from './modeling/ManifoldKernel';
+import { normalizeBakedGeometryNormals } from './modeling/ManifoldKernel';
 import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
 import { profileClosed, profilePoints, profileShape } from './profiles';
 import { SKETCH_COLORS } from '../config/colors';
@@ -62,11 +63,14 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         if (entity.meshGeometry.indices.length) geometry.setIndex(entity.meshGeometry.indices);
         geometry.userData.mergeFromVert = new Uint32Array(entity.meshGeometry.mergeFromVert || []);
         geometry.userData.mergeToVert = new Uint32Array(entity.meshGeometry.mergeToVert || []);
-        geometry.computeVertexNormals();
+        geometry.userData.sourceFaceIDs = new Uint32Array(entity.meshGeometry.sourceFaceIDs || []);
+        if (entity.meshGeometry.normals?.length === entity.meshGeometry.positions.length) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(entity.meshGeometry.normals, 3));
+
         geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
         if (entity.faceOffset?.distance && entity.faceOffset.vertices) {
             return evaluateFaceExtrusion(geometry, entity.faceOffset).geometry;
         }
+        if (!entity.meshGeometry.normals) return normalizeBakedGeometryNormals(geometry);
         return geometry;
     }
     const q = qualityValues(quality);

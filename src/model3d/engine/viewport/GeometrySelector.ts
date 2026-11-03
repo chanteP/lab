@@ -103,7 +103,7 @@ export class GeometrySelector {
         const edges = expandTangentEdges(topology, [seed]);
         const selectedEdges = includeTangent ? edges : [seed];
         line.updateWorldMatrix(true, false);
-        const vertices = selectedEdges.flatMap((edge) => edge.segments.flatMap((segment) => [segment.a, segment.b]))
+        const vertices = selectedEdges.flatMap((edge) => edge.points)
             .map((point) => new THREE.Vector3(...point).applyMatrix4(line.matrixWorld).toArray() as Vec3);
         const point = new THREE.Vector3(...vertices[Math.floor(vertices.length / 2)] || [0, 0, 0]);
         const localNormal = seed.faceIds.length === 2 ? seed.faceIds.reduce((sum, id) => {

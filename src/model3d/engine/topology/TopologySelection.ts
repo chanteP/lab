@@ -3,10 +3,10 @@ import { domainsEqual } from './SurfaceDomains';
 import type { BodyTopology, LogicalEdge, LogicalFace } from './types';
 
 function tangentAt(edge: LogicalEdge, atStart: boolean) {
-    const segment = atStart ? edge.segments[0] : edge.segments[edge.segments.length - 1];
-    if (!segment) return new THREE.Vector3();
-    const direction = new THREE.Vector3(...segment.b).sub(new THREE.Vector3(...segment.a)).normalize();
-    return atStart ? direction.negate() : direction;
+    if (edge.points.length < 2) return new THREE.Vector3();
+    const a = atStart ? edge.points[1] : edge.points[edge.points.length - 2];
+    const b = atStart ? edge.points[0] : edge.points[edge.points.length - 1];
+    return new THREE.Vector3(...b).sub(new THREE.Vector3(...a)).normalize();
 }
 
 export function expandTangentFaces(topology: BodyTopology, seeds: LogicalFace[]) {

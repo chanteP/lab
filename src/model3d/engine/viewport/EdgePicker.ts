@@ -46,7 +46,7 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
                 const distance = raycaster.ray.origin.distanceTo(point);
                 if (firstOcclusion && firstOcclusion.distance < distance - 0.05) continue;
                 const score = closest.distance + distance * 1e-7;
-                if (!best || score < best.score) best = { score, intersection: { object: child, index: segment * 2, point, distance } as unknown as THREE.Intersection };
+                if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance } as unknown as THREE.Intersection };
             }
         });
     });

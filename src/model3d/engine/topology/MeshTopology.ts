@@ -208,7 +208,8 @@ export function buildMeshTopology(geometry: THREE.BufferGeometry, bodyId: string
             const edge = rawById.get(id)!;
             return { id: `s${id}`, a: vertexById.get(edge.vertexIds[0])!.point, b: vertexById.get(edge.vertexIds[1])!.point };
         });
-        logicalEdges.push({ id: `e${logicalEdges.length}`, vertexIds: [chain[0], chain[chain.length - 1]], faceIds, rawEdgeIds: rawIds, segments, kind, sourceIds: [] });
+        const points = chain.map((id) => [...vertexById.get(id)!.point] as Vec3);
+        logicalEdges.push({ id: `e${logicalEdges.length}`, vertexIds: [chain[0], chain[chain.length - 1]], faceIds, rawEdgeIds: rawIds, segments, points, kind, sourceIds: [] });
     });
     logicalEdges.forEach((edge) => edge.faceIds.forEach((faceId) => {
         const face = faceById.get(faceId)!;
