@@ -34,7 +34,7 @@ import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
 import { STORAGE_KEYS } from './config/const';
-import { LENGTH_UNITS } from './config/configs';
+import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     createDocument,
@@ -68,8 +68,8 @@ const sectionActive = ref(false);
 const sectionOffset = ref(0);
 const sectionLimit = ref(100);
 const directDragPosition = ref({ x: 0, y: 0 });
-const displayMode = ref<DisplayMode>('shaded');
-let displayModeBeforeSketch: DisplayMode = 'shaded';
+const displayMode = ref<DisplayMode>(normalizeDisplayMode(localStorage.getItem(STORAGE_KEYS.displayMode)));
+let displayModeBeforeSketch: DisplayMode = displayMode.value;
 const showEdges = ref(true);
 const selectThrough = ref(false);
 const includeTangent = ref(false);
@@ -451,6 +451,7 @@ watch(sketchMode, (active) => {
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
+watch(displayMode, (value) => localStorage.setItem(STORAGE_KEYS.displayMode, value));
 watch(selectThrough, (value) => viewport?.setSelectThrough(value));
 watch(includeTangent, (value) => viewport?.setIncludeTangent(value));
 watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
@@ -565,6 +566,7 @@ function onViewportReady(instance: Viewport) {
 onMounted(async () => {
     viewport.sync(document.value);
     viewport.setLengthUnit(lengthUnit.value);
+    viewport.setDisplayMode(displayMode.value, showEdges.value);
     window.addEventListener('keydown', onKeyDown);
     window.document.addEventListener('contextmenu', preventContextMenu);
     window.document.addEventListener('wheel', preventBrowserZoom, { passive: false });

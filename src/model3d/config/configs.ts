@@ -20,10 +20,13 @@ export const EXPORT_QUALITIES: { label: string; value: GeometryQuality }[] = [
 ];
 
 /** Solid, clay and line-based viewport appearances exposed beside the measurement tools. */
-export const DISPLAY_MODES: { label: string; value: DisplayMode; icon: 'render' | 'clay' | 'wireframe' | 'outline' | 'xray' }[] = [
+export const DISPLAY_MODES: { label: string; value: DisplayMode; icon: 'render' | 'clay' | 'wireframe' | 'xray' }[] = [
     { label: '渲染', value: 'shaded', icon: 'render' },
     { label: '白模', value: 'clay', icon: 'clay' },
     { label: '线框', value: 'wireframe', icon: 'wireframe' },
-    { label: '轮廓', value: 'outline', icon: 'outline' },
     { label: '透视', value: 'xray', icon: 'xray' },
 ];
+
+export function normalizeDisplayMode(value: unknown): DisplayMode {
+    return DISPLAY_MODES.some((mode) => mode.value === value) ? value as DisplayMode : 'shaded';
+}

@@ -138,10 +138,10 @@ export class SceneSynchronizer {
     private applyObjectDisplay(object: THREE.Object3D) {
         object.traverse((child) => {
             if (child.userData.displayEdge) {
-                child.visible = this.displayMode === 'outline' || (this.showEdges && this.displayMode !== 'wireframe');
+                child.visible = this.showEdges && this.displayMode !== 'wireframe';
                 const material = (child as THREE.LineSegments).material as THREE.LineBasicMaterial;
                 material.depthTest = this.displayMode !== 'xray';
-                material.opacity = this.displayMode === 'outline' ? 0.9 : 0.48;
+                material.opacity = 0.48;
                 material.clippingPlanes = this.sectionPlane ? [this.sectionPlane] : [];
                 return;
             }
@@ -156,7 +156,7 @@ export class SceneSynchronizer {
                 }
                 if ('wireframe' in material) (material as THREE.MeshStandardMaterial).wireframe = this.displayMode === 'wireframe';
                 // Outline mode retains the depth of the solid surface so hidden edges stay occluded.
-                material.colorWrite = this.displayMode === 'outline' ? false : material.userData.baseColorWrite;
+                material.colorWrite = material.userData.baseColorWrite;
                 material.transparent = this.displayMode === 'xray' || material.userData.baseTransparent;
                 material.opacity = this.displayMode === 'xray' ? Math.min(0.28, material.userData.baseOpacity) : material.userData.baseOpacity;
                 material.depthWrite = this.displayMode === 'xray' ? false : material.userData.baseDepthWrite;

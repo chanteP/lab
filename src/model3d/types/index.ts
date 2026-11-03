@@ -20,7 +20,7 @@ export type SketchElementRef = { entityId: string; index: number };
 export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
 export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number };
 export type LengthUnit = 'mm' | 'cm' | 'm';
-export type DisplayMode = 'shaded' | 'clay' | 'wireframe' | 'outline' | 'xray';
+export type DisplayMode = 'shaded' | 'clay' | 'wireframe' | 'xray';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'extrude' | 'boolean';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
 

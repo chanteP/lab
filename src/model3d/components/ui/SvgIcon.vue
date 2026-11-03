@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'render' | 'clay' | 'wireframe' | 'outline' | 'xray' }>();
+defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'render' | 'clay' | 'wireframe' | 'xray' }>();
 </script>
 
 <template>
@@ -25,7 +25,6 @@ defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'render' | 'clay' | 'wirefr
         <template v-else-if="name === 'wireframe'">
             <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Zm0 0v9m-8-4.5 8 4.5 8-4.5M4 12l8 4.5 8-4.5M8 5.25l8 4.5v9m0-13.5-8 4.5v9M12 12v9" />
         </template>
-        <path v-else-if="name === 'outline'" d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" stroke-width="2.2" />
         <template v-else>
             <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" fill="currentColor" fill-opacity=".08" stroke-dasharray="2.5 2" />
             <path d="m4 7.5 8 4.5 8-4.5M12 12v9m-8-4.5 16-9m0 9L4 7.5" opacity=".7" />

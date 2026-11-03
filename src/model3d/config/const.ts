@@ -5,6 +5,7 @@ export { SKETCH_COLORS } from './colors';
 export const STORAGE_KEYS = {
     lengthUnit: 'lab:model3d:sketch:lengthUnit',
     constraintLimit: 'lab:model3d:sketch:constraintLimit',
+    displayMode: 'lab:model3d:viewport:displayMode',
 } as const;
 
 /** Timing and interaction thresholds shared by sketch tools. */
