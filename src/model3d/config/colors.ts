@@ -1,3 +1,10 @@
+/** Shared axis colors for orientation, measurement and translate/rotate/scale controls. */
+export const AXIS_COLORS = {
+    x: '#dc6670',
+    y: '#70ad52',
+    z: '#5c8ddb',
+} as const;
+
 export const SKETCH_COLORS = {
     line: '#147d70',
     fill: '#38a894',
@@ -47,17 +54,17 @@ export const VIEWPORT_COLORS = {
     measureStart: '#147d70',
     measureEnd: '#d88d32',
     measureSketch: '#1677c8',
-    measureX: '#c98282',
-    measureY: '#7fa37a',
-    measureZ: '#7c96b8',
+    measureX: AXIS_COLORS.x,
+    measureY: AXIS_COLORS.y,
+    measureZ: AXIS_COLORS.z,
     clayBody: '#e2e5e3',
 } as const;
 
 /** Orientation gizmo axis and label colors. */
 export const GIZMO_COLORS = {
-    x: '#c98282',
-    y: '#7fa37a',
-    z: '#7c96b8',
+    x: AXIS_COLORS.x,
+    y: AXIS_COLORS.y,
+    z: AXIS_COLORS.z,
     negative: '#7a8580',
     label: '#ffffff',
 } as const;
@@ -113,7 +120,7 @@ export const UI_NAMED_COLORS = {
     drawing90: 'rgba(239,247,243,.9)',
     panelSurface: 'rgba(252,253,252,.78)',
     panelBorder: 'rgba(207,217,211,.9)',
-    axisX: '#c98282',
-    axisY: '#7fa37a',
-    axisZ: '#7c96b8',
+    axisX: AXIS_COLORS.x,
+    axisY: AXIS_COLORS.y,
+    axisZ: AXIS_COLORS.z,
 } as const;

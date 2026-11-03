@@ -11,6 +11,7 @@ import { GuideRenderer, type GeometryAnchor } from './viewport/GuideRenderer';
 import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
+import { applyTransformControlColors } from './viewport/transformColors';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude';
 export type { CameraView } from './viewport/CameraController';
@@ -90,6 +91,7 @@ export class Viewport {
 
         this.transform = new TransformControls(this.cameraController.camera, this.engine.renderer.domElement);
         this.transform.setSize(0.78);
+        applyTransformControlColors(this.transform);
         this.engine.scene.add(this.transform.getHelper());
         this.transform.addEventListener('dragging-changed', (event) => {
             this.cameraController.controls.enabled = !event.value;

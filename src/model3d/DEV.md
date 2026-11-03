@@ -131,7 +131,7 @@
 
 ## 颜色与填充调整
 
-- `config/colors.ts` 是唯一的三维颜色区：`SKETCH_COLORS` 管草图和操作点，`VIEWPORT_COLORS` 管背景、灯光、实体选中与测量，`GIZMO_COLORS` 管三维与草图坐标轴及正负轴端点，`ENTITY_COLORS` 管新实体默认色。X/Y/Z 使用低饱和且可区分的红/绿/蓝，负轴与正轴同色、降低不透明度。
+- `config/colors.ts` 是唯一的三维颜色区：`SKETCH_COLORS` 管草图和操作点，`VIEWPORT_COLORS` 管背景、灯光、实体选中与测量，`AXIS_COLORS` 统一三维与草图坐标轴、测量轴和 TransformControls 移动/旋转/缩放坐标，`GIZMO_COLORS` 引用同一色值并管正负轴端点，`ENTITY_COLORS` 管新实体默认色。X/Y/Z 使用协调且可区分的中等饱和红/绿/蓝，负轴与正轴同色、降低不透明度。
 - 界面颜色也在同一文件：`UI_COLORS` 对应 `var(--model3d-ui-<hex>)`，`UI_NAMED_COLORS` 对应 `var(--model3d-ui-<name>)`，由 `index.ts` 在挂载前注入。调整色值只改 const，不在 Vue/CSS 中新增硬编码颜色。
 - 平行线颜色使用 `SKETCH_COLORS.line`；线宽、间距和不透明度在 `config/const.ts` 的 `SKETCH_STYLE.hatchLineWidth / hatchSpacing / hatchOpacity` 调整，单位与草图平面坐标一致。
 - 扇形磁吸阈值在 `INTERACTION.sectorQuarterSnapThresholdDeg` 调整；默认在 90° 倍数前后 4° 内吸附。
