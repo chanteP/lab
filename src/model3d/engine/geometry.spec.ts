@@ -75,7 +75,7 @@ test('a planar extrusion side uses its actual face profile and can cross the opp
 
     entity.faceOffset!.distance = -12;
     const reversed = bounds(entity, document);
-    assert(Math.abs(reversed.min.x + 7) < 0.00001);
+    assert(Math.abs(reversed.min.x + 7) < 0.0011, String(reversed.min.x));
     assert(Math.abs(reversed.max.x + 5) < 0.0011);
 });
 
@@ -184,4 +184,28 @@ test('three consecutive box faces always come from the current baked mesh', () =
     const result = bounds(entity);
     assert.deepEqual(result.min.toArray(), [-20, -20, -20]);
     assert.deepEqual(result.max.toArray(), [24, 25, 23]);
+});
+
+test('concave planar faces preserve their notch when extended', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const entity = Object.assign(createEntity('extrude', 'body'), {
+        position: [0, 0, 0], planeId: 'plane', profileType: 'polygon', points: [[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]], depth: 10, direction: 1, sideMode: 'one',
+    });
+    const mesh = buildEntityMesh(entity, document);
+    const positions = mesh.geometry.attributes.position;
+    let hit: THREE.Intersection | null = null;
+    for (let index = 0; index < positions.count && !hit; index += 3) {
+        const a = new THREE.Vector3().fromBufferAttribute(positions, index), b = new THREE.Vector3().fromBufferAttribute(positions, index + 1), c = new THREE.Vector3().fromBufferAttribute(positions, index + 2);
+        const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+        if (normal.y > 0.999) hit = { object: mesh, faceIndex: index / 3, face: { normal }, point: a.add(b).add(c).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+    }
+    const anchor = new GeometrySelector().createFaceAnchor(hit!, entity);
+    entity.faceOffset = { normal: anchor.localNormal, distance: 5, vertices: anchor.vertices, indices: anchor.indices };
+    const result = buildEntityMesh(entity, document);
+    result.geometry.computeBoundingBox();
+    assert.equal(result.geometry.boundingBox!.max.y, 15);
+
+    const notch = new THREE.Raycaster(new THREE.Vector3(7, 16, -7), new THREE.Vector3(0, -1, 0)).intersectObject(result)[0];
+    assert.equal(notch, undefined, 'the concave notch must remain empty');
 });

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ADDITION, Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { profileClosed, profilePoints, profileShape } from './profiles';
 import { SKETCH_COLORS } from '../config/colors';
@@ -46,22 +47,6 @@ function signedVolume(geometry: THREE.BufferGeometry) {
         volume += a.dot(b.cross(c)) / 6;
     }
     return volume;
-}
-
-function convexHull(points: THREE.Vector2[]) {
-    const sorted = points.map((point) => point.clone()).sort((a, b) => a.x - b.x || a.y - b.y).filter((point, index, all) => !index || point.distanceTo(all[index - 1]) > 1e-6);
-    const cross = (a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    const lower: THREE.Vector2[] = [], upper: THREE.Vector2[] = [];
-    sorted.forEach((point) => {
-        while (lower.length > 1 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
-        lower.push(point);
-    });
-    for (let index = sorted.length - 1; index >= 0; index--) {
-        const point = sorted[index];
-        while (upper.length > 1 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
-        upper.push(point);
-    }
-    return [...lower.slice(0, -1), ...upper.slice(0, -1)];
 }
 
 function reflectExtrusion(geometry: THREE.BufferGeometry) {
@@ -144,7 +129,7 @@ function offsetBoundedFace(base: THREE.BufferGeometry, normal: Vec3, distance: n
     return shrink ? subtractGeometry(base, extension) : unionGeometry(base, extension);
 }
 
-function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>) {
+function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>, skipBottom = false) {
     const source = offset.vertices || [];
     const sourceIndices = offset.indices || [];
     if (source.length < 3 || !offset.distance) return new THREE.BufferGeometry();
@@ -168,78 +153,69 @@ function faceExtension(offset: NonNullable<ModelEntity['faceOffset']>) {
     }
     const boundary = [...edgeCounts.values()].filter((edge) => edge[2] === 1);
     if (!boundary.length) return new THREE.BufferGeometry();
-    const adjacency = new Map<number, number[]>();
-    boundary.forEach(([a, b]) => {
-        adjacency.set(a, [...adjacency.get(a) || [], b]);
-        adjacency.set(b, [...adjacency.get(b) || [], a]);
-    });
-    const ordered = [boundary[0][0], boundary[0][1]];
-    while (ordered.length <= boundary.length) {
-        const previous = ordered[ordered.length - 2], current = ordered[ordered.length - 1];
-        const next = (adjacency.get(current) || []).find((vertex) => vertex !== previous);
-        if (next === undefined || next === ordered[0]) break;
-        ordered.push(next);
-    }
-    const loop = ordered.map((index) => vertices[index]);
     const normal = new THREE.Vector3(...offset.normal).normalize();
     const direction = normal.clone().multiplyScalar(Math.sign(offset.distance) || 1);
-    const u = loop[1].clone().sub(loop[0]).normalize();
+    const origin = vertices[0];
+    const u = vertices[1].clone().sub(origin).normalize();
     const v = direction.clone().cross(u).normalize();
-    let points = loop.map((point) => {
-        const relative = point.clone().sub(loop[0]);
-        return new THREE.Vector2(relative.dot(u), relative.dot(v));
-    });
-    const triangleArea = sourceIndices.reduce((sum, _, index) => {
-        if (index % 3) return sum;
-        const a = source[sourceIndices[index]], b = source[sourceIndices[index + 1]], c = source[sourceIndices[index + 2]];
-        const origin = new THREE.Vector3(...a), u = new THREE.Vector3(...b).sub(origin).normalize();
-        const v = new THREE.Vector3(...offset.normal).normalize().cross(u).normalize();
-        const project = (point: Vec3) => {
-            const relative = new THREE.Vector3(...point).sub(origin);
-            return new THREE.Vector2(relative.dot(u), relative.dot(v));
-        };
-        const pa = project(a), pb = project(b), pc = project(c);
-        return sum + Math.abs((pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x)) / 2;
-    }, 0);
-    const hull = convexHull(points);
-    const hullArea = Math.abs(hull.reduce((sum, point, index) => {
-        const next = hull[(index + 1) % hull.length];
-        return sum + point.x * next.y - next.x * point.y;
-    }, 0) / 2);
-    if (hull.length >= 3 && Math.abs(hullArea - triangleArea) <= Math.max(0.0001, triangleArea * 0.001)) points = hull;
-    if (offset.distance < 0) {
-        const center = points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / points.length);
-        points = points.map((point) => point.clone().sub(center).multiplyScalar(1.0001).add(center));
-    }
     const overlap = Math.min(0.001, Math.abs(offset.distance) / 1000 || 0.001);
     const depth = Math.abs(offset.distance) + overlap;
     const positions: number[] = [];
-    const triangles = THREE.ShapeUtils.triangulateShape(points, []);
-    const push = (point: THREE.Vector2, z: number) => positions.push(point.x, point.y, z);
-    triangles.forEach(([a, b, c]) => {
-        push(points[a], 0); push(points[b], 0); push(points[c], 0);
-        push(points[a], depth); push(points[b], depth); push(points[c], depth);
-    });
-    for (let index = 0; index < points.length; index++) {
-        const a = points[index], b = points[(index + 1) % points.length];
+    const push = (vertex: number, z: number) => {
+        const relative = vertices[vertex].clone().sub(origin);
+        positions.push(relative.dot(u), relative.dot(v), z);
+    };
+    // Reuse the current face triangulation for caps; only boundary edges create side walls.
+    for (let index = 0; index + 2 < sourceIndices.length; index += 3) {
+        const triangle = sourceIndices.slice(index, index + 3).map((vertex) => vertexMap.get(source[vertex].map((value) => value.toFixed(5)).join(','))!);
+        if (!skipBottom) triangle.forEach((vertex) => push(vertex, 0));
+        triangle.forEach((vertex) => push(vertex, depth));
+    }
+    boundary.forEach(([a, b]) => {
         push(a, 0); push(b, 0); push(b, depth);
         push(a, 0); push(b, depth); push(a, depth);
-    }
+    });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(positions.length / 3 * 2), 2));
     geometry.computeVertexNormals();
     const basis = new THREE.Matrix4().makeBasis(u, v, direction);
-    basis.setPosition(loop[0].clone().addScaledVector(direction, -overlap));
+    basis.setPosition(origin.clone().addScaledVector(direction, -overlap));
     geometry.applyMatrix4(basis);
     if (signedVolume(geometry) < 0) reverseWinding(geometry);
     return geometry;
 }
 
+function stitchFaceExtension(base: THREE.BufferGeometry, offset: NonNullable<ModelEntity['faceOffset']>) {
+    const selected = new Set<string>();
+    const source = offset.vertices || [], indices = offset.indices || [];
+    for (let index = 0; index + 2 < indices.length; index += 3) {
+        selected.add(indices.slice(index, index + 3).map((vertex) => source[vertex].map((value) => value.toFixed(4)).join(',')).sort().join('|'));
+    }
+    const positions = base.attributes.position;
+    const baseIndex = base.index;
+    const triangles: number[] = [];
+    for (let index = 0; index < (baseIndex?.count || positions.count); index += 3) {
+        const triangle = [0, 1, 2].map((corner) => baseIndex ? baseIndex.getX(index + corner) : index + corner);
+        const key = triangle.map((vertex) => new THREE.Vector3().fromBufferAttribute(positions, vertex).toArray().map((value) => value.toFixed(4)).join(',')).sort().join('|');
+        if (!selected.has(key)) triangles.push(...triangle);
+    }
+    const baseOuter = new THREE.BufferGeometry();
+    Object.entries(base.attributes).forEach(([name, attribute]) => {
+        const values: number[] = [];
+        triangles.forEach((vertex) => {
+            for (let component = 0; component < attribute.itemSize; component++) values.push(attribute.array[vertex * attribute.itemSize + component]);
+        });
+        baseOuter.setAttribute(name, new THREE.Float32BufferAttribute(values, attribute.itemSize));
+    });
+    const extension = faceExtension(offset, true);
+    return mergeGeometries([baseOuter, extension], false) || unionGeometry(base, extension);
+}
+
 function offsetArbitraryFace(base: THREE.BufferGeometry, offset: NonNullable<ModelEntity['faceOffset']>) {
+    if (offset.distance > 0) return stitchFaceExtension(base, offset);
     const extension = faceExtension(offset);
     if (!extension.attributes.position) return base;
-    if (offset.distance > 0) return unionGeometry(base, extension);
 
     const normal = new THREE.Vector3(...offset.normal).normalize();
     let min = Infinity, max = -Infinity;
@@ -254,12 +230,12 @@ function offsetArbitraryFace(base: THREE.BufferGeometry, offset: NonNullable<Mod
     if (crossed) {
         const outside = faceExtension({ ...offset, distance: offset.distance + max - min });
         outside.translate(...normal.clone().multiplyScalar(min - max).toArray());
-        result = result.attributes.position.count ? unionGeometry(result, outside) : outside;
+        result = outside;
     }
     base.dispose();
     extension.dispose();
     if (!result.attributes.position.count) return result;
-    const limit = crossed ? max : max + offset.distance;
+    const limit = crossed ? min : max + offset.distance;
     const source = result;
     const resultPositions = source.attributes.position;
     const indices = source.index;

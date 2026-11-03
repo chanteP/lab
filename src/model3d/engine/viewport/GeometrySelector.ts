@@ -67,7 +67,7 @@ export class GeometrySelector {
             const vertices: Vec3[] = [];
             const indices: number[] = [];
             const center = new THREE.Vector3();
-            const planar = [...visited].every((triangleIndex) => triangles[triangleIndex].normal.dot(triangles[start].normal) > 0.9999);
+            const planar = [...visited].every((triangleIndex) => Math.abs(triangles[triangleIndex].normal.dot(triangles[start].normal)) > 0.9999);
             [...visited].sort((a, b) => a - b).forEach((triangleIndex) => {
                 triangles[triangleIndex].vertices.forEach((vertex) => {
                     const point = new THREE.Vector3().fromBufferAttribute(positions, vertex).applyMatrix4(mesh.matrixWorld);
