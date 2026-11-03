@@ -69,6 +69,32 @@ function reflectExtrusion(geometry: THREE.BufferGeometry) {
     reverseWinding(geometry);
 }
 
+function offsetAxisBox(base: THREE.BufferGeometry, offset: NonNullable<ModelEntity['faceOffset']>) {
+    const normal = new THREE.Vector3(...offset.normal).normalize();
+    const axis = Math.abs(normal.x) > 0.5 ? 0 : Math.abs(normal.y) > 0.5 ? 1 : 2;
+    if (Math.abs(normal.getComponent(axis)) < 0.999) return null;
+    base.computeBoundingBox();
+    const box = base.boundingBox!;
+    const positions = base.attributes.position;
+    const epsilon = 0.001;
+    for (let index = 0; index < positions.count; index++) {
+        for (let component = 0; component < 3; component++) {
+            const value = positions.array[index * 3 + component];
+            if (Math.abs(value - box.min.getComponent(component)) > epsilon && Math.abs(value - box.max.getComponent(component)) > epsilon) return null;
+        }
+    }
+
+    const selected = normal.getComponent(axis) > 0 ? box.max.getComponent(axis) : box.min.getComponent(axis);
+    const opposite = normal.getComponent(axis) > 0 ? box.min.getComponent(axis) : box.max.getComponent(axis);
+    const dragged = selected + offset.distance;
+    box.min.setComponent(axis, Math.min(dragged, opposite));
+    box.max.setComponent(axis, Math.max(dragged, opposite));
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    const result = new THREE.BoxGeometry(size.x, size.y, size.z);
+    result.translate(...center.toArray());
+    return result;
+}
+
 export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity) {
     object.position.fromArray(entity.position);
     object.rotation.set(...entity.rotation.map(THREE.MathUtils.degToRad) as Vec3);
@@ -264,7 +290,10 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
         if (entity.meshGeometry.indices.length) geometry.setIndex(entity.meshGeometry.indices);
         geometry.computeVertexNormals();
         geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));
-        if (entity.faceOffset?.distance && entity.faceOffset.vertices) return offsetArbitraryFace(geometry, entity.faceOffset);
+        if (entity.faceOffset?.distance && entity.faceOffset.vertices) {
+            const box = offsetAxisBox(geometry, entity.faceOffset);
+            return box || offsetArbitraryFace(geometry, entity.faceOffset);
+        }
         return geometry;
     }
     const q = qualityValues(quality);

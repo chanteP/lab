@@ -297,7 +297,7 @@ function onBlankCommit() {
 
 function setTool(tool: ViewTool) {
     finishDirectEdit();
-    if (operation.value && activeTool.value !== tool) cancelOperation();
+    if (operation.value && activeTool.value !== tool) doneOperation();
     stopMeasure();
     if (sketchMode.value) cancelSketch();
     activeTool.value = tool;

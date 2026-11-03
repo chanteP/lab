@@ -171,11 +171,12 @@ test('three consecutive box faces always come from the current baked mesh', () =
         const geometry = buildEntityMesh(entity, document).geometry;
         entity.meshGeometry = { positions: Array.from(geometry.attributes.position.array), indices: geometry.index ? Array.from(geometry.index.array) : [] };
         entity.faceOffset = null;
+        assert.equal(entity.meshGeometry.positions.length / 3, 24, 'axis-aligned box edits must not accumulate CSG fragments');
     };
 
-    apply([0, 1, 0], 5);
     apply([1, 0, 0], 4);
     apply([0, 0, 1], 3);
+    apply([0, 1, 0], 5);
     const result = bounds(entity);
     assert.deepEqual(result.min.toArray(), [-20, -20, -20]);
     assert.deepEqual(result.max.toArray(), [24, 25, 23]);
