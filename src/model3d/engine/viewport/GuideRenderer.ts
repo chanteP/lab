@@ -77,7 +77,7 @@ export class GuideRenderer {
             const length = 18;
             this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
             this.options.overlay.set({
-                id: 'guide-label:direct', kind: 'label', position: origin.clone().add(normal.clone().multiplyScalar(length)).toArray(),
+                id: 'guide-label:direct', kind: 'label', position: origin.clone().add(normal.clone().multiplyScalar(length + 10)).toArray(),
                 text: this.options.formatLength(value), className: 'extrude-dimension', action: 'extrude-dimension',
             });
             return;
@@ -119,7 +119,7 @@ export class GuideRenderer {
         this.options.overlay.set({
             id: 'guide-label:extrude',
             kind: 'label',
-            position: arrowOrigin.clone().add(normal.multiplyScalar(direction * 18)).toArray(),
+            position: arrowOrigin.clone().add(normal.multiplyScalar(direction * (18 + 10))).toArray(),
             text: this.options.formatLength(length),
             className: 'extrude-dimension',
             action: 'extrude-dimension',

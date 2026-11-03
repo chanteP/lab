@@ -34,7 +34,6 @@ export class OrientationGizmo extends Object3D {
 		const color1 = new Color( GIZMO_COLORS.x );
 		const color2 = new Color( GIZMO_COLORS.y );
 		const color3 = new Color( GIZMO_COLORS.z );
-		const color4 = new Color( GIZMO_COLORS.negative );
 
 		const options = {};
 
@@ -51,25 +50,32 @@ export class OrientationGizmo extends Object3D {
 		const xAxis = new Mesh( geometry, getAxisMaterial( color1 ) );
 		const yAxis = new Mesh( geometry, getAxisMaterial( color2 ) );
 		const zAxis = new Mesh( geometry, getAxisMaterial( color3 ) );
+		const negXAxis = new Mesh( geometry, getAxisMaterial( color1 ) );
+		const negYAxis = new Mesh( geometry, getAxisMaterial( color2 ) );
+		const negZAxis = new Mesh( geometry, getAxisMaterial( color3 ) );
 
 		yAxis.rotation.z = Math.PI / 2;
 		zAxis.rotation.y = - Math.PI / 2;
+		negXAxis.rotation.z = Math.PI;
+		negYAxis.rotation.z = - Math.PI / 2;
+		negZAxis.rotation.y = Math.PI / 2;
 
 		this.add( xAxis );
 		this.add( zAxis );
 		this.add( yAxis );
+		this.add( negXAxis );
+		this.add( negYAxis );
+		this.add( negZAxis );
 
 		const spriteMaterial1 = getSpriteMaterial( color1 );
 		const spriteMaterial2 = getSpriteMaterial( color2 );
 		const spriteMaterial3 = getSpriteMaterial( color3 );
-		const spriteMaterial4 = getSpriteMaterial( color4 );
-
 		const posXAxisHelper = new Sprite( spriteMaterial1 );
 		const posYAxisHelper = new Sprite( spriteMaterial2 );
 		const posZAxisHelper = new Sprite( spriteMaterial3 );
-		const negXAxisHelper = new Sprite( spriteMaterial4 );
-		const negYAxisHelper = new Sprite( spriteMaterial4 );
-		const negZAxisHelper = new Sprite( spriteMaterial4 );
+		const negXAxisHelper = new Sprite( getSpriteMaterial( color1 ) );
+		const negYAxisHelper = new Sprite( getSpriteMaterial( color2 ) );
+		const negZAxisHelper = new Sprite( getSpriteMaterial( color3 ) );
 
 		posXAxisHelper.position.x = 1;
 		posYAxisHelper.position.y = 1;
@@ -78,9 +84,11 @@ export class OrientationGizmo extends Object3D {
 		negYAxisHelper.position.y = - 1;
 		negZAxisHelper.position.z = - 1;
 
-		negXAxisHelper.material.opacity = 0.2;
-		negYAxisHelper.material.opacity = 0.2;
-		negZAxisHelper.material.opacity = 0.2;
+		[negXAxisHelper, negYAxisHelper, negZAxisHelper].forEach( helper => {
+			helper.material.transparent = true;
+			helper.material.opacity = 0.65;
+			helper.material.depthWrite = false;
+		} );
 
 		posXAxisHelper.userData.type = 'posX';
 		posYAxisHelper.userData.type = 'posY';
@@ -225,6 +233,9 @@ export class OrientationGizmo extends Object3D {
 			xAxis.material.dispose();
 			yAxis.material.dispose();
 			zAxis.material.dispose();
+			negXAxis.material.dispose();
+			negYAxis.material.dispose();
+			negZAxis.material.dispose();
 
 			posXAxisHelper.material.map.dispose();
 			posYAxisHelper.material.map.dispose();

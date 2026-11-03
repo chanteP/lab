@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { ProfileType, ProfileCurves } from './profiles';
-import type { LengthUnit, ModelDocument, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
+import type { DisplayMode, LengthUnit, ModelDocument, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
 import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
@@ -214,7 +214,7 @@ export class Viewport {
         this.sceneSynchronizer.sync(document);
     }
 
-    setDisplayMode(mode: 'shaded' | 'wireframe' | 'xray', showEdges?: boolean) { this.sceneSynchronizer.setDisplayMode(mode, showEdges); }
+    setDisplayMode(mode: DisplayMode, showEdges?: boolean) { this.sceneSynchronizer.setDisplayMode(mode, showEdges); }
     setSection(active: boolean, offset = 0) {
         this.sceneSynchronizer.setSection(active, offset);
         if (this.sceneSynchronizer.document) this.guideRenderer.update(this.sceneSynchronizer.document);

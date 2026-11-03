@@ -1,4 +1,4 @@
-import type { GeometryQuality, LengthUnit, SketchPlane } from '../types';
+import type { DisplayMode, GeometryQuality, LengthUnit, SketchPlane } from '../types';
 
 /** Display units supported by all length inputs and viewport annotations. */
 export const LENGTH_UNITS: { label: string; value: LengthUnit; factor: number }[] = [
@@ -19,9 +19,11 @@ export const EXPORT_QUALITIES: { label: string; value: GeometryQuality }[] = [
     { label: '超高 · 256', value: 'ultra' },
 ];
 
-/** Viewport shaders available in the display panel. */
-export const DISPLAY_MODES = [
-    { label: '实体着色', value: 'shaded' },
-    { label: '线框', value: 'wireframe' },
-    { label: '透视', value: 'xray' },
-] as const;
+/** Solid, clay and line-based viewport appearances exposed beside the measurement tools. */
+export const DISPLAY_MODES: { label: string; value: DisplayMode; icon: 'render' | 'clay' | 'wireframe' | 'outline' | 'xray' }[] = [
+    { label: '渲染', value: 'shaded', icon: 'render' },
+    { label: '白模', value: 'clay', icon: 'clay' },
+    { label: '线框', value: 'wireframe', icon: 'wireframe' },
+    { label: '轮廓', value: 'outline', icon: 'outline' },
+    { label: '透视', value: 'xray', icon: 'xray' },
+];

@@ -47,17 +47,18 @@ export const VIEWPORT_COLORS = {
     measureStart: '#147d70',
     measureEnd: '#d88d32',
     measureSketch: '#1677c8',
-    measureX: '#ef5261',
-    measureY: '#63ad45',
-    measureZ: '#4c86e8',
+    measureX: '#c98282',
+    measureY: '#7fa37a',
+    measureZ: '#7c96b8',
+    clayBody: '#e2e5e3',
 } as const;
 
 /** Orientation gizmo axis and label colors. */
 export const GIZMO_COLORS = {
-    x: '#ff4466',
-    y: '#88ff44',
-    z: '#4488ff',
-    negative: '#000000',
+    x: '#c98282',
+    y: '#7fa37a',
+    z: '#7c96b8',
+    negative: '#7a8580',
     label: '#ffffff',
 } as const;
 
@@ -110,4 +111,9 @@ export const UI_NAMED_COLORS = {
     status88: 'rgba(248,250,248,.88)',
     border90: 'rgba(207,217,211,.9)',
     drawing90: 'rgba(239,247,243,.9)',
+    panelSurface: 'rgba(252,253,252,.78)',
+    panelBorder: 'rgba(207,217,211,.9)',
+    axisX: '#c98282',
+    axisY: '#7fa37a',
+    axisZ: '#7c96b8',
 } as const;

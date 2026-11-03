@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as THREE from 'three';
-import { NButton, NIcon, NInput, NModal, useMessage } from 'naive-ui';
+import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
     AnalyticsOutline, CloseOutline, CubeOutline, EllipseOutline, EyeOutline, LayersOutline,
     ShapesOutline, TrashOutline, PencilOutline, ScanOutline,
@@ -35,10 +35,11 @@ import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
 import DirectBooleanToggle from './components/viewport/DirectBooleanToggle.vue';
 import { STORAGE_KEYS } from './config/const';
+import { LENGTH_UNITS } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     createDocument,
-    type BooleanOperation, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
+    type BooleanOperation, type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
 } from './types';
 
 const message = useMessage();
@@ -67,7 +68,8 @@ const sectionActive = ref(false);
 const sectionOffset = ref(0);
 const sectionLimit = ref(100);
 const directDragPosition = ref({ x: 0, y: 0 });
-const displayMode = ref<'shaded' | 'wireframe' | 'xray'>('shaded');
+const displayMode = ref<DisplayMode>('shaded');
+let displayModeBeforeSketch: DisplayMode = 'shaded';
 const showEdges = ref(true);
 
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
@@ -254,7 +256,7 @@ function updateSectionOffset(value: number) {
     sectionOffset.value = value;
     viewport?.setSectionOffset(value);
 }
-function updateDisplayMode(mode: 'shaded' | 'wireframe' | 'xray') {
+function updateDisplayMode(mode: DisplayMode) {
     displayMode.value = mode;
     viewport?.setDisplayMode(mode, showEdges.value);
 }
@@ -431,7 +433,15 @@ watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport
 watch(() => project.value.name, scheduleSave);
 watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
 watch(sketchGuideSnapEnabled, (value) => viewport?.setSketchGuideSnapEnabled(value));
-watch(sketchMode, (active) => { if (!active && symmetryActive.value) sketchAdvanced.cancelSymmetry(); });
+watch(sketchMode, (active) => {
+    if (active) {
+        displayModeBeforeSketch = displayMode.value;
+        updateDisplayMode('shaded');
+    } else {
+        updateDisplayMode(displayModeBeforeSketch);
+        if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
+    }
+});
 watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
@@ -606,7 +616,7 @@ onBeforeUnmount(() => {
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
 
-                <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><span class="axis-dot"></span>{{ lengthUnit }}</div>
+                <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><NSelect class="unit-select" size="small" aria-label="全局长度单位" :value="lengthUnit" :options="LENGTH_UNITS" :consistent-menu-width="false" @update:value="setLengthUnit" /></div>
 
                 <ModelingOperationBar v-if="contextVisible" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
                     :operation-targets="operationTargets" :document="document" :selected="selected" :selected-entities="selectedEntities" :active-tool="activeTool" :display-length="displayLength" :input-length="inputLength"
@@ -616,7 +626,7 @@ onBeforeUnmount(() => {
                     @swap-boolean-roles="swapBooleanRoles" @update-name="updateEntity('name', $event)"
                     @update-vector="updateVector" @update-face-offset="updateFaceOffsetInput" @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" @edit-profile="startSketch(true)" @boolean="applyBoolean" />
 
-                <ViewportUtilities :measure-mode="measureMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
+                <ViewportUtilities :measure-mode="measureMode" :sketch-mode="sketchMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
                     :display-mode="displayMode" :show-edges="showEdges" :shadow-visible="shadowVisible" :grid-visible="gridVisible"
                     @measure="toggleMeasure" @fit="fitView" @projection="toggleProjection" @display-mode="updateDisplayMode"
                     @show-edges="showEdges = $event" @shadow-visible="shadowVisible = $event" @grid-visible="gridVisible = $event" />
@@ -661,4 +671,16 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .viewport-area.symmetry-active :deep(.viewport > canvas) { opacity: .1; }
+.viewport-caption .unit-select { width: 62px; pointer-events: auto; }
+.viewport-caption .unit-select :deep(.n-base-selection) {
+    --n-height: 24px !important;
+    --n-font-size: 10px !important;
+    --n-border: 1px solid transparent !important;
+    --n-border-hover: 1px solid var(--model3d-ui-d4dfd8) !important;
+    --n-border-active: 1px solid var(--model3d-ui-9cc8bb) !important;
+    --n-border-focus: 1px solid var(--model3d-ui-9cc8bb) !important;
+    --n-box-shadow-focus: none !important;
+    --n-color: transparent !important;
+    --n-color-active: var(--model3d-ui-surface90) !important;
+}
 </style>

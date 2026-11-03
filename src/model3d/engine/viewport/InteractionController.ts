@@ -12,6 +12,7 @@ import type { SketchRenderer } from './SketchRenderer';
 import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
+import { advanceGizmoOrbit } from './gizmoOrbit';
 
 type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
 
@@ -62,7 +63,7 @@ export class InteractionController {
     private directMoveFrame = 0;
     private pendingDirectDelta: number | null = null;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
-    private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean } | null = null;
+    private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean; spherical: THREE.Spherical } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private marquee: { startX: number; startY: number; x: number; y: number; additive: boolean; moved: boolean } | null = null;
     private readonly selectionRectangle: HTMLDivElement;
@@ -438,7 +439,8 @@ export class InteractionController {
             if (!this.sketchMode) this.camera.up.set(0, 1, 0);
             event.preventDefault(); event.stopImmediatePropagation();
             const rect = this.renderer.domElement.getBoundingClientRect();
-            this.gizmoDrag = { x: event.clientX, y: event.clientY, centerX: rect.right - 64, centerY: rect.bottom - 76, moved: false };
+            const spherical = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
+            this.gizmoDrag = { x: event.clientX, y: event.clientY, centerX: rect.right - 64, centerY: rect.bottom - 76, moved: false, spherical };
             this.capturePointer(event);
             this.controls.enabled = false;
             return;
@@ -601,15 +603,15 @@ export class InteractionController {
                 this.gizmoDrag.y = event.clientY;
                 return;
             }
-            const offset = this.camera.position.clone().sub(this.controls.target);
-            const spherical = new THREE.Spherical().setFromVector3(offset);
-            spherical.theta -= dx * 0.009;
-            spherical.phi = THREE.MathUtils.clamp(spherical.phi - dy * 0.009, 0.015, Math.PI - 0.015);
+            // Continue from the unsnapped orbit; snapping only changes the rendered camera, not the drag state.
+            const spherical = advanceGizmoOrbit(this.gizmoDrag.spherical, dx, dy);
             this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(spherical));
             this.camera.lookAt(this.controls.target);
             this.viewHelper.center.copy(this.controls.target);
             this.viewHelper.snap();
-            this.gizmoDrag = { x: event.clientX, y: event.clientY, centerX: this.gizmoDrag.centerX, centerY: this.gizmoDrag.centerY, moved: true };
+            this.gizmoDrag.x = event.clientX;
+            this.gizmoDrag.y = event.clientY;
+            this.gizmoDrag.moved = true;
             return;
         }
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }

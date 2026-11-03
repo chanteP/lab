@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 <template>
     <header class="topbar">
-        <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>FORM</strong><span>3D STUDIO</span></div></div>
+        <div class="brand"><div class="brand-mark"><NIcon :size="23"><CubeOutline /></NIcon></div><div><strong>Builder</strong><span>3D</span></div></div>
         <div class="topbar-project">
             <span class="local-badge"><i></i> 本地</span>
             <NInput :value="projectName" class="project-name" size="small" :bordered="false" aria-label="项目名称" @update:value="emit('name', $event)" />
@@ -47,7 +47,7 @@ const emit = defineEmits<{
 .brand { display: flex; align-items: center; gap: 10px; min-width: 196px; }
 .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; color: var(--model3d-ui-white); background: var(--model3d-ui-147d70); border-radius: 9px; }
 .brand > div:last-child { display: flex; align-items: baseline; gap: 7px; }
-.brand strong { font-size: 17px; letter-spacing: 2.4px; }
+.brand strong { font-size: 17px; letter-spacing: .4px; }
 .brand span { font-size: 9px; color: var(--model3d-ui-89938e); letter-spacing: 1.5px; }
 .topbar-project { display: flex; align-items: center; gap: 10px; flex: 1; max-width: 430px; }
 .local-badge { white-space: nowrap; color: var(--model3d-ui-6d7873); font-size: 11px; padding: 5px 8px; border: 1px solid var(--model3d-ui-e2e7e4); border-radius: 5px; }

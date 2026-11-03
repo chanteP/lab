@@ -3,7 +3,7 @@ import type { TransformControls } from 'three/addons/controls/TransformControls.
 import { buildScene } from '../geometry';
 import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import type { ModelDocument, SelectionKind, SketchPlane } from '../../types';
+import type { DisplayMode, ModelDocument, SelectionKind, SketchPlane } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createDisplayEdgeGeometry, createFatLine } from './renderUtils';
 
@@ -52,7 +52,7 @@ export class SceneSynchronizer {
     editingBorderIndex: number | null = null;
     booleanRoles: { target: string; tool: string } | null = null;
 
-    private displayMode: 'shaded' | 'wireframe' | 'xray' = 'shaded';
+    private displayMode: DisplayMode = 'shaded';
     private showEdges = true;
     sectionPlane: THREE.Plane | null = null;
     private sectionInversePlane: THREE.Plane | null = null;
@@ -128,9 +128,10 @@ export class SceneSynchronizer {
     private applyObjectDisplay(object: THREE.Object3D) {
         object.traverse((child) => {
             if (child.userData.displayEdge) {
-                child.visible = this.showEdges && this.displayMode !== 'wireframe';
+                child.visible = this.displayMode === 'outline' || (this.showEdges && this.displayMode !== 'wireframe');
                 const material = (child as THREE.LineSegments).material as THREE.LineBasicMaterial;
                 material.depthTest = this.displayMode !== 'xray';
+                material.opacity = this.displayMode === 'outline' ? 0.9 : 0.48;
                 material.clippingPlanes = this.sectionPlane ? [this.sectionPlane] : [];
                 return;
             }
@@ -141,8 +142,11 @@ export class SceneSynchronizer {
                     material.userData.baseOpacity = material.opacity;
                     material.userData.baseTransparent = material.transparent;
                     material.userData.baseDepthWrite = material.depthWrite;
+                    material.userData.baseColorWrite = material.colorWrite;
                 }
                 if ('wireframe' in material) (material as THREE.MeshStandardMaterial).wireframe = this.displayMode === 'wireframe';
+                // Outline mode retains the depth of the solid surface so hidden edges stay occluded.
+                material.colorWrite = this.displayMode === 'outline' ? false : material.userData.baseColorWrite;
                 material.transparent = this.displayMode === 'xray' || material.userData.baseTransparent;
                 material.opacity = this.displayMode === 'xray' ? Math.min(0.28, material.userData.baseOpacity) : material.userData.baseOpacity;
                 material.depthWrite = this.displayMode === 'xray' ? false : material.userData.baseDepthWrite;
@@ -152,10 +156,11 @@ export class SceneSynchronizer {
         });
     }
 
-    setDisplayMode(mode: 'shaded' | 'wireframe' | 'xray', showEdges = this.showEdges) {
+    setDisplayMode(mode: DisplayMode, showEdges = this.showEdges) {
         this.displayMode = mode;
         this.showEdges = showEdges;
         this.model.children.forEach((child) => { if (this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind !== 'sketch') this.applyObjectDisplay(child); });
+        this.applySelection();
     }
 
     setSection(active: boolean, offset = 0) {
@@ -332,7 +337,7 @@ export class SceneSynchronizer {
             const bodyActive = active && entity?.kind !== 'sketch' && ['body', 'mixed'].includes(this.selectionKind || '');
             if (material.emissive) {
                 if (!material.userData.baseColor && material.color) material.userData.baseColor = material.color.getHex();
-                if (material.color) material.color.set(bodyActive ? VIEWPORT_COLORS.selectedBody : material.userData.baseColor);
+                if (material.color) material.color.set(bodyActive ? VIEWPORT_COLORS.selectedBody : this.displayMode === 'clay' ? VIEWPORT_COLORS.clayBody : material.userData.baseColor);
                 const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active && !bodyActive && !['face', 'edge'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);
                 material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;

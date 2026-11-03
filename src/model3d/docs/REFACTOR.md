@@ -37,7 +37,7 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
-- `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载右侧工具描述、顶部参数操作和底部视口工具；`OperationBar` 提供统一顶部结构与红色关闭按钮。App 只组合组件并转发状态/事件。
+- `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载右侧工具描述、顶部参数操作和底部视口工具；`OperationBar` 提供统一顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。App 只组合组件并转发状态/事件。
 
 - `OverlayController` 只保存普通业务数据和世界坐标；每帧投影后由 `ViewportOverlay.vue` 渲染尺寸输入、单位、约束锁和标注。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
 
@@ -155,3 +155,4 @@ App 可以保留跨组件的建模操作状态，但顶栏、实体侧栏、建�
 - 2026-10-29：新增独立 sketchGuides 参考线模块，支持同轴、平行、垂直候选与屏幕像素磁吸；Viewport 使用独立参考色叠加层，不侵入既有草图几何和材质状态。
 - 2026-10-29：修复 composable 拆分后的初始化顺序；草图拖动改为结束时同步场景，统一椭圆参数角和双半径方向，支持圆/椭圆裁边重闭合、扇形磁吸与双击复位、直线/贝塞尔复位；填充改为平面 UV，场景与界面颜色集中到 colors.ts。
 - 2026-10-28：建立 engine/types/stores/config/utils 分层；抽出 useUnits、useUndoHistory；新增 ToolButton、MenuCommand、AppTopBar、EntitySidebar、ModelingToolbar、SketchToolbar、SketchConstraints；拉伸完成后隐藏原草图平面；退出草图仅图标使用红色背景。
+- 2026-11-03：底部新增五种图标显示模式与通用箭头浮层，草图强制渲染并可恢复；加入全局单位下拉、低饱和完整正负轴和连续磁吸拖动，粗箭头标注外移，品牌更名 Builder 3D。
