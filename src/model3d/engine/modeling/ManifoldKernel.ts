@@ -99,7 +99,7 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         result = operation === 'union' ? baseSolid.add(toolSolid) : operation === 'subtract' ? baseSolid.subtract(toolSolid) : baseSolid.intersect(toolSolid);
         if (result.status() !== 'NoError') throw new Error(`布尔运算失败：${result.status()}`);
         if (result.isEmpty()) return new THREE.BufferGeometry();
-        const simplified = result.simplify().asOriginal();
+        const simplified = result.asOriginal().simplify();
         result.delete();
         result = simplified;
         if (result.status() !== 'NoError') throw new Error(`结果清理失败：${result.status()}`);

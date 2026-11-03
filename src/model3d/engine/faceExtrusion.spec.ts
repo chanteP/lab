@@ -110,3 +110,15 @@ test('all six box faces honor outward union and inward subtraction', () => {
         }
     }
 });
+
+test('same-domain faces are merged before release simplification', () => {
+    const entity = Object.assign(createEntity('box', 'body'), { width: 10, height: 10, depth: 10, position: [0, 0, 0] as [number, number, number] });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    mesh.userData.entityId = entity.id;
+    const result = evaluateFaceExtrusion(mesh.geometry, faceOffset(mesh, entity, [0, 1, 0], 2));
+    assert(result.validation.valid);
+    assert.equal(result.validation.triangles, 12, 'box extrusion must release with six merged planar faces');
+    const topology = buildMeshTopology(result.geometry, entity.id, entity, createDocument());
+    assert.equal(topology.faces.length, 6);
+    assert(topology.faces.every((face) => face.triangleIds.length === 2));
+});
