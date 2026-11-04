@@ -81,6 +81,8 @@ export interface ModelEntity {
     operands?: string[];
     /** Signed multi-body CSG inputs; legacy two-body results keep using operation alone. */
     operandSigns?: Record<string, BooleanOperandSign>;
+    /** Signs of Venn regions keyed by the operand membership bitmask. */
+    regionSigns?: Record<string, BooleanOperandSign>;
     faceOffset?: { normal: Vec3; distance: number; vertices?: Vec3[]; indices?: number[]; faceIds?: string[] } | null;
     /** Last committed direct edit, consumed only when reconciling the immediately following body revision. */
     faceEdit?: { faceId: string; normal: Vec3; distance: number; revision: number };
@@ -176,7 +178,7 @@ export type ConstraintRuleListItem = { id: string; label: string; entityId: stri
 export type OperationState = {
     type: 'extrude'; profileId: string; bodyId: string; profileIds: string[]; bodyIds: string[]; before: ModelDocument; result: 'new' | BooleanOperation; targetId: string | null; existing: boolean; combinedResultId?: string;
 } | {
-    type: 'boolean'; resultId: string; operation: BooleanOperation; operandIds: string[]; signs: Record<string, BooleanOperandSign>; before: ModelDocument; keepTarget: boolean; existing: boolean;
+    type: 'boolean'; resultId: string; operation: BooleanOperation; operandIds: string[]; regionSigns: Record<string, BooleanOperandSign>; before: ModelDocument; keepTarget: boolean; existing: boolean;
 };
 
 /** Analytic sketch curves; sampling is a render detail, not the logical edge representation. */

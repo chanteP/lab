@@ -62,7 +62,6 @@ export class ViewportEngine {
         const { width, height } = this.container.getBoundingClientRect();
         if (!width || !height) return;
         this.renderer.setSize(width, height);
-        this.grid.resize(this.renderer);
         this.scene.traverse((object) => {
             if (object instanceof Line2) (object.material as LineMaterial).resolution.set(width, height);
         });
@@ -90,6 +89,10 @@ export class ViewportEngine {
 
     setGridSize(size: number) {
         this.grid.setSize(size);
+    }
+
+    setGridFade(center: THREE.Vector3, radius: number) {
+        this.grid.setFade(center, radius);
     }
 
     setShadowsVisible(visible: boolean) {

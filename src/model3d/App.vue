@@ -136,7 +136,7 @@ const {
     selectEntity, updateEntity, updateLengthEntity,
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
     createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
-    createPlane, constructPlane, createPlaneAndSketch, selectPlane,
+    createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
     toggleNodeVisibility,
 } = useDocumentEntities({
     document, selectedIds, selected, selectionKind, activeTool, activePanel, activePlaneId, activePlane,
@@ -320,8 +320,14 @@ function setTool(tool: ViewTool) {
     activeTool.value = tool;
     viewport?.setTool(tool);
 }
-function selectFromItems(id: string, additive: boolean) {
+function selectFromItems(id: string | null, additive: boolean) {
     finishDirectEdit();
+    if (!id) {
+        selectEntity(null);
+        selectionKind.value = null;
+        activePanel.value = null;
+        return;
+    }
     if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
     if (sketchMode.value && document.value.entities.some((item) => item.id === id && item.kind === 'sketch')) { selectSketchEntity(id); return; }
     selectEntity(id, additive);
@@ -576,6 +582,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onScale: (value) => scaleBar.value = value,
         onStats: (value) => stats.value = value,
         onBooleanToggle: toggleBooleanOperand,
+        onBooleanHover: (id) => viewport?.setBooleanHover(id),
 };
 
 function onViewportReady(instance: Viewport) {
@@ -618,14 +625,14 @@ onBeforeUnmount(() => {
             <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :special-mode="sketchMode || symmetryActive"
                 :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
-                @select="selectFromItems" @select-range="selectRangeFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
+                @select="selectFromItems" @activate="activateTreeNode" @select-range="selectRangeFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
-                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @isolate="toggleIsolate"
                     @history="editHistory" @boolean="applyBoolean" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
@@ -638,7 +645,7 @@ onBeforeUnmount(() => {
                     @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
-                    :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
+                    :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
                     @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"

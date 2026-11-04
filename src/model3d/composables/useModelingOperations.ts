@@ -53,13 +53,17 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     const canBoolean = computed(() => selectedEntities.value.filter((item) => item.kind !== 'sketch').length >= 2);
     const booleanCanCommit = computed(() => {
         const draft = booleanDraft.value;
-        return !!draft && draft.operandIds.some((id) => draft.signs[id] === 1);
+        return !!draft && Object.values(draft.regionSigns).some((sign) => sign === 1);
     });
     const extrudeBody = computed(() => {
         const current = operation.value;
         return current?.type === 'extrude' ? document.value.entities.find((item) => item.id === current.bodyId) : null;
     });
     const booleanDraft = computed(() => operation.value?.type === 'boolean' ? operation.value : null);
+    function defaultRegionSigns(type: BooleanOperation, operandIds: string[]) {
+        const fullMask = (1 << operandIds.length) - 1;
+        return Object.fromEntries(Array.from({ length: fullMask }, (_, index) => index + 1).map((mask) => [String(mask), type === 'union' || (type === 'subtract' && mask === 1) || (type === 'intersect' && mask === fullMask) ? 1 as const : -1 as const]));
+    }
     const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
 
     function createPrimitive(kind: 'box' | 'cylinder' | 'sphere') {
@@ -82,8 +86,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const before = cloneDocument(document.value);
         pushHistory();
         operation.value = {
-            type: 'boolean', resultId: uid(), operation: type === 'intersect' ? 'intersect' : 'union', operandIds: bodies.map((item) => item.id),
-            signs: Object.fromEntries(bodies.map((item) => [item.id, 1 as const])), before, keepTarget: false, existing: false,
+            type: 'boolean', resultId: uid(), operation: type, operandIds: bodies.map((item) => item.id),
+            regionSigns: defaultRegionSigns(type, bodies.map((item) => item.id)), before, keepTarget: false, existing: false,
         };
         activePanel.value = null;
         selectedIds.value = bodies.map((item) => item.id);
@@ -184,9 +188,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     }
     function toggleBooleanOperand(id: string) {
         const draft = booleanDraft.value;
-        if (!draft || !draft.operandIds.includes(id)) return;
-        draft.signs[id] = draft.signs[id] === 1 ? -1 : 1;
-        if (draft.operation !== 'intersect') draft.operation = Object.values(draft.signs).every((sign) => sign === 1) ? 'union' : 'subtract';
+        if (!draft || !(id in draft.regionSigns)) return;
+        draft.regionSigns[id] = draft.regionSigns[id] === 1 ? -1 : 1;
         viewport()?.setBooleanPreview(draft);
     }
     function doneOperation() {
@@ -221,7 +224,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             selectedIds.value = [selectedId];
         } else {
             if (!booleanCanCommit.value) return;
-            const targetId = current.operandIds.find((id) => current.signs[id] === 1)!;
+            const targetId = current.operandIds[0];
             const target = document.value.entities.find((item) => item.id === targetId);
             viewport()?.setBooleanPreview(null);
             let result = document.value.entities.find((item) => item.id === current.resultId);
@@ -233,9 +236,10 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 };
                 document.value.entities.push(result);
             }
-            result.operation = current.operation;
+            result.operation = 'union';
             result.operands = [...current.operandIds];
-            result.operandSigns = { ...current.signs };
+            result.regionSigns = { ...current.regionSigns };
+            delete result.operandSigns;
             result.visible = true;
             bakeEntityGeometry(result, document.value);
             current.operandIds.forEach((id) => {
@@ -272,9 +276,9 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (entity.kind === 'boolean' && entity.operands) {
             const before = cloneDocument(document.value);
             pushHistory();
-            const signs = entity.operandSigns || Object.fromEntries(entity.operands.map((id, index) => [id, entity.operation === 'subtract' && index > 0 ? -1 as const : 1 as const]));
-            const targetId = entity.operands.find((id) => signs[id] === 1) || entity.operands[0];
-            operation.value = { type: 'boolean', resultId: entity.id, operation: entity.operation || 'union', operandIds: [...entity.operands], signs, before,
+            const regionSigns = entity.regionSigns || defaultRegionSigns(entity.operation || 'union', entity.operands);
+            const targetId = entity.operands[0];
+            operation.value = { type: 'boolean', resultId: entity.id, operation: entity.operation || 'union', operandIds: [...entity.operands], regionSigns, before,
                 keepTarget: !!document.value.entities.find((item) => item.id === targetId)?.visible, existing: true };
             historyEditId.value = entity.id;
             selectedIds.value = [...entity.operands];

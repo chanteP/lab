@@ -13,6 +13,7 @@ defineProps<{
     selectionKind: string | null;
     canIsolate: boolean;
     canBoolean: boolean;
+    selectedCount: number;
     historySteps: HistoryStep[];
 }>();
 const emit = defineEmits<{
@@ -36,11 +37,16 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
             <ViewportToolItem :description-on-hover="false" label="构造平面" @click="emit('construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ViewportToolItem>
         </div>
-        <div class="tool-group transform-tools">
+        <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
             <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
             <ViewportToolItem :description-on-hover="false" label="缩放" :disabled="selectionKind === 'plane'" :active="activeTool === 'scale'" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
-        </div>
+        </div></Transition>
+        <Transition name="tool-group-slide"><div v-if="canBoolean" class="tool-group boolean-tools">
+            <ViewportToolItem :description-on-hover="false" label="并集" @click="emit('boolean', 'union')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem :description-on-hover="false" label="差集" @click="emit('boolean', 'subtract')"><NIcon><RemoveOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem :description-on-hover="false" label="交集" @click="emit('boolean', 'intersect')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
+        </div></Transition>
         <div class="toolbar-spacer"></div>
         <div class="tool-group primary-tools">
             <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
@@ -52,11 +58,6 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
                     <div v-if="!historySteps.length" class="history-empty">暂无步骤</div>
                 </div>
             </NPopover>
-        </div>
-        <div v-if="canBoolean" class="tool-group boolean-tools">
-            <ViewportToolItem :description-on-hover="false" label="并集" @click="emit('boolean', 'union')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="差集" @click="emit('boolean', 'subtract')"><NIcon><RemoveOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="交集" @click="emit('boolean', 'intersect')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
         </div>
     </nav>
 </template>

@@ -191,6 +191,42 @@ function evaluateSignedBoolean(entity: ModelEntity, document: ModelDocument, qua
     return result;
 }
 
+export interface BooleanRegion { key: string; geometry: THREE.BufferGeometry; center: Vec3 }
+
+/** Decomposes operands into disjoint Venn regions so each region can be controlled independently. */
+export function buildBooleanRegions(document: ModelDocument, operandIds: string[], quality: GeometryQuality = 'preview'): BooleanRegion[] {
+    if (operandIds.length > 6) throw new Error('布尔操作最多支持 6 个实体，避免区域组合过多');
+    const regions: BooleanRegion[] = [];
+    for (let mask = 1; mask < (1 << operandIds.length); mask++) {
+        const operandSigns = Object.fromEntries(operandIds.map((id, index) => [id, mask & (1 << index) ? 1 as const : -1 as const]));
+        const entity: ModelEntity = {
+            id: `__region_${mask}`, parentId: null, name: `区域 ${mask}`, kind: 'boolean', color: '#9a9a9a', visible: true,
+            position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], operation: 'intersect', operands: operandIds, operandSigns,
+        };
+        const mesh = buildEntityMesh(entity, document, quality);
+        if (!mesh.geometry.attributes.position?.count) { mesh.geometry.dispose(); continue; }
+        const center = mesh.geometry.boundingBox?.getCenter(new THREE.Vector3()) || new THREE.Vector3();
+        regions.push({ key: String(mask), geometry: mesh.geometry, center: center.toArray() });
+    }
+    return regions;
+}
+
+function evaluateRegionSelection(entity: ModelEntity, document: ModelDocument, quality: GeometryQuality) {
+    const signs = entity.regionSigns || {};
+    let result: THREE.BufferGeometry | null = null;
+    buildBooleanRegions(document, entity.operands || [], quality).forEach((region) => {
+        if (signs[region.key] !== 1) { region.geometry.dispose(); return; }
+        if (!result) result = region.geometry;
+        else {
+            const next = evaluateBoolean(result, region.geometry, 'union');
+            result.dispose();
+            region.geometry.dispose();
+            result = next;
+        }
+    });
+    return result || new THREE.BufferGeometry();
+}
+
 export function buildEntityMesh(
     entity: ModelEntity,
     document: ModelDocument,
@@ -231,6 +267,17 @@ export function buildEntityMesh(
         // Committed bodies use their own profile snapshot; source sketches are History references only.
         mesh = new THREE.Mesh(baseGeometry(entity, quality, document), createMaterial(entity.color));
     } else {
+        if (entity.regionSigns) {
+            mesh = new THREE.Mesh(evaluateRegionSelection(entity, document, quality));
+            mesh.material = createMaterial(entity.color);
+            mesh.name = entity.name;
+            mesh.userData.entityId = entity.id;
+            mesh.geometry.clearGroups();
+            applyEntityTransform(mesh, entity);
+            mesh.castShadow = false;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
         if (entity.operandSigns) {
             mesh = new THREE.Mesh(evaluateSignedBoolean(entity, document, quality, stack));
             if (entity.faceOffset?.distance) mesh.geometry = evaluateFaceExtrusion(mesh.geometry, entity.faceOffset).geometry;

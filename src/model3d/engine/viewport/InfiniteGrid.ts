@@ -14,7 +14,8 @@ export class InfiniteGrid {
             side: THREE.DoubleSide,
             uniforms: {
                 uGridSize: { value: this.gridSize },
-                uResolution: { value: new THREE.Vector2(1, 1) },
+                uFadeCenter: { value: new THREE.Vector3() },
+                uFadeRadius: { value: 100 },
                 uMinorColor: { value: new THREE.Color(VIEWPORT_COLORS.gridMinor) },
                 uMajorColor: { value: new THREE.Color(VIEWPORT_COLORS.gridMajor) },
             },
@@ -31,7 +32,8 @@ export class InfiniteGrid {
             `,
             fragmentShader: `
                 uniform float uGridSize;
-                uniform vec2 uResolution;
+                uniform vec3 uFadeCenter;
+                uniform float uFadeRadius;
                 uniform vec3 uMinorColor;
                 uniform vec3 uMajorColor;
                 varying vec3 vWorldPosition;
@@ -46,12 +48,9 @@ export class InfiniteGrid {
                 void main() {
                     float minor = gridLine(vGridPosition, uGridSize, 1.0);
                     float major = gridLine(vGridPosition, uGridSize * 10.0, 1.65);
-                    vec2 viewport = gl_FragCoord.xy / uResolution;
-                    float edge = min(min(viewport.x, 1.0 - viewport.x), min(viewport.y, 1.0 - viewport.y));
-                    float edgeFade = smoothstep(0.0, 0.09, edge);
-                    float cameraFade = 1.0 - smoothstep(uGridSize * 120.0, uGridSize * 600.0, distance(cameraPosition, vWorldPosition));
+                    float radiusFade = 1.0 - smoothstep(uFadeRadius * 0.7, uFadeRadius, distance(vWorldPosition, uFadeCenter));
                     // Major lines remain subtle so axis colors and model geometry stay visually dominant.
-                    float alpha = max(minor * 0.42, major * 0.45) * edgeFade * cameraFade;
+                    float alpha = max(minor * 0.42, major * 0.45) * radiusFade;
                     if (alpha < 0.003) discard;
                     gl_FragColor = vec4(mix(uMinorColor, uMajorColor, major), alpha);
                 }
@@ -74,9 +73,9 @@ export class InfiniteGrid {
 
     setVisible(visible: boolean) { this.mesh.visible = visible; }
 
-    resize(renderer: THREE.WebGLRenderer) {
-        const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-        this.material.uniforms.uResolution.value.copy(size);
+    setFade(center: THREE.Vector3, radius: number) {
+        this.material.uniforms.uFadeCenter.value.copy(center);
+        this.material.uniforms.uFadeRadius.value = Math.max(0.001, radius);
     }
 
     dispose() {

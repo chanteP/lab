@@ -54,15 +54,15 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
                 const item = entry.folder || entry.entity;
                 if (trail.includes(item.id)) return [];
                 return [{
-                    id: item.id, kind: entry.folder ? 'folder' : 'entity', name: item.name, visible: item.visible,
+                    id: item.id, kind: entry.folder ? 'folder' : 'entity', name: item.name, visible: item.visible, parentId: item.parentId,
                     children: build(item.id, [...trail, item.id]),
                 } as OutlinerNode];
             });
         };
         const planeNodes = document.value.planes.map((plane) => ({
-            id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible,
+            id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible, parentId: null,
             children: sketchMode.value && plane.id === activePlaneId.value
-                ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, profileType: item.profileType, trimmed: item.trimmed, children: [] } as OutlinerNode))
+                ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, parentId: plane.id, profileType: item.profileType, trimmed: item.trimmed, children: [] } as OutlinerNode))
                 : [],
         } as OutlinerNode));
         return [...planeNodes, ...build(null)];
@@ -174,9 +174,16 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
     }
 
     function createFolder() {
+        const selectedNodes = selectedIds.value.map((id) => document.value.entities.find((entity) => entity.id === id) || document.value.folders.find((folder) => folder.id === id)).filter(Boolean) as { id: string; parentId: string | null }[];
+        const sameParent = selectedNodes.length > 0 && selectedNodes.every((item) => item.parentId === selectedNodes[0].parentId);
+        const parentId = sameParent ? selectedNodes[0].parentId : null;
         pushHistory();
-        const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId: null, visible: true };
+        const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId, visible: true };
         document.value.folders.push(folder);
+        if (sameParent) selectedNodes.forEach((item) => {
+            const node = document.value.entities.find((entity) => entity.id === item.id) || document.value.folders.find((entry) => entry.id === item.id);
+            if (node) node.parentId = folder.id;
+        });
         selectedIds.value = [folder.id];
     }
     function openNodeContext(node: OutlinerNode, event: MouseEvent) {
@@ -246,6 +253,9 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         viewport()?.setActivePlane(activePlane.value);
         setTool('select');
     }
+    function activateTreeNode(id: string) {
+        if (document.value.planes.some((plane) => plane.id === id)) beginSketch(id);
+    }
     function toggleNodeVisibility(id: string) {
         pushHistory();
         const setEntity = (entity: ModelEntity, visible: boolean) => entity.visible = visible;
@@ -280,7 +290,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         selectEntity, updateEntity, updateLengthEntity, updateVector,
         removeSelected, removeConstraintsForEdge, removeConstraintsForEntity, deleteNodeIds, duplicateSelected,
         createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
-        createPlane, constructPlane, createPlaneAndSketch, selectPlane,
+        createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
         toggleNodeVisibility, changeActivePlane,
     };
 }

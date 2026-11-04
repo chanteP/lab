@@ -64,6 +64,7 @@ export interface ViewportCallbacks {
     onScale: (scale: { width: number; value: number; segments: number; gridSize: number }) => void;
     onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
     onBooleanToggle: (id: string) => void;
+    onBooleanHover: (id: string | null) => void;
 }
 
 export interface ViewportOptions {
@@ -197,6 +198,7 @@ export class Viewport {
         const time = performance.now() / 1000;
         this.guideRenderer.updateAnimation(this.cameraController.camera, time);
         this.sceneSynchronizer.updateSelectionAnimation(time);
+        this.sceneSynchronizer.booleanPreview.updateAnimation(time);
         this.sceneSynchronizer.updateSection(this.cameraController.camera);
         this.sketchRenderer.updateScreenSpaceMarkers();
         if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
@@ -317,6 +319,7 @@ export class Viewport {
 
     setBooleanPreview(state: Extract<OperationState, { type: 'boolean' }> | null) { this.sceneSynchronizer.setBooleanPreview(state); }
     get booleanPreviewActive() { return !!this.sceneSynchronizer.booleanState; }
+    setBooleanHover(id: string | null) { this.sceneSynchronizer.booleanPreview.setHover(id); }
     normalToSketch() { this.cameraController.normalToSketch(this.sceneSynchronizer.activePlane, this.transform); }
     sketchScreen(point: Point2) {
         const projected = this.sketchRenderer.world(point, 0.4).project(this.cameraController.camera);

@@ -342,6 +342,7 @@ export class SceneSynchronizer {
     setBooleanPreview(state: BooleanPreviewState | null) {
         this.booleanPreview.restore();
         this.booleanState = state;
+        this.model.children.forEach((object) => object.userData.bodySelected = false);
         if (state && this.document) this.booleanPreview.apply(this.model, this.document, state);
         else {
             this.applyIsolation();
@@ -379,6 +380,7 @@ export class SceneSynchronizer {
     }
 
     updateSelectionAnimation(time: number) {
+        if (this.booleanState) return;
         const intensity = 0.04 + (Math.sin(time * 2.4) + 1) * 0.16;
         this.model.children.forEach((object) => {
             if (!object.userData.bodySelected) return;

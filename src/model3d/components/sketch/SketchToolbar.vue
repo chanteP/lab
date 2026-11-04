@@ -8,7 +8,7 @@ import type { ProfileType } from '../../engine/profiles';
 import type { SketchPlane } from '../../types';
 import type { ViewTool } from '../../engine/Viewport';
 
-const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null }>();
+const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null; hasSelection: boolean }>();
 const emit = defineEmits<{
     close: [];
     select: [];
@@ -50,12 +50,12 @@ function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').repla
                 <div class="tool-group-label">高级工具</div>
                 <ViewportToolItem label="对称" :active="symmetryStep !== null" :description-on-hover="false" @click="emit('symmetry')"><NIcon><CopyOutline /></NIcon></ViewportToolItem>
             </div>
-            <div class="tool-group transform-tool-group">
+            <Transition name="tool-group-slide"><div v-if="hasSelection" class="tool-group transform-tool-group">
                 <div class="tool-group-label">变换工具</div>
                 <ViewportToolItem label="平移" :active="activeTool === 'translate'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="旋转" :active="activeTool === 'rotate'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="缩放" :active="activeTool === 'scale'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
-            </div>
+            </div></Transition>
         </div>
     </nav>
 </template>

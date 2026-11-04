@@ -117,6 +117,8 @@ export class CameraController {
             : 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
         const gridSize = gridStepForUnitsPerPixel(unitsPerPixel);
         this.engine.setGridSize(gridSize);
+        const viewportWidth = Math.max(1, this.engine.renderer.domElement.clientWidth);
+        this.engine.setGridFade(this.controls.target, unitsPerPixel * viewportWidth / 2);
         const scale = scaleBarForGrid(unitsPerPixel, gridSize);
         const key = `${scale.width}/${scale.value}/${scale.segments}/${gridSize}/${this.getLengthUnit()}`;
         if (key !== this.lastScale) {

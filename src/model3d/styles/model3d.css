@@ -286,3 +286,7 @@ button { color: inherit; }
 .menu-command:hover > .n-icon, .menu-command:hover > .svg-icon { transform: scale(1.16); }
 .menu-command:hover > span:last-child { transform: scale(1.045); transform-origin: left center; }
 .menu-command:active > .n-icon, .menu-command:active > .svg-icon { transform: scale(.9); }
+/* Shared slide/fade motion for conditional tool groups in 3D and sketch modes. */
+.tool-group-slide-enter-active, .tool-group-slide-leave-active { transition: transform .2s ease, opacity .18s ease; }
+.tool-group-slide-enter-from, .tool-group-slide-leave-to { opacity: 0; transform: translateX(-14px); }
+.tool-group-slide-enter-to, .tool-group-slide-leave-from { opacity: 1; transform: translateX(0); }

@@ -35,10 +35,10 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
-- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42。
+- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42，以 orbit target 的世界半径在 70%–100% 区间淡出。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
-- `BooleanPreviewController` 只管理多模型 CSG 临时显示：隔离参与模型、透明材质/边框、交集预览和隐藏素材重建；结果实体仍由 `useModelingOperations` 在完成时写入 document。
+- `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
 - `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载右侧工具/实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
 
 - `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁、标注和面向相机的 Boolean mini +/-。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
@@ -60,6 +60,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-04：Grid 改为视口世界半径淡出，树支持同层建组归组/根级拖出/空白取消，条件工具统一动效；Boolean 改为独立 Venn 区域控制并修复初始深色与空白完成粘手。
 - 2026-11-04：Grid/比例尺自适应并弱化主线，补齐草图 N 标准视图、隐藏恢复、同层 Shift 选择和紧凑尺寸输入；椭圆弧拓扑明确为曲面，新增多比例侧面推拉回归。
 - 2026-11-04：实体树支持内联重命名并精简单选详情；新增多模型带符号 Boolean 草稿、透明/边框预览和 mini +/-，完成前结果不入树，统一圆角流程按钮与空白提交。
 - 2026-11-04：移除顶部项目栏并迁移到固定渐隐 Sidebar，Canvas 全页化且仅扣除 218px；统一 120px 工具栏、极简 range、形状/裁剪边命名和按上下文提示，实体树改为终端式层级线。

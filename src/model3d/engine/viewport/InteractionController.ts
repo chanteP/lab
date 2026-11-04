@@ -598,6 +598,7 @@ export class InteractionController {
             this.gizmo.move(event, this.sketchMode);
             return;
         }
+        if (this.isBooleanActive()) return;
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
@@ -841,11 +842,8 @@ export class InteractionController {
         }
         if (this.isBooleanActive()) {
             const hit = this.hitEntity(event);
-            if (!hit) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                this.callbacks.onBlankCommit();
-            }
+            // Let OrbitControls receive the same pointerup; swallowing it leaves navigation stuck after Done.
+            if (!hit) this.callbacks.onBlankCommit();
             return;
         }
         const hit = this.hitEntity(event);
