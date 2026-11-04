@@ -18,6 +18,8 @@ export type GeometryAnchor = {
     profilePoints?: Point2[];
     faceIds?: string[];
     edgeIds?: string[];
+    edgeTreatmentId?: string;
+    localEdge?: { a: Vec3; b: Vec3; normals: Vec3[] };
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
@@ -111,10 +113,15 @@ export class GeometrySelector {
             return face ? sum.add(new THREE.Vector3(...face.normal)) : sum;
         }, new THREE.Vector3()).normalize() : new THREE.Vector3(0, 1, 0);
         const normal = localNormal.clone().transformDirection(mesh.matrixWorld);
+        const localEdge = seed.points.length >= 2 ? {
+            a: [...seed.points[0]] as Vec3,
+            b: [...seed.points[seed.points.length - 1]] as Vec3,
+            normals: seed.faceIds.map((id) => topology.faces.find((face) => face.id === id)?.normal).filter(Boolean) as Vec3[],
+        } : undefined;
         return {
             id: mesh.userData.entityId || '', key: `${mesh.userData.entityId}:edge:${selectedEdges.map((edge) => edge.id).sort().join(',')}`,
             normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'edge', planar: false,
-            vertices, indices: vertices.map((_, index) => index), edgeIds: selectedEdges.map((edge) => edge.id), revision: topology.revision,
+            vertices, indices: vertices.map((_, index) => index), edgeIds: selectedEdges.map((edge) => edge.id), localEdge, revision: topology.revision,
         };
     }
 }

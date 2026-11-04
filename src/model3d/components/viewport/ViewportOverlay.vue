@@ -20,7 +20,7 @@ function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
     const next = Number(input.value);
     if (Number.isFinite(next) && (item.signed || next > 0)) {
         window.setTimeout(() => {
-            if (item.target.kind === 'directFace') props.callbacks.onDirectDistance(next);
+            if (item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment') props.callbacks.onDirectDistance(next);
             else if (item.target.kind === 'extrudeDepth') props.callbacks.onExtrudeDistance(next);
             else props.callbacks.onSketchDimension(item.target, next);
         }, 0);
@@ -73,7 +73,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                     type="number"
                     step="1"
                     :value="item.value.toFixed(2)"
-                    :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' ? '推拉距离' : item.target.kind === 'extrudeDepth' ? '拉伸距离' : '尺寸'"
+                    :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment' ? item.target.kind === 'edgeTreatment' ? '圆角或倒角距离' : '推拉距离' : item.target.kind === 'extrudeDepth' ? '拉伸距离' : '尺寸'"
                     @blur="commitDimension(item, $event.currentTarget as HTMLInputElement)"
                     @wheel.prevent.stop="onDimensionWheel(item, $event)"
                     @keydown="onDimensionKey(item, $event)"

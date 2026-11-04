@@ -68,7 +68,19 @@ export class GuideRenderer {
         const selected = this.options.getSelected();
         const geometryAnchor = this.options.getGeometryAnchor();
         const geometryEntity = document.entities.find((item) => item.id === geometryAnchor?.id);
-        if (['select', 'offsetFace'].includes(tool) && geometryAnchor?.type === 'face' && geometryAnchor.planar && geometryEntity?.kind !== 'sketch' && selected.includes(geometryAnchor.id)) {
+        if (['select', 'fillet', 'chamfer'].includes(tool) && geometryAnchor?.type === 'edge' && geometryEntity && selected.includes(geometryAnchor.id)) {
+            const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
+            const origin = new THREE.Vector3(...geometryAnchor.point);
+            const treatment = geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId);
+            this.group.add(this.createThickArrow(origin, normal, 18, { directArrow: { id: geometryEntity.id, normal: geometryAnchor.localNormal } }));
+            this.options.overlay.set({
+                id: 'guide-label:edge-treatment', kind: 'dimension', target: { kind: 'edgeTreatment' },
+                position: origin.clone().add(normal.clone().multiplyScalar(12)).toArray(), screenOffset: [76, 0],
+                value: treatment?.size || 0, unit: this.options.getLengthUnit(),
+            });
+            return;
+        }
+        if (['select', 'offsetFace'].includes(tool) && geometryAnchor?.type === 'face' && geometryAnchor.planar && !geometryEntity || !['sketch', 'image'].includes(geometryEntity.kind) && selected.includes(geometryAnchor.id)) {
             const entity = document.entities.find((item) => item.id === geometryAnchor.id);
             if (!entity || entity.kind === 'sphere') return;
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();

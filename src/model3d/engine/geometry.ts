@@ -3,6 +3,8 @@ import { evaluateBoolean } from './modeling/ManifoldKernel';
 import { normalizeBakedGeometryNormals } from './modeling/ManifoldKernel';
 import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
 import { profileClosed, profilePoints, profileShape } from './profiles';
+import { sketchImageTexture } from './sketchImageTexture';
+import { applyEdgeTreatments } from './modeling/EdgeTreatments';
 import { SKETCH_COLORS } from '../config/colors';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
@@ -46,6 +48,16 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
     object.rotation.set(...entity.rotation.map(THREE.MathUtils.degToRad) as Vec3);
     object.scale.fromArray(entity.scale);
     object.updateMatrixWorld(true);
+}
+
+function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity) {
+    if (!entity.edgeTreatments?.some((treatment) => treatment.size > 0)) return mesh;
+    const treated = applyEdgeTreatments(mesh.geometry, entity.edgeTreatments);
+    if (treated !== mesh.geometry) {
+        mesh.geometry.dispose();
+        mesh.geometry = treated;
+    }
+    return mesh;
 }
 
 function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: ModelDocument): THREE.BufferGeometry {
@@ -235,7 +247,22 @@ export function buildEntityMesh(
 ): THREE.Mesh {
     if (stack.includes(entity.id)) throw new Error('检测到循环布尔引用');
     let mesh: THREE.Mesh;
-    if (entity.kind === 'sketch') {
+    if (entity.kind === 'image') {
+        const points = entity.points || [];
+        const xs = points.map((point) => point[0]), ys = points.map((point) => point[1]);
+        const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const geometry = new THREE.PlaneGeometry(Math.max(0.1, maxX - minX), Math.max(0.1, maxY - minY));
+        geometry.translate((minX + maxX) / 2, (minY + maxY) / 2, 0);
+        const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
+        const matrix = plane ? new THREE.Matrix4().makeBasis(new THREE.Vector3(...plane.u), new THREE.Vector3(...plane.v), new THREE.Vector3(...plane.normal)).setPosition(new THREE.Vector3(...plane.origin)) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+        geometry.applyMatrix4(matrix);
+        const material = new THREE.MeshBasicMaterial({ map: sketchImageTexture(entity.assetSource || ''), transparent: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+        material.userData.sketchBaseColor = material.color.getHex();
+        material.userData.sketchBaseOpacity = material.opacity;
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.userData.borderEntityId = entity.id;
+        mesh.userData.borderWholeOnly = true;
+    } else if (entity.kind === 'sketch') {
         const type = entity.profileType || 'polygon';
         const source = entity.points || [];
         const closed = entity.parts?.length ? entity.parts.some((part) => part.closed) : !entity.open && profileClosed(type);
@@ -276,7 +303,7 @@ export function buildEntityMesh(
             applyEntityTransform(mesh, entity);
             mesh.castShadow = false;
             mesh.receiveShadow = true;
-            return mesh;
+            return applyMeshEdgeTreatments(mesh, entity);
         }
         if (entity.operandSigns) {
             mesh = new THREE.Mesh(evaluateSignedBoolean(entity, document, quality, stack));
@@ -288,7 +315,7 @@ export function buildEntityMesh(
             applyEntityTransform(mesh, entity);
             mesh.castShadow = false;
             mesh.receiveShadow = true;
-            return mesh;
+            return applyMeshEdgeTreatments(mesh, entity);
         }
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);
@@ -313,19 +340,22 @@ export function buildEntityMesh(
     applyEntityTransform(mesh, entity);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
-    return mesh;
+    return applyMeshEdgeTreatments(mesh, entity);
 }
 
 export function buildScene(document: ModelDocument, quality: GeometryQuality = 'preview', includeSketches = true) {
     const group = new THREE.Group();
     group.name = 'Model';
     document.entities.filter((entity) => {
-        if (!entity.visible || (!includeSketches && entity.kind === 'sketch')) return false;
-        if (entity.kind === 'sketch' && entity.planeId) return document.planes.find((plane) => plane.id === entity.planeId)?.visible !== false;
+        if (!entity.visible || (!includeSketches && ['sketch', 'image'].includes(entity.kind))) return false;
+        if (['sketch', 'image'].includes(entity.kind) && entity.planeId) return document.planes.find((plane) => plane.id === entity.planeId)?.visible !== false;
         return true;
-    }).forEach((entity) => {
+    }).forEach((entity, entityIndex) => {
         try {
-            group.add(buildEntityMesh(entity, document, quality));
+            const mesh = buildEntityMesh(entity, document, quality);
+            // Raster assets stay below every shape; later tree entries paint above earlier images only.
+            if (entity.kind === 'image') mesh.renderOrder = -1000 + entityIndex * 0.001;
+            group.add(mesh);
         } catch (error) {
             console.error(error);
         }

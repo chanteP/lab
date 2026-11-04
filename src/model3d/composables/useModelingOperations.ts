@@ -50,7 +50,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     let directErrorShown = false;
     let extrudeGestureMoved = false;
 
-    const canBoolean = computed(() => selectedEntities.value.filter((item) => item.kind !== 'sketch').length >= 2);
+    const canBoolean = computed(() => selectedEntities.value.filter((item) => !['sketch', 'image'].includes(item.kind)).length >= 2);
     const booleanCanCommit = computed(() => {
         const draft = booleanDraft.value;
         return !!draft && Object.values(draft.regionSigns).some((sign) => sign === 1);
@@ -64,7 +64,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const fullMask = (1 << operandIds.length) - 1;
         return Object.fromEntries(Array.from({ length: fullMask }, (_, index) => index + 1).map((mask) => [String(mask), type === 'union' || (type === 'subtract' && mask === 1) || (type === 'intersect' && mask === fullMask) ? 1 as const : -1 as const]));
     }
-    const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
+    const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'image', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
 
     function createPrimitive(kind: 'box' | 'cylinder' | 'sphere') {
         pushHistory();
@@ -81,7 +81,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
 
     function applyBoolean(type: BooleanOperation) {
         if (operation.value || !canBoolean.value) return;
-        const bodies = selectedEntities.value.filter((item) => item.kind !== 'sketch');
+        const bodies = selectedEntities.value.filter((item) => !['sketch', 'image'].includes(item.kind));
         if (bodies.length < 2) return message.warning('请选择至少两个实体 Body');
         const before = cloneDocument(document.value);
         pushHistory();

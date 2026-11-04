@@ -6,7 +6,7 @@ import {
     AnalyticsOutline, CloseOutline, CubeOutline, EllipseOutline, EyeOutline, LayersOutline,
     ShapesOutline, TrashOutline, ScanOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type ViewTool, type ViewportCallbacks } from './engine/Viewport';
+import { Viewport, type SketchDimension, type ViewTool, type ViewportCallbacks } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
 import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
 import SvgIcon from './components/ui/SvgIcon.vue';
@@ -16,11 +16,13 @@ import { useUndoHistory } from './composables/useUndoHistory';
 import { useProjectLibrary } from './composables/useProjectLibrary';
 import { useDocumentEntities } from './composables/useDocumentEntities';
 import { useModelingOperations } from './composables/useModelingOperations';
+import { useEdgeTreatmentOperations } from './composables/useEdgeTreatmentOperations';
 import { useSketchState } from './composables/sketch/useSketchState';
 import { useSketchConstraints } from './composables/sketch/useSketchConstraints';
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
 import { useSketchSession } from './composables/sketch/useSketchSession';
 import { useSketchAdvanced } from './composables/sketch/useSketchAdvanced';
+import { useSketchAssets } from './composables/sketch/useSketchAssets';
 import { storedLengthUnit, useUnits } from './composables/useUnits';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
 import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
@@ -116,6 +118,11 @@ const {
     profileFace: () => selectedProfileFace.value,
     startSketch: (editProfile) => sketchSession.startSketch(editProfile),
 });
+const {
+    onEdgeTreatmentEdit, updateEdgeTreatmentDistance, finishEdgeTreatment, cancelEdgeTreatment,
+} = useEdgeTreatmentOperations({
+    document, activeTool, viewport: () => viewport, message, pushHistory, popHistory, setTool,
+});
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const historySteps = computed(() => document.value.entities.flatMap((item) => {
     const steps = ['sketch', 'extrude', 'boolean'].includes(item.kind) ? [{ id: item.id, name: item.name, kind: item.kind as string }] : [];
@@ -173,6 +180,14 @@ const {
     onSketchSectorMove, resetSketchSector, onSketchDimension, finishSketch, closeSketch,
     cancelSketch, cancelSketchRefresh,
 } = sketchSession;
+const sketchAssets = useSketchAssets({
+    document, selectedIds, selectedShapes, activePlaneId, viewport: () => viewport, message, pushHistory, popHistory,
+    clearSketchSelection, selectSketchEntity, refreshSketch,
+});
+const {
+    selectedAssetId, selectedAsset, onSketchAssetCorner, onSketchAssetDimension,
+    toggleAssetAspect, onSketchDrop,
+} = sketchAssets;
 const sketchAdvanced = useSketchAdvanced({
     document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedIds, lengthUnit, setLengthUnit,
     viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
@@ -292,8 +307,8 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
-function undoModel() { cancelDirectEdit(); viewport?.clearGeometrySelection(); undo(); }
-function redoModel() { cancelDirectEdit(); viewport?.clearGeometrySelection(); redo(); }
+function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); undo(); }
+function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); redo(); }
 
 function onMarqueeSelect(ids: string[], additive: boolean) {
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
@@ -314,6 +329,7 @@ function onBlankCommit() {
 
 function setTool(tool: ViewTool) {
     finishDirectEdit();
+    finishEdgeTreatment();
     if (operation.value && activeTool.value !== tool) doneOperation();
     stopMeasure();
     if (sketchMode.value) cancelSketch();
@@ -322,6 +338,7 @@ function setTool(tool: ViewTool) {
 }
 function selectFromItems(id: string | null, additive: boolean) {
     finishDirectEdit();
+    finishEdgeTreatment();
     if (!id) {
         selectEntity(null);
         selectionKind.value = null;
@@ -329,7 +346,12 @@ function selectFromItems(id: string | null, additive: boolean) {
         return;
     }
     if (document.value.planes.some((plane) => plane.id === id)) { selectPlane(id); return; }
-    if (sketchMode.value && document.value.entities.some((item) => item.id === id && item.kind === 'sketch')) { selectSketchEntity(id); return; }
+    if (sketchMode.value && (['sketch', 'image'].includes(document.value.entities.find((item) => item.id === id)?.kind || '') || document.value.folders.find((folder) => folder.id === id)?.kind === 'svg')) {
+        selectEntity(id, additive);
+        selectionKind.value = 'sketch';
+        activePanel.value = null;
+        return;
+    }
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : 'body';
     activePanel.value = null;
@@ -356,7 +378,9 @@ function selectRangeFromItems(ids: string[]) {
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     finishDirectEdit();
+    finishEdgeTreatment();
     const picked = document.value.entities.find((item) => item.id === id);
+    if (type === 'edge') viewport?.resolveGeometryEdgeTreatment();
     if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
         operation.value.targetId = id;
         return;
@@ -365,7 +389,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
     selectedProfileFace.value = profileFace?.map((point) => [...point]) || null;
     selectedFacePlanar.value = type === 'face' && !!viewport?.getGeometryAnchor()?.planar;
     selectEntity(id, additive);
-    selectionKind.value = additive ? 'mixed' : picked?.kind === 'sketch' ? 'sketch' : type;
+    selectionKind.value = additive ? 'mixed' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
     activePanel.value = null;
     parameterCardOpen.value = true;
     if (additive) { setTool('select'); return; }
@@ -373,8 +397,9 @@ function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point
 }
 function onBodySelect(id: string) {
     finishDirectEdit();
+    finishEdgeTreatment();
     selectEntity(id);
-    if (document.value.entities.find((item) => item.id === id)?.kind === 'sketch') {
+    if (['sketch', 'image'].includes(document.value.entities.find((item) => item.id === id)?.kind || '')) {
         selectionKind.value = 'sketch';
         setTool('select');
         return;
@@ -461,6 +486,7 @@ watch([selectedIds, selectedShapes, sketchMode, selectionKind], ([ids, shapes, a
     if (!active && kind !== 'face' && kind !== 'edge' && !selectedProfileFace.value) viewport?.clearGeometrySelection();
 }, { deep: true });
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
+watch(selectedAssetId, (id) => viewport?.setSketchAssetSelection(id));
 watch(() => project.value.name, scheduleSave);
 watch(constraintLimit, (value) => localStorage.setItem(STORAGE_KEYS.constraintLimit, String(value)));
 watch(sketchGuideSnapEnabled, (value) => viewport?.setSketchGuideSnapEnabled(value));
@@ -512,6 +538,11 @@ Object.defineProperty(window, 'projectData', {
     }),
 });
 
+const handleDirectEdit: ViewportCallbacks['onDirectEdit'] = (id, normal, delta, phase, anchor) => {
+    if (anchor?.type === 'edge' || ['fillet', 'chamfer'].includes(activeTool.value)) onEdgeTreatmentEdit(id, normal, delta, phase, anchor);
+    else onDirectEdit(id, normal, delta, phase, anchor);
+};
+
 const viewportCallbacks: ViewportCallbacks = {
         onSelect: selectEntity,
         onGeometrySelect,
@@ -539,10 +570,11 @@ const viewportCallbacks: ViewportCallbacks = {
             transforming = false;
             viewport.sync(document.value);
         },
-        onDirectEdit,
+        onDirectEdit: handleDirectEdit,
         onDirectDragState: () => undefined,
         onSketchPoint: addSketchPoint,
         onSketchPointMove: moveSketchPoint,
+        onSketchAssetCorner,
         onSketchSegment: selectSketchSegment,
         onSketchHandleMove: moveSketchHandle,
         onSketchHandleReset: resetSketchHandle,
@@ -561,10 +593,10 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchBorderDelete: deleteSketchBorder,
         onSketchSectorMove,
         onSketchSectorReset: resetSketchSector,
-        onSketchDimension,
+        onSketchDimension: (target: SketchDimension, value: number) => target.assetId ? onSketchAssetDimension(target, value) : onSketchDimension(target, value),
         onSketchDragEnd: refreshSketch,
         onLengthUnitChange: setLengthUnit,
-        onDirectDistance: updateFaceOffsetInput,
+        onDirectDistance: (value) => selectionKind.value === 'edge' ? updateEdgeTreatmentDistance(value) : updateFaceOffsetInput(value),
         onExtrudeDistance: updateExtrudeLength,
         onExtrudeGesture,
         onBlankCommit,
@@ -587,6 +619,7 @@ const viewportCallbacks: ViewportCallbacks = {
 
 function onViewportReady(instance: Viewport) {
     viewport = instance;
+    viewport.setSketchAssetSelection(selectedAssetId.value);
 }
 
 onMounted(async () => {
@@ -628,7 +661,7 @@ onBeforeUnmount(() => {
                 @select="selectFromItems" @activate="activateTreeNode" @select-range="selectRangeFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
-            <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
+            <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
@@ -648,8 +681,8 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
                     @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
-                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
+                    :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
+                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
                     :selected-profile-type="hintSketchProfileType" :has-selection="hintSketchHasSelection" />
                 <ModelingHints v-if="!sketchMode" :selection-kind="selectionKind" :active-tool="activeTool" :selected-count="selectedIds.length" :measure-mode="measureMode" :operation="operation" />

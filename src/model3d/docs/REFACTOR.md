@@ -27,6 +27,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `useModelingOperations` 持有拉伸/布尔操作草稿，处理直接编辑与历史回改。
 - `composables/sketch/useSketchState` 持有草图草稿、选择与派生状态；`useSketchSession` 负责草图生命周期、持久化和尺寸操作；`useSketchEditing` 负责点边选择、拖拽、裁剪和控制柄。
 - `useSketchConstraints` 负责约束交互、历史与回滚；`engine/sketchConstraintChain` 只负责无 Vue 依赖的关联约束求解。
+- `useSketchAssets` 负责图片/SVG 导入、资产选择、比例锁、尺寸和整体缩放；`useEdgeTreatmentOperations` 负责圆角/倒角事务、重复编辑与取消。
 - `useSketchAdvanced` 负责三步对称临时状态和草图二维变换；`engine/sketchAdvanced` 负责扇区裁剪、径向变换和复合轮廓几何，`SketchAdvancedOverlay.vue` 只负责画布与操作条。
 - App 保留共享文档状态、跨模块命令和 Viewport 回调编排。跨域能力通过窄接口或延迟回调注入，避免项目、建模与草图模块循环引用。
 
@@ -54,12 +55,15 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 - `engine/topology/`：渲染顶点对应、实体邻接、surface domain、逻辑面/边及版本来源映射。
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
-- `engine/viewport/DirectDragController.ts`：面箭头的绝对拖拽投影、RAF 合并、结束与取消。
+- `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
+- `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体，并把生成边解析回原参数；`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 
 ## Changelog
 
+- 2026-11-04：新增草图图片 drop、SVG 元素/文件夹导入、比例锁与 viewBox 四角磁吸缩放；新增直线边 45° 圆角/倒角箭头、尺寸输入和原边参数化重复编辑，拆出资产/参考线控制器，97 项回归全部通过。
 - 2026-11-04：修复草图切换导致 Grid 丢失 XZ 朝向，主线减细并调整半径淡出、比例尺、剖视图标和导出位置；缩放上下限按可见内容半径动态设置。
 - 2026-11-04：Grid 改为视口世界半径淡出，树支持同层建组归组/根级拖出/空白取消，条件工具统一动效；Boolean 改为独立 Venn 区域控制并修复初始深色与空白完成粘手。
 - 2026-11-04：Grid/比例尺自适应并弱化主线，补齐草图 N 标准视图、隐藏恢复、同层 Shift 选择和紧凑尺寸输入；椭圆弧拓扑明确为曲面，新增多比例侧面推拉回归。

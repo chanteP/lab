@@ -8,7 +8,7 @@ export type ViewportOverlay = {
     screenOffset?: Point2;
 } & ({
     kind: 'dimension';
-    target: SketchDimension | { kind: 'directFace' } | { kind: 'extrudeDepth' };
+    target: SketchDimension | { kind: 'directFace' } | { kind: 'edgeTreatment' } | { kind: 'extrudeDepth' };
     value: number;
     unit: LengthUnit;
     signed?: boolean;

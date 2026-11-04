@@ -47,30 +47,37 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
 
     const treeNodes = computed(() => {
         // Folders and entities share one parent graph, so either can contain nested nodes.
-        const build = (parentId: string | null, trail: string[] = []): OutlinerNode[] => {
-            const folders = document.value.folders.filter((item) => item.parentId === parentId).map((folder) => ({ folder, order: 0 }));
-            const entities = document.value.entities.filter((item) => item.kind !== 'sketch' && item.parentId === parentId).map((entity) => ({ entity, order: 1 }));
+        const build = (parentId: string | null, planeId: string | null = null, trail: string[] = []): OutlinerNode[] => {
+            const folders = document.value.folders.filter((item) => item.parentId === parentId && (planeId ? item.planeId === planeId : !item.planeId)).map((folder) => ({ folder, order: 0 }));
+            const entities = document.value.entities.filter((item) => item.parentId === parentId && (planeId
+                ? ['sketch', 'image'].includes(item.kind) && item.planeId === planeId
+                : !['sketch', 'image'].includes(item.kind))).map((entity) => ({ entity, order: 1 }));
             return [...folders, ...entities].flatMap((entry: any) => {
                 const item = entry.folder || entry.entity;
                 if (trail.includes(item.id)) return [];
                 return [{
                     id: item.id, kind: entry.folder ? 'folder' : 'entity', name: item.name, visible: item.visible, parentId: item.parentId,
-                    children: build(item.id, [...trail, item.id]),
+                    profileType: item.profileType, trimmed: item.trimmed,
+                    children: build(item.id, planeId, [...trail, item.id]),
                 } as OutlinerNode];
             });
         };
         const planeNodes = document.value.planes.map((plane) => ({
             id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible, parentId: null,
-            children: sketchMode.value && plane.id === activePlaneId.value
-                ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, parentId: plane.id, profileType: item.profileType, trimmed: item.trimmed, children: [] } as OutlinerNode))
-                : [],
+            children: sketchMode.value && plane.id === activePlaneId.value ? build(null, plane.id) : [],
         } as OutlinerNode));
         return [...planeNodes, ...build(null)];
     });
 
 
     function selectEntity(id: string | null, additive = false) {
-        if (id && sketchMode.value && document.value.entities.find((entity) => entity.id === id)?.kind === 'sketch') return selectSketchEntity(id, additive);
+        if (id && sketchMode.value && document.value.folders.find((folder) => folder.id === id)?.kind === 'svg') {
+            clearSketchSelection();
+            selectedIds.value = [id];
+            selectionKind.value = 'sketch';
+            return;
+        }
+        if (id && sketchMode.value && ['sketch', 'image'].includes(document.value.entities.find((entity) => entity.id === id)?.kind || '')) return selectSketchEntity(id, additive);
         if (!id) {
             if (!additive) selectedIds.value = [];
             if (!additive) selectionKind.value = null;
@@ -88,6 +95,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
             delete selected.value.meshGeometry;
             delete selected.value.axisBox;
             delete selected.value.compositeGeometry;
+            delete selected.value.edgeTreatments;
         }
         (selected.value as any)[key] = value;
     }
@@ -98,7 +106,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         selected.value[key][index] = key === 'scale' ? Math.max(0.01, value) : key === 'position' ? inputLength(value)! : value;
     }
     function removeSelected() {
-        const ids = sketchMode.value ? selectedIds.value : selectedIds.value.filter((id) => document.value.entities.find((item) => item.id === id)?.kind !== 'sketch');
+        const ids = sketchMode.value ? selectedIds.value : selectedIds.value.filter((id) => !['sketch', 'image'].includes(document.value.entities.find((item) => item.id === id)?.kind || ''));
         if (ids.length) deleteNodeIds(ids);
     }
     function removeConstraintsForEdge(entityId: string, index: number) {
@@ -131,7 +139,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         });
     }
     function deleteNodeIds(ids: string[]) {
-        const planeSketchIds = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId && ids.includes(item.planeId)).map((item) => item.id);
+        const planeSketchIds = document.value.entities.filter((item) => ['sketch', 'image'].includes(item.kind) && item.planeId && ids.includes(item.planeId)).map((item) => item.id);
         const allIds = [...new Set([...ids, ...planeSketchIds])];
         const remainingSelectedIds = selectedIds.value.filter((id) => !allIds.includes(id));
         const removedEditedSketch = !!editingSketchId.value && allIds.includes(editingSketchId.value);

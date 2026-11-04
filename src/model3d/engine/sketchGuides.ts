@@ -1,5 +1,5 @@
 import { entityProfileClosed, profilePoints } from './profiles';
-import type { ModelEntity, Point2 } from '../types';
+import type { ModelEntity, ModelFolder, Point2 } from '../types';
 
 export type SketchGuideReference =
     | { kind: 'point'; entityId: string; index: number; point: Point2 }
@@ -21,9 +21,11 @@ export interface SketchGuideResult {
 
 export interface SketchGuideRequest {
     entities: ModelEntity[];
+    folders?: ModelFolder[];
     point: Point2;
     edgeStart?: Point2;
     excludeEntityId?: string | null;
+    excludeEntityIds?: string[];
     excludePoint?: { entityId: string; index: number };
     origins?: { id: 'world' | 'plane'; point: Point2 }[];
     threshold: number;
@@ -69,11 +71,11 @@ function straightSegments(entity: ModelEntity) {
 }
 
 /** Collect semantic source points and straight edges; tessellated curves never become references. */
-function references(entities: ModelEntity[], excludeEntityId?: string | null, excludePoint?: SketchGuideRequest['excludePoint']) {
+function references(entities: ModelEntity[], folders: ModelFolder[] = [], excluded = new Set<string>(), excludePoint?: SketchGuideRequest['excludePoint']) {
     const points: Extract<SketchGuideReference, { kind: 'point' }>[] = [];
     const lines: Extract<SketchGuideReference, { kind: 'line' }>[] = [];
     entities.forEach((entity) => {
-        if (entity.id === excludeEntityId) return;
+        if (excluded.has(entity.id)) return;
         const controls = entity.controlPoints || (entity.points || []).map((_, index) => index);
         controls.forEach((index) => {
             const point = entity.points?.[index];
@@ -85,13 +87,18 @@ function references(entities: ModelEntity[], excludeEntityId?: string | null, ex
         }
         straightSegments(entity).forEach(({ index, a, b }) => lines.push({ kind: 'line', entityId: entity.id, index, a, b }));
     });
+    folders.forEach((folder) => {
+        if (excluded.has(folder.id)) return;
+        folder.sketchCorners?.forEach((point, index) => points.push({ kind: 'point', entityId: folder.id, index, point }));
+    });
     return { points, lines };
 }
 
 /** Snap to a guide intersection when both axes are near; otherwise keep the nearest single match. */
 export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult | null {
     const { point, edgeStart, threshold, excludeEntityId, excludePoint } = request;
-    const refs = references(request.entities, excludeEntityId, excludePoint);
+    const excluded = new Set([...(request.excludeEntityIds || []), ...(excludeEntityId ? [excludeEntityId] : [])]);
+    const refs = references(request.entities, request.folders, excluded, excludePoint);
     const candidates: Candidate[] = [];
     const pointReferences: Extract<SketchGuideReference, { kind: 'point' | 'origin' }>[] = [
         ...refs.points,

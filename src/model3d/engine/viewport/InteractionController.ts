@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { matchSketchGuide } from '../sketchGuides';
+import { sketchAssetExcludedIds } from '../sketchAssets';
 import { intersectionProfileAtPoint } from '../profileIntersection';
 import { INTERACTION } from '../../config/const';
 import type { ModelEntity, Point2, Vec3 } from '../../types';
@@ -9,29 +9,16 @@ import type { CameraController } from './CameraController';
 import type { ViewportEngine } from './ViewportEngine';
 import type { SceneSynchronizer } from './SceneSynchronizer';
 import type { SketchRenderer } from './SketchRenderer';
+import type { SketchAssetRenderer } from './SketchAssetRenderer';
 import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { pickLogicalEdge } from './EdgePicker';
 import { DirectDragController } from './DirectDragController';
 import { GizmoDragController } from './GizmoDragController';
-
-type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
-
-interface InteractionOptions {
-    container: HTMLElement;
-    engine: ViewportEngine;
-    cameraController: CameraController;
-    sceneSynchronizer: SceneSynchronizer;
-    sketchRenderer: SketchRenderer;
-    guideRenderer: GuideRenderer;
-    measurementRenderer: MeasurementRenderer;
-    transform: TransformControls;
-    callbacks: ViewportCallbacks;
-    getTool: () => ViewTool;
-    isSketchMode: () => boolean;
-    isBooleanActive: () => boolean;
-}
+import { SketchAssetDragController } from './SketchAssetDragController';
+import { SketchGuideController, type SketchGuideOptions } from './SketchGuideController';
+import type { InteractionOptions } from './InteractionOptions';
 
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
 export class InteractionController {
@@ -45,6 +32,7 @@ export class InteractionController {
     private readonly cameraController: CameraController;
     private readonly sceneSynchronizer: SceneSynchronizer;
     private readonly sketchRenderer: SketchRenderer;
+    private readonly sketchAssetRenderer: SketchAssetRenderer;
     private readonly guideRenderer: GuideRenderer;
     private readonly measurementRenderer: MeasurementRenderer;
     private readonly geometrySelector = new GeometrySelector();
@@ -57,6 +45,8 @@ export class InteractionController {
     private readonly pointer = new THREE.Vector2();
     private readonly pointerStart = new THREE.Vector2();
     private shapeDrag: { start: Point2; moved: boolean } | null = null;
+    private readonly assetEditor: SketchAssetDragController;
+    private readonly guideController: SketchGuideController;
     private viewRotateDrag: { x: number; y: number; startX: number; startY: number; centerX: number; centerY: number; moved: boolean } | null = null;
     private sketchSegmentHandled = false;
     private sketchSelectionGuardUntil = 0;
@@ -72,7 +62,6 @@ export class InteractionController {
     private spacePressed = false;
     private spaceDragMoved = false;
     private spaceHover: { id: string; normal: Vec3; point: Vec3 } | null = null;
-    private sketchGuideSnapEnabled = true;
     private selectThrough = false;
     private includeTangent = false;
 
@@ -112,6 +101,7 @@ export class InteractionController {
         this.cameraController = options.cameraController;
         this.sceneSynchronizer = options.sceneSynchronizer;
         this.sketchRenderer = options.sketchRenderer;
+        this.sketchAssetRenderer = options.sketchAssetRenderer;
         this.guideRenderer = options.guideRenderer;
         this.measurementRenderer = options.measurementRenderer;
         this.transform = options.transform;
@@ -123,6 +113,15 @@ export class InteractionController {
                 const offset = new THREE.Vector3(...worldNormal).multiplyScalar(delta);
                 this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
             },
+        });
+        this.guideController = new SketchGuideController({ sketchRenderer: this.sketchRenderer,
+            getDocument: () => this.document, getActivePlane: () => this.activePlane,
+            getEditingSketchId: () => this.editingSketchId, getProfileType: () => this.sketchProfileType });
+        this.assetEditor = new SketchAssetDragController({
+            point: (event, id) => this.sketchOperationPoint(event, { excludeEntityIds: this.document ? sketchAssetExcludedIds(this.document, id) : [id] }),
+            onGesture: options.callbacks.onSketchAssetCorner,
+            onState: (active) => { this.controls.enabled = !active; this.container.classList.toggle('is-handle-dragging', active); },
+            onFinish: () => { this.clearSketchReferences(); options.callbacks.onSketchDragEnd(); },
         });
         this.gizmo = new GizmoDragController(this.cameraController, {
             capture: (event) => this.capturePointer(event),
@@ -171,12 +170,14 @@ export class InteractionController {
     }
 
     private onWindowBlur() {
+        this.assetEditor.cancel();
         this.cancelDirectGesture();
         this.gizmo.cancel();
     }
 
     private onPointerCancel(event: PointerEvent) {
         this.releasePointer(event);
+        this.assetEditor.cancel();
         if (this.gizmo.active) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -204,6 +205,11 @@ export class InteractionController {
     }
 
     private onKeyDown(event: KeyboardEvent) {
+        if (event.code === 'Escape' && this.assetEditor.active) {
+            event.preventDefault();
+            this.assetEditor.cancel();
+            return;
+        }
         if (event.code === 'Escape' && this.directEditor.active) {
             event.preventDefault();
             this.cancelDirectGesture();
@@ -369,34 +375,12 @@ export class InteractionController {
     private clearSketchReferences() { this.sketchRenderer.clearReferences(); }
     private sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
 
-    setSketchGuideSnapEnabled(active: boolean) { this.sketchGuideSnapEnabled = active; }
+    setSketchGuideSnapEnabled(active: boolean) { this.guideController.setSnapEnabled(active); }
     setSelectThrough(active: boolean) { this.selectThrough = active; }
     setIncludeTangent(active: boolean) { this.includeTangent = active; }
 
     private sketchOperationPoint(event: PointerEvent, options: SketchGuideOptions = {}) {
-        const point = this.sketchPoint(event);
-        if (!point || options.disabled || !this.document || !this.activePlane) {
-            this.clearSketchReferences();
-            return point;
-        }
-        const match = matchSketchGuide({
-            entities: this.document.entities.filter((item) => item.kind === 'sketch' && item.planeId === this.activePlane!.id),
-            point,
-            origins: [
-                { id: 'plane', point: [0, 0] },
-                { id: 'world', point: (() => {
-                    const offset = new THREE.Vector3(...this.activePlane!.origin).negate();
-                    return [offset.dot(new THREE.Vector3(...this.activePlane!.u)), offset.dot(new THREE.Vector3(...this.activePlane!.v))];
-                })() },
-            ],
-            edgeStart: options.edgeStart,
-            excludeEntityId: options.excludeEntityId || (!['polygon', 'line', 'arc'].includes(this.sketchProfileType) ? this.editingSketchId || undefined : undefined),
-            excludePoint: options.excludePointIndex !== undefined && this.editingSketchId ? { entityId: this.editingSketchId, index: options.excludePointIndex } : undefined,
-            threshold: this.sketchUnitsPerPixel() * INTERACTION.sketchGuideSnapPx,
-        });
-        if (match) this.sketchRenderer.renderReference(match);
-        else this.clearSketchReferences();
-        return match && this.sketchGuideSnapEnabled ? match.point : point;
+        return this.guideController.operation(this.sketchPoint(event), options);
     }
 
     private sketchDragPoint(event: PointerEvent) {
@@ -472,6 +456,11 @@ export class InteractionController {
             if (this.spacePressed) { this.spaceSketchPointerBlocked = true; return; }
             this.sketchSegmentHandled = false;
             this.setPointer(event);
+            if (this.assetEditor.pointerDown(event, this.sketchAssetRenderer.markers(), this.raycaster)) {
+                event.preventDefault(); event.stopImmediatePropagation();
+                this.capturePointer(event);
+                return;
+            }
             const hit = this.raycaster.intersectObjects(this.sketchRenderer.markers(), false)[0];
             if (hit) {
                 event.preventDefault(); event.stopImmediatePropagation();
@@ -540,7 +529,7 @@ export class InteractionController {
             if (start) { this.shapeDrag = { start, moved: false }; this.capturePointer(event); }
             return;
         }
-        if (['select', 'offsetFace', 'extrude'].includes(this.tool)) {
+        if (['select', 'offsetFace', 'extrude', 'fillet', 'chamfer'].includes(this.tool)) {
             const arrow = this.hitDirectArrow(event);
             const normal = arrow?.normal || this.geometryAnchor?.localNormal;
             if (arrow && normal) {
@@ -600,6 +589,10 @@ export class InteractionController {
         }
         if (this.isBooleanActive()) return;
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+        if (this.assetEditor.move(event)) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            return;
+        }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             if (!this.sketchDrag.moved) {
@@ -662,7 +655,7 @@ export class InteractionController {
         if (!event.buttons && !this.sketchMode) {
             const hit = this.hitEntity(event);
             const edgeHit = this.hitEntityEdge(event);
-            const sketchId = hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch' ? hit.object.userData.entityId : null;
+            const sketchId = hit && ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '') ? hit.object.userData.entityId : null;
             const sketchHits = sketchId ? this.hitSketchEntities(event) : [];
             const intersection = this.sketchIntersectionAnchor(sketchHits);
             this.setSketchHovers(intersection ? [] : sketchHits.map((item) => item.object.userData.entityId));
@@ -759,6 +752,10 @@ export class InteractionController {
             this.sketchDrag = null;
             return;
         }
+        if (this.assetEditor.end(event)) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            return;
+        }
         if (this.sketchDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
             if (!this.sketchDrag.moved) {
@@ -850,7 +847,7 @@ export class InteractionController {
         const edgeHit = this.hitEntityEdge(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
-        const hitIsSketch = !!hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind === 'sketch';
+        const hitIsSketch = !!hit && ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '');
         if (planeHit && (!hit || (!hitIsSketch && planeHit.distance < hit.distance))) { this.callbacks.onPlaneSelect(planeHit.id); return; }
         if (hit && hitIsSketch) {
             const hits = this.hitSketchEntities(event);
@@ -936,7 +933,7 @@ export class InteractionController {
             return;
         } else {
             const hit = this.hitEntity(event as unknown as PointerEvent);
-            if (hit && this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind !== 'sketch') this.callbacks.onBodySelect(hit.object.userData.entityId);
+            if (hit && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '')) this.callbacks.onBodySelect(hit.object.userData.entityId);
         }
     }
 
@@ -968,6 +965,7 @@ export class InteractionController {
 
     resetSketchGesture() {
         this.sketchDrag = null;
+        this.assetEditor.reset();
         this.shapeDrag = null;
     }
 

@@ -126,8 +126,28 @@ export function useSketchEditing(options: SketchEditingOptions) {
         refreshSketch();
     }
     function selectSketchEntity(id: string, additive = false) {
-        const entity = document.value.entities.find((item) => item.id === id && item.kind === 'sketch');
+        const entity = document.value.entities.find((item) => item.id === id && ['sketch', 'image'].includes(item.kind));
         if (!entity) return;
+        if (entity.kind === 'image') {
+            selectedEdges.value = [];
+            selectedPoints.value = [];
+            selectedShapes.value = additive
+                ? selectedShapes.value.includes(id) ? selectedShapes.value.filter((item) => item !== id) : [...selectedShapes.value, id]
+                : [id];
+            if (!selectedShapes.value.length) return clearSketchSelection();
+            if (entity.planeId && entity.planeId !== activePlaneId.value) {
+                activePlaneId.value = entity.planeId;
+                viewport()?.setActivePlane(activePlane.value);
+            }
+            trimmedSelection.value = null;
+            editingSketchId.value = null;
+            sketchPoints.value = [];
+            selectedIds.value = [...selectedShapes.value];
+            viewport()?.setSketchEditing(null);
+            viewport()?.setSketchEdgeEditing(null);
+            refreshSketch();
+            return;
+        }
         ensureShapeConstraints(entity);
         selectedEdges.value = [];
         selectedPoints.value = [];

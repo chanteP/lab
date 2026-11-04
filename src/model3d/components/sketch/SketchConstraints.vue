@@ -4,14 +4,16 @@ import { CloseOutline, LockClosedOutline, LockOpenOutline } from '@vicons/ionico
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
 import MinimalRange from '../ui/MinimalRange.vue';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; rules: { id: string; label: string }[]; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean }>();
-const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; deleteRule: [id: string]; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean] }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; rules: { id: string; label: string }[]; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean; assetSelected: boolean; aspectLocked: boolean }>();
+const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; deleteRule: [id: string]; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean]; aspect: [] }>();
 </script>
 
 <template>
     <aside class="constraints-panel" aria-label="草图约束">
         <div class="tool-panel-title"><div><small>草图</small><strong>约束</strong></div></div>
-        <p>{{ selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Ctrl/Command 多选。' }}</p>
+        <button v-if="assetSelected" class="asset-aspect" :class="{ active: aspectLocked }" @click="emit('aspect')"><NIcon><component :is="aspectLocked ? LockClosedOutline : LockOpenOutline" /></NIcon>比例锁定</button>
+        <p>{{ assetSelected ? '拖动四角或通过尺寸调整整体大小。' : selectedPoint >= 0 ? '点已选择，可固定位置。' : edgeSelected ? '已选边；方向约束仅适用于直线。' : '选择点或直线，Ctrl/Command 多选。' }}</p>
+        <template v-if="!assetSelected">
         <button :class="{ active: autoActive }" :disabled="!segmentCount" @click="emit('constraint', 'auto')">水平 / 垂直</button>
         <div class="constraint-pair"><button :class="{ active: horizontalActive }" :disabled="!segmentCount" @click="emit('constraint', 'horizontal')">H</button><button :class="{ active: verticalActive }" :disabled="!segmentCount" @click="emit('constraint', 'vertical')">V</button></div>
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'parallel')">平行</button>
@@ -22,12 +24,14 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; d
         <div v-if="rules.length" class="constraint-rules"><div class="constraint-rules-title">当前规则</div><div v-for="rule in rules" :key="rule.id" class="constraint-rule"><span>{{ rule.label }}</span><button class="constraint-rule-delete" :aria-label="`删除${rule.label}规则`" @click="emit('deleteRule', rule.id)"><NIcon><CloseOutline /></NIcon></button></div></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
         <div class="constraint-limit"><label for="constraint-limit-range">约束传播 <output>{{ constraintLimit }}</output></label><MinimalRange id="constraint-limit-range" :min="10" :max="100" :value="constraintLimit" aria-label="约束传播检查上限" @update:value="emit('update:constraintLimit', $event)" /></div>
+        </template>
         <div class="constraint-snap"><span>磁吸</span><NSwitch size="small" :value="guideSnapEnabled" aria-label="参考线磁吸" @update:value="emit('update:guideSnapEnabled', $event)" /></div>
     </aside>
 </template>
 
 <style lang="scss" scoped>
 .constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 174px; max-height: calc(100% - 55px); padding: 12px; overflow-y: auto; border-radius: 8px; transition: background .16s ease; }
+.asset-aspect { margin-bottom: 8px; border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 6px; background: var(--model3d-ui-fff); }
 .constraints-panel:hover { background: var(--model3d-ui-0000000a); }
 .tool-panel-title { margin-bottom: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }

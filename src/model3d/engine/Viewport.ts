@@ -6,18 +6,20 @@ import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
 import { SketchRenderer } from './viewport/SketchRenderer';
+import { SketchAssetRenderer } from './viewport/SketchAssetRenderer';
 import { MeasurementRenderer } from './viewport/MeasurementRenderer';
 import { GuideRenderer, type GeometryAnchor } from './viewport/GuideRenderer';
 import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
 import { applyTransformControlColors } from './viewport/transformColors';
+import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 
-export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude';
+export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
 export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
-export type SketchDimension = { kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
+export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 
 export interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
@@ -31,6 +33,7 @@ export interface ViewportCallbacks {
     onDirectDragState: (state: { x: number; y: number; active: boolean }) => void;
     onSketchPoint: (point: Point2) => void;
     onSketchPointMove: (index: number, point: Point2, phase: EditPhase) => void;
+    onSketchAssetCorner: (id: string, index: number, point: Point2, phase: EditPhase) => void;
     onSketchSegment: (index: number, additive: boolean) => void;
     onSketchHandleMove: (segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) => void;
     onSketchHandleReset: (segment: number, handle: 1 | 2) => void;
@@ -77,6 +80,7 @@ export class Viewport {
     private readonly cameraController: CameraController;
     private readonly sceneSynchronizer: SceneSynchronizer;
     private readonly sketchRenderer: SketchRenderer;
+    private readonly sketchAssetRenderer: SketchAssetRenderer;
     private readonly measurementRenderer: MeasurementRenderer;
     private readonly guideRenderer: GuideRenderer;
     private readonly interaction: InteractionController;
@@ -84,6 +88,7 @@ export class Viewport {
     private readonly transform: TransformControls;
     private tool: ViewTool = 'select';
     private sketchMode = false;
+    private sketchAssetId: string | null = null;
     private lengthUnit: LengthUnit = 'mm';
 
     constructor(private readonly container: HTMLElement, callbacks: ViewportCallbacks, private readonly options: ViewportOptions = {}) {
@@ -148,6 +153,16 @@ export class Viewport {
             raycast: (event, targets) => this.interaction.raycast(event, targets),
             raycastPoint: (event) => this.interaction.sketchPoint(event),
         });
+        this.sketchAssetRenderer = new SketchAssetRenderer({
+            renderer: this.engine.renderer,
+            overlay: this.overlay,
+            getCamera: () => this.cameraController.camera,
+            getDocument: () => this.sceneSynchronizer.document,
+            getActivePlane: () => this.sceneSynchronizer.activePlane,
+            getSelectedAssetId: () => this.sketchAssetId,
+            getLengthUnit: () => this.lengthUnit,
+            isSketchMode: () => this.sketchMode,
+        });
         this.measurementRenderer = new MeasurementRenderer((value) => this.formatLength(value), this.overlay, this.engine.renderer);
         this.guideRenderer = new GuideRenderer({
             overlay: this.overlay,
@@ -174,6 +189,7 @@ export class Viewport {
             this.sketchRenderer.trimFeedback,
             this.sketchRenderer.references,
             this.sketchRenderer.selectionFeedback,
+            this.sketchAssetRenderer.group,
         );
         this.interaction = new InteractionController({
             container,
@@ -181,6 +197,7 @@ export class Viewport {
             cameraController: this.cameraController,
             sceneSynchronizer: this.sceneSynchronizer,
             sketchRenderer: this.sketchRenderer,
+            sketchAssetRenderer: this.sketchAssetRenderer,
             guideRenderer: this.guideRenderer,
             measurementRenderer: this.measurementRenderer,
             transform: this.transform,
@@ -202,6 +219,7 @@ export class Viewport {
         this.sceneSynchronizer.booleanPreview.updateAnimation(time);
         this.sceneSynchronizer.updateSection(this.cameraController.camera);
         this.sketchRenderer.updateScreenSpaceMarkers();
+        this.sketchAssetRenderer.updateScreenSpaceMarkers();
         if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
         this.engine.render(this.cameraController.camera, this.cameraController.viewHelper, this.cameraController.planeGizmo, this.sketchMode, this.cameraController.controls.target);
         this.options.onOverlaysChange?.(this.overlay.project(this.cameraController.camera, this.engine.renderer.domElement));
@@ -217,11 +235,13 @@ export class Viewport {
             this.measurementRenderer.refresh();
         }
         if (this.sceneSynchronizer.document) this.guideRenderer.update(this.sceneSynchronizer.document);
+        this.sketchAssetRenderer.update();
     }
 
     sync(document: ModelDocument) {
         this.interaction.clearSurfaceCache();
         this.sceneSynchronizer.sync(document);
+        this.sketchAssetRenderer.update();
     }
 
     setDisplayMode(mode: DisplayMode, showEdges?: boolean) { this.sceneSynchronizer.setDisplayMode(mode, showEdges); }
@@ -242,6 +262,11 @@ export class Viewport {
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
     clearGeometrySelection() { this.interaction.clearGeometrySelection(); }
     getGeometryAnchor() { return this.interaction.geometryAnchor; }
+    resolveGeometryEdgeTreatment() {
+        const anchor = this.interaction.geometryAnchor;
+        const entity = this.sceneSynchronizer.document?.entities.find((item) => item.id === anchor?.id);
+        if (anchor?.type === 'edge' && entity) resolveEdgeTreatmentAnchor(anchor, entity, this.sceneSynchronizer.model.children.find((item) => item.userData.entityId === entity.id));
+    }
     offsetGeometryAnchor(offset: Vec3) { this.interaction.offsetGeometryAnchor(offset); }
     setSelectThrough(active: boolean) { this.interaction.setSelectThrough(active); }
     setIncludeTangent(active: boolean) { this.interaction.setIncludeTangent(active); }
@@ -309,6 +334,11 @@ export class Viewport {
         if (this.sceneSynchronizer.document) this.guideRenderer.update(this.sceneSynchronizer.document);
     }
 
+    setSketchAssetSelection(id: string | null) {
+        this.sketchAssetId = id;
+        this.sketchAssetRenderer.update();
+    }
+
     setSketchSelection(index: number) { this.sketchRenderer.setSelection(index); }
     setSketchSelectionTool(active: boolean) { this.sketchRenderer.selectionTool = active; }
     setSketchGuideSnapEnabled(active: boolean) { this.interaction.setSketchGuideSnapEnabled(active); }
@@ -331,6 +361,16 @@ export class Viewport {
         return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent, precise);
     }
     sketchUnitsPerPixel() { return this.sketchRenderer.unitsPerPixel(); }
+    sketchViewFrame() {
+        const canvas = this.engine.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+        const units = this.sketchRenderer.unitsPerPixel();
+        return {
+            center: this.sketchPointAt(rect.left + rect.width / 2, rect.top + rect.height / 2) || [0, 0] as Point2,
+            width: units * canvas.clientWidth,
+            height: units * canvas.clientHeight,
+        };
+    }
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     forwardWheel(event: WheelEvent) {
         this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));
@@ -355,6 +395,7 @@ export class Viewport {
         this.cameraController.dispose();
         this.sceneSynchronizer.dispose();
         this.sketchRenderer.dispose();
+        this.sketchAssetRenderer.dispose();
         this.measurementRenderer.dispose();
         this.guideRenderer.dispose();
         this.overlay.clearAll();
