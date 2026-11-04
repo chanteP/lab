@@ -308,12 +308,13 @@ export class InteractionController {
 
     private sketchIntersectionAnchor(hits: THREE.Intersection[]): GeometryAnchor | null {
         if (hits.length < 2) return null;
-        const entities = hits.map((hit) => this.document?.entities.find((entity) => entity.id === hit.object.userData.entityId)).filter(Boolean) as ModelEntity[];
+        const region = hits[0].object.userData.regionProfile ? hits[0].object.userData : null;
+        const entities = region ? region.regionEntityIds.map((id: string) => this.document?.entities.find((entity) => entity.id === id)).filter(Boolean) as ModelEntity[] : hits.map((hit) => this.document?.entities.find((entity) => entity.id === hit.object.userData.entityId)).filter(Boolean) as ModelEntity[];
         const plane = this.document?.planes.find((item) => item.id === entities[0]?.planeId);
-        if (!plane || entities.length < 2) return null;
+        if (!plane || (!region && entities.length < 2)) return null;
         const origin = new THREE.Vector3(...plane.origin), u = new THREE.Vector3(...plane.u), v = new THREE.Vector3(...plane.v);
         const relative = hits[0].point.clone().sub(origin);
-        const points = intersectionProfileAtPoint(entities, plane.id, [relative.dot(u), relative.dot(v)]);
+        const points = region ? region.profilePoints : intersectionProfileAtPoint(entities, plane.id, [relative.dot(u), relative.dot(v)]);
         if (!points) return null;
         const vertices = points.map(([x, y]) => origin.clone().addScaledVector(u, x).addScaledVector(v, y).toArray() as Vec3);
         const indices = points.slice(1, -1).flatMap((_, index) => [0, index + 1, index + 2]);
@@ -970,7 +971,6 @@ export class InteractionController {
             vertices: this.geometryAnchor.vertices.map((point) => new THREE.Vector3(...point).add(delta).toArray()),
         };
     }
-
     resetSketchGesture() {
         this.sketchDrag = null;
         this.assetEditor.reset();

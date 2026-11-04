@@ -10,6 +10,7 @@ import { buildMeshTopology } from '../topology/MeshTopology';
 import { reconcileTopology } from '../topology/TopologyTracker';
 import { createTopologyEdgeGeometry } from './TopologyEdges';
 import type { BodyTopology } from '../topology/types';
+import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
 
@@ -106,7 +107,8 @@ export class SceneSynchronizer {
         clearGroup(this.sectionOutlines);
         clearGroup(this.model);
         const next = buildScene(document);
-        [...next.children].forEach((child) => {
+        const regionPreviews = this.options.isSketchMode() ? [] : buildSketchRegionPreviews(document);
+        [...next.children, ...regionPreviews].forEach((child) => {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && !!entity && !['sketch', 'image'].includes(entity.kind)) {
@@ -127,7 +129,7 @@ export class SceneSynchronizer {
                 if (material) { material.transparent = true; material.opacity = entity.kind === 'image' ? 1 : 0; }
                 const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
                 const matrix = plane ? this.planeMatrix(plane) : new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-                if (entity.parts?.length) {
+                if (!child.userData.regionProfile && entity.parts?.length) {
                     entity.parts.forEach((part, partIndex) => {
                         const points = part.points.map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
                         const border = createFatLine(points, this.options.renderer.domElement.clientWidth, this.options.renderer.domElement.clientHeight, part.closed);
@@ -136,7 +138,7 @@ export class SceneSynchronizer {
                         border.userData.borderWholeOnly = true;
                         child.add(border);
                     });
-                } else borderSegments(entity).forEach((segment) => {
+                } else if (!child.userData.regionProfile) borderSegments(entity).forEach((segment) => {
                     const points = segment.points.map((point) => new THREE.Vector3(point[0], point[1], 0).applyMatrix4(matrix));
                     const border = createFatLine(points, this.options.renderer.domElement.clientWidth, this.options.renderer.domElement.clientHeight, segment.closed);
                     border.userData.borderEntityId = entity.id;
