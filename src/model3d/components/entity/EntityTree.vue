@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 import { NIcon } from 'naive-ui';
-import { ChevronForwardOutline, ChevronDownOutline, CubeOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline } from '@vicons/ionicons5';
+import { ChevronForwardOutline, ChevronDownOutline, CreateOutline, CubeOutline, EllipseOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline, ShapesOutline } from '@vicons/ionicons5';
+import SvgIcon from '../ui/SvgIcon.vue';
+import type { ModelEntity } from '../../types';
 
 export interface OutlinerNode {
     id: string;
@@ -9,11 +11,13 @@ export interface OutlinerNode {
     name: string;
     visible?: boolean;
     children: OutlinerNode[];
+    profileType?: ModelEntity['profileType'];
+    trimmed?: boolean;
 }
 
 const props = withDefaults(defineProps<{ nodes: OutlinerNode[]; selectedIds: string[]; depth?: number; parentLast?: boolean[] }>(), { depth: 0, parentLast: () => [] });
 const emit = defineEmits<{
-    select: [id: string, additive: boolean];
+    select: [id: string, additive: boolean, shiftKey: boolean];
     rename: [id: string, name: string];
     toggle: [id: string];
     context: [node: OutlinerNode, event: MouseEvent];
@@ -41,7 +45,7 @@ function beginRename(node: OutlinerNode) {
 function onRowClick(node: OutlinerNode, event: MouseEvent) {
     if (editingId.value === node.id) return;
     const renameSelected = props.selectedIds.length === 1 && props.selectedIds[0] === node.id && !event.metaKey && !event.ctrlKey && !event.shiftKey;
-    emit('select', node.id, event.metaKey || event.ctrlKey || event.shiftKey);
+    emit('select', node.id, event.metaKey || event.ctrlKey, event.shiftKey);
     if (renameSelected) beginRename(node);
 }
 function commitRename() {
@@ -83,14 +87,16 @@ function drop(event: DragEvent, targetId: string | null) {
                 </span>
                 <button v-if="node.children.length" class="tree-disclosure" @click.stop="toggleExpanded(node.id)"><NIcon><component :is="expanded.has(node.id) ? ChevronDownOutline : ChevronForwardOutline" /></NIcon></button>
                 <span v-else class="tree-disclosure-spacer"></span>
-                <NIcon class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : CubeOutline" /></NIcon>
+                <SvgIcon v-if="node.trimmed" class="object-type" name="freehand" />
+                <SvgIcon v-else-if="node.profileType === 'ellipse'" class="object-type" name="ellipse" />
+                <NIcon v-else class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : node.profileType === 'rectangle' ? GridOutline : node.profileType === 'circle' ? EllipseOutline : node.profileType === 'regular' ? ShapesOutline : node.profileType ? CreateOutline : CubeOutline" /></NIcon>
                 <input v-if="editingId === node.id" ref="nameInput" v-model="renameValue" class="object-name object-name-input" :aria-label="`重命名${node.name}`"
                     @click.stop @dblclick.stop @pointerdown.stop @blur="commitRename" @keydown.enter.stop.prevent="commitRename" @keydown.esc.stop.prevent="editingId = null" />
                 <span v-else class="object-name">{{ node.name }}</span>
                 <button class="visibility" @click.stop="emit('toggle', node.id)"><NIcon><component :is="node.visible ? EyeOutline : EyeOffOutline" /></NIcon></button>
             </div>
             <EntityTree v-if="node.children.length && expanded.has(node.id)" class="tree-children" :nodes="node.children" :selected-ids="selectedIds" :depth="depth + 1" :parent-last="depth ? [...parentLast, index === nodes.length - 1] : []"
-                @select="(id, additive) => emit('select', id, additive)" @toggle="(id) => emit('toggle', id)"
+                @select="(id, additive, shiftKey) => emit('select', id, additive, shiftKey)" @toggle="(id) => emit('toggle', id)"
                 @context="(child, event) => emit('context', child, event)" @drop="(ids, targetId) => emit('drop', ids, targetId)" @rename="(id, name) => emit('rename', id, name)" />
         </div>
     </div>

@@ -3,12 +3,13 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import type { OrientationGizmo } from '../OrientationGizmo';
 import { VIEWPORT_COLORS } from '../../config/colors';
+import { InfiniteGrid } from './InfiniteGrid';
 
 /** Owns the WebGL/DOM renderers, scene-wide helpers and the animation frame lifecycle. */
 export class ViewportEngine {
     readonly scene = new THREE.Scene();
     readonly renderer: THREE.WebGLRenderer;
-    readonly grid: THREE.GridHelper;
+    readonly grid: InfiniteGrid;
     readonly shadow: THREE.Mesh;
     readonly sun: THREE.DirectionalLight;
     onResize: () => void = () => undefined;
@@ -31,11 +32,8 @@ export class ViewportEngine {
         this.renderer.autoClear = false;
         container.appendChild(this.renderer.domElement);
 
-        this.grid = new THREE.GridHelper(1000, 100, VIEWPORT_COLORS.gridMajor, VIEWPORT_COLORS.gridMinor);
-        this.grid.position.y = -0.02;
-        (this.grid.material as THREE.Material).transparent = true;
-        (this.grid.material as THREE.Material).opacity = 0.65;
-        this.scene.add(this.grid);
+        this.grid = new InfiniteGrid();
+        this.scene.add(this.grid.mesh);
 
         this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.ShadowMaterial({ opacity: 0.16 }));
         this.shadow.rotation.x = -Math.PI / 2;
@@ -64,6 +62,7 @@ export class ViewportEngine {
         const { width, height } = this.container.getBoundingClientRect();
         if (!width || !height) return;
         this.renderer.setSize(width, height);
+        this.grid.resize(this.renderer);
         this.scene.traverse((object) => {
             if (object instanceof Line2) (object.material as LineMaterial).resolution.set(width, height);
         });
@@ -86,7 +85,11 @@ export class ViewportEngine {
     }
 
     setGridVisible(visible: boolean) {
-        this.grid.visible = visible;
+        this.grid.setVisible(visible);
+    }
+
+    setGridSize(size: number) {
+        this.grid.setSize(size);
     }
 
     setShadowsVisible(visible: boolean) {
@@ -102,8 +105,7 @@ export class ViewportEngine {
     dispose() {
         cancelAnimationFrame(this.frame);
         this.resizeObserver.disconnect();
-        this.grid.geometry.dispose();
-        (this.grid.material as THREE.Material).dispose();
+        this.grid.dispose();
         this.shadow.geometry.dispose();
         (this.shadow.material as THREE.Material).dispose();
         this.renderer.dispose();

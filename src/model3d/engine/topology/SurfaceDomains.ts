@@ -42,6 +42,20 @@ export function analyticTriangleDomain(
 
     const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : entity;
     const plane = profile?.planeId ? document.planes.find((item) => item.id === profile.planeId) : null;
+    const ellipse = Object.values(profile?.analyticCurves || {}).find((curve) => curve.kind === 'ellipse');
+    if (ellipse && plane) {
+        const origin = vec(plane.origin).addScaledVector(vec(plane.u), ellipse.center[0]).addScaledVector(vec(plane.v), ellipse.center[1]);
+        const cosine = Math.cos(ellipse.rotation), sine = Math.sin(ellipse.rotation);
+        const onEllipse = points.every((point) => {
+            const delta = point.clone().sub(origin);
+            const x = delta.dot(vec(plane.u)), y = delta.dot(vec(plane.v));
+            const localX = x * cosine + y * sine, localY = -x * sine + y * cosine;
+            const radius = Math.hypot(localX / ellipse.radiusX, localY / ellipse.radiusY);
+            return Math.abs(radius - 1) <= LENGTH_TOLERANCE;
+        });
+        // A nearly flat ellipse segment is still curved; treating it as a plane creates sliver CSG tools.
+        if (onEllipse) return { kind: 'smooth', analytic: false };
+    }
     if (profile?.profileType !== 'circle' || !plane || (profile.sectorAngle ?? 360) < 360 || !profile.points?.length) return null;
     const [center2, edge2] = profile.points;
     if (!center2 || !edge2) return null;

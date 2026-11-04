@@ -10,7 +10,7 @@ const wheelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 type DimensionOverlay = Extract<ProjectedViewportOverlay, { kind: 'dimension' }>;
 
 function positionStyle(item: ProjectedViewportOverlay) {
-    return { left: `${item.x}px`, top: `${item.y}px` };
+    return { left: `${item.x}px`, top: `${item.y}px`, '--dimension-angle': `${item.kind === 'dimension' ? item.angle || 0 : 0}deg` };
 }
 
 function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
@@ -65,6 +65,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
             <div
                 v-if="item.kind === 'dimension'"
                 class="viewport-overlay-item sketch-length-input"
+                :class="{ 'dimension-oriented': item.angle !== undefined }"
                 :style="positionStyle(item)"
                 @pointerdown.stop
             >
@@ -130,6 +131,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
     position: absolute;
     transform: translate(-50%, -50%);
 }
+.viewport-overlay-item.dimension-oriented { transform: translate(-50%, -50%) rotate(var(--dimension-angle)) translateY(-9px); }
 .boolean-mini-button { width: 23px; height: 23px; display: grid; place-items: center; padding: 0 0 1px; color: var(--model3d-ui-fff); background: #175fc2; border: 1px solid var(--model3d-ui-ffffff80); border-radius: 6px; box-shadow: 0 2px 7px var(--model3d-ui-1d332b2b); font-size: 17px; font-weight: 650; line-height: 1; cursor: pointer; pointer-events: auto; }
 .boolean-mini-button.negative { background: #a92f3d; }
 .boolean-mini-button:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }

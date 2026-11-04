@@ -13,7 +13,7 @@ defineProps<{
     sectionActive: boolean;
     sketchMode: boolean;
     projectionMode: 'perspective' | 'orthographic';
-    scaleBar: { width: number; value: number };
+    scaleBar: { width: number; value: number; segments: number; gridSize: number };
     scaleBarLabel: string;
     displayMode: DisplayMode;
     showEdges: boolean;
@@ -81,7 +81,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             </div>
             <NTooltip><template #trigger><button aria-label="适配视图" @click.stop="emit('fit')"><NIcon><ScanOutline /></NIcon></button></template>适配视图</NTooltip>
         </div>
-        <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i></i><i></i><i></i></div><span>{{ scaleBarLabel }}</span></div>
+        <div class="scale-indicator"><div class="scale-rule" :style="{ width: `${scaleBar.width}px` }"><i v-for="index in scaleBar.segments" :key="index"></i></div><span>{{ scaleBarLabel }}</span></div>
     </div>
 </template>
 

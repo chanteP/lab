@@ -5,7 +5,7 @@ button, input { font: inherit; }
 button { color: inherit; }
 .studio-shell { --ink: var(--model3d-ui-24302d); --muted: var(--model3d-ui-7a8580); --line: var(--model3d-ui-e4e8e5); --accent: var(--model3d-ui-147d70); display: block; width: 100%; height: 100%; min-width: 760px; background: var(--model3d-ui-f5f7f5); }
 .workspace { position: fixed; inset: 0; }
-.panel { background: linear-gradient(90deg, var(--model3d-ui-fff) 0%, rgba(255,255,255,.98) 78%, rgba(255,255,255,.95) 95%, transparent 100%); }
+.panel { background: var(--model3d-ui-fff); }
 .left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 218px; height: 100%; display: flex; flex-direction: column; border: 0; }
 .section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: var(--model3d-ui-707d76); font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
 .section-label > span { min-width: 20px; padding: 1px 5px; text-align: center; background: var(--model3d-ui-e9edea); border-radius: 8px; font-size: 9px; letter-spacing: 0; }
@@ -121,11 +121,10 @@ button { color: inherit; }
 .measure-actions button { width: 28px; height: 27px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--model3d-ui-65766c); font-size: 16px; cursor: pointer; }
 .measure-actions button.active { color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); }
 .scale-indicator { display: flex; align-items: center; gap: 7px; height: 34px; color: var(--model3d-ui-586b60); font-size: 9px; white-space: nowrap; }
-.scale-rule { position: relative; height: 8px; border-bottom: 1px solid var(--model3d-ui-60746a); transition: width .08s linear; }
-.scale-rule i { position: absolute; bottom: -1px; width: 1px; height: 5px; background: var(--model3d-ui-60746a); }
-.scale-rule i:first-child { left: 0; }
-.scale-rule i:nth-child(2) { left: 50%; height: 3px; }
-.scale-rule i:last-child { right: 0; }
+.scale-rule { position: relative; height: 8px; display: flex; border-bottom: 1px solid var(--model3d-ui-60746a); transition: width .08s linear; }
+.scale-rule::after { content: ''; position: absolute; right: 0; bottom: -1px; width: 1px; height: 5px; background: var(--model3d-ui-60746a); }
+.scale-rule i { flex: 1; height: 5px; border-left: 1px solid var(--model3d-ui-60746a); }
+.scale-rule i:nth-child(even) { background: var(--model3d-ui-0000000a); }
 .gizmo-label { bottom: 176px; }
 .viewport-status { padding-right: 14px; }
 .viewport-status > div { margin-left: 0; }
@@ -241,12 +240,14 @@ button { color: inherit; }
 .sketch-length-input:hover, .sketch-length-input:focus-within { opacity: 1; }
 .context-fields .n-input-number { opacity: .5; transition: opacity .16s ease; }
 .context-fields .n-input-number:hover, .context-fields .n-input-number:focus-within { opacity: 1; }
-.sketch-length-input input { width: 50px; height: 23px; padding: 0 3px 0 6px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sketch-length-input input { width: 43px; height: 23px; padding: 0 2px 0 4px; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-variant-numeric: tabular-nums; }
+.sketch-length-input input::-webkit-inner-spin-button, .sketch-length-input input::-webkit-outer-spin-button { margin: 0; appearance: none; }
+.sketch-length-input input[type=number] { -moz-appearance: textfield; }
 .sketch-lock-badge { width: 13px; height: 13px; display: grid; place-items: center; padding: 0; color: var(--model3d-ui-54a184); background: transparent; border: 0; cursor: pointer; transform: translate(4px, -14px); pointer-events: auto; }
 .sketch-lock-badge.is-edge { transform: translate(-18px, -50%); }
 .sketch-lock-badge svg { width: 13px; height: 13px; fill: currentColor; }
 .sketch-length-input select, .sketch-length-input span { height: 23px; padding: 0 5px; border: 0; border-left: 1px solid var(--model3d-ui-efd3b2); outline: 0; background: var(--model3d-ui-fff4e5); color: var(--model3d-ui-8a5c25); font-size: 9px; line-height: 23px; }
-.sketch-length-input select { width: 43px; padding: 0 2px; }
+.sketch-length-input select { width: 29px; padding: 0 3px; appearance: none; text-align: center; }
 /* Menus use icon + title/subtitle, without full-row active or hover fills. */
 .menu-command, .menu-command:hover, .menu-command.active { background: transparent; border-color: transparent; }
 .menu-command:hover > .n-icon, .menu-command:hover > .svg-icon, .menu-command.active > .n-icon, .menu-command.active > .svg-icon, .menu-command.active strong { color: var(--model3d-ui-147d70); }

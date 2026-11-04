@@ -180,7 +180,6 @@ const sketchAdvanced = useSketchAdvanced({
 });
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
-const visibleEntityCount = computed(() => document.value.entities.filter((item) => item.kind !== 'sketch').length);
 
 function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
@@ -333,6 +332,21 @@ function selectFromItems(id: string, additive: boolean) {
     const entity = document.value.entities.find((item) => item.id === id);
     if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool('select'); }
     else if (entity && entity.kind !== 'boolean') setTool('translate');
+}
+function selectRangeFromItems(ids: string[]) {
+    finishDirectEdit();
+    if (!ids.length) return;
+    if (sketchMode.value) {
+        clearSketchSelection();
+        ids.forEach((id) => selectSketchEntity(id, true));
+        selectionKind.value = 'sketch';
+        return;
+    }
+    selectedIds.value = ids;
+    selectionKind.value = ids.length === 1 ? 'body' : 'mixed';
+    activePanel.value = null;
+    parameterCardOpen.value = true;
+    setTool('select');
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     finishDirectEdit();
@@ -601,10 +615,10 @@ onBeforeUnmount(() => {
 <template>
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
         <div class="workspace">
-            <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
+            <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :special-mode="sketchMode || symmetryActive"
                 :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
-                @select="selectFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
+                @select="selectFromItems" @select-range="selectRangeFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">

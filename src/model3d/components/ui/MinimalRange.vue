@@ -17,7 +17,11 @@ const props = withDefaults(defineProps<{
     trackColor: 'var(--model3d-ui-fff)',
 });
 const emit = defineEmits<{ 'update:value': [value: number] }>();
-const style = computed(() => ({ '--minimal-range-color': props.color, '--minimal-range-track': props.trackColor }));
+const style = computed(() => ({
+    '--minimal-range-color': props.color,
+    '--minimal-range-track': props.trackColor,
+    '--minimal-range-progress': `${Math.max(0, Math.min(100, (props.value - props.min) / (props.max - props.min || 1) * 100))}%`,
+}));
 </script>
 
 <template>
@@ -38,9 +42,9 @@ const style = computed(() => ({ '--minimal-range-color': props.color, '--minimal
 
 <style lang="scss" scoped>
 .minimal-range { width: 100%; height: 20px; margin: 0; padding: 0; appearance: none; background: transparent; cursor: ew-resize; }
-.minimal-range::-webkit-slider-runnable-track { height: 3px; background: var(--minimal-range-track); border: 0; border-radius: 2px; }
+.minimal-range::-webkit-slider-runnable-track { height: 3px; background: linear-gradient(to right, var(--minimal-range-color) 0 var(--minimal-range-progress), var(--minimal-range-track) var(--minimal-range-progress) 100%); border: 0; border-radius: 2px; }
 .minimal-range::-webkit-slider-thumb { width: 3px; height: 17px; margin-top: -7px; appearance: none; background: var(--minimal-range-color); border: 0; border-radius: 2px; box-shadow: 0 0 0 0 transparent; transition: box-shadow .15s ease; }
-.minimal-range::-moz-range-track { height: 3px; background: var(--minimal-range-track); border: 0; border-radius: 2px; }
+.minimal-range::-moz-range-track { height: 3px; background: linear-gradient(to right, var(--minimal-range-color) 0 var(--minimal-range-progress), var(--minimal-range-track) var(--minimal-range-progress) 100%); border: 0; border-radius: 2px; }
 .minimal-range::-moz-range-thumb { width: 3px; height: 17px; background: var(--minimal-range-color); border: 0; border-radius: 2px; box-shadow: 0 0 0 0 transparent; transition: box-shadow .15s ease; }
 .minimal-range:hover::-webkit-slider-thumb, .minimal-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--minimal-range-color) 18%, transparent); }
 .minimal-range:hover::-moz-range-thumb, .minimal-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--minimal-range-color) 18%, transparent); }

@@ -17,7 +17,7 @@ const valueLabel = computed(() => Number(props.displayLength(props.value).toFixe
     <div class="section-control">
         <label for="model3d-section-range">剖面</label>
         <MinimalRange id="model3d-section-range" :min="-limit" :max="limit" step="any" :value="value" aria-label="剖面位置"
-            :aria-valuetext="`${displayLength(value)} ${lengthUnit}`" track-color="var(--model3d-ui-147d70)" @update:value="emit('update', $event)" />
+            :aria-valuetext="`${displayLength(value)} ${lengthUnit}`" @update:value="emit('update', $event)" />
         <output for="model3d-section-range">{{ valueLabel }} {{ lengthUnit }}</output>
     </div>
 </template>

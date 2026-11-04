@@ -12,6 +12,7 @@ export type ViewportOverlay = {
     value: number;
     unit: LengthUnit;
     signed?: boolean;
+    angle?: number;
 } | {
     kind: 'lock';
     entityId: string;

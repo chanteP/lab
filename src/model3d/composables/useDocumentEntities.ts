@@ -62,7 +62,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         const planeNodes = document.value.planes.map((plane) => ({
             id: plane.id, kind: 'plane', name: plane.name, visible: plane.visible,
             children: sketchMode.value && plane.id === activePlaneId.value
-                ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, children: [] } as OutlinerNode))
+                ? document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === plane.id).map((item) => ({ id: item.id, kind: 'entity', name: item.name, visible: item.visible, profileType: item.profileType, trimmed: item.trimmed, children: [] } as OutlinerNode))
                 : [],
         } as OutlinerNode));
         return [...planeNodes, ...build(null)];

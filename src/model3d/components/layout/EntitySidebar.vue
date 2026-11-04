@@ -21,7 +21,7 @@ const props = defineProps<{
     exportQuality: GeometryQuality;
     nodes: OutlinerNode[];
     selectedIds: string[];
-    entityCount: number;
+    specialMode: boolean;
 }>();
 const emit = defineEmits<{
     open: [id: string];
@@ -31,6 +31,7 @@ const emit = defineEmits<{
     remove: [];
     folder: [];
     select: [id: string, additive: boolean];
+    selectRange: [ids: string[]];
     rename: [id: string, name: string];
     context: [node: OutlinerNode, event: MouseEvent];
     drop: [ids: string[], targetId: string | null];
@@ -43,6 +44,25 @@ const emit = defineEmits<{
     export: [type: 'stl' | 'glb' | 'project'];
 }>();
 const options = computed(() => props.projects.map((item) => ({ label: item.name, value: item.id })));
+let selectionAnchor: { id: string; parent: string | null } | null = null;
+
+function flattenNodes(nodes: OutlinerNode[], parent: string | null = null): { id: string; parent: string | null }[] {
+    return nodes.flatMap((node) => [{ id: node.id, parent }, ...flattenNodes(node.children, node.id)]);
+}
+
+function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
+    const current = flattenNodes(props.nodes).find((item) => item.id === id);
+    if (shiftKey && current) {
+        if (selectionAnchor && selectionAnchor.parent === current.parent) {
+            const siblings = flattenNodes(props.nodes).filter((item) => item.parent === current.parent);
+            const start = siblings.findIndex((item) => item.id === selectionAnchor!.id);
+            const end = siblings.findIndex((item) => item.id === id);
+            if (start >= 0 && end >= 0) emit('selectRange', siblings.slice(Math.min(start, end), Math.max(start, end) + 1).map((item) => item.id));
+            else emit('select', id, false);
+        } else emit('select', id, false);
+    } else emit('select', id, additive);
+    selectionAnchor = current ? { id, parent: current.parent } : null;
+}
 </script>
 
 <template>
@@ -77,10 +97,10 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
         </section>
 
         <section class="objects-section">
-            <div class="section-label">实体 <span class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button><i>{{ entityCount }}</i></span></div>
+            <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span v-if="!specialMode" class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
             <div class="object-list">
                 <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
-                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="(id, additive) => emit('select', id, additive)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
+                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
             </div>
         </section>
         <section class="project-section">
@@ -97,7 +117,7 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
 </template>
 
 <style lang="scss" scoped>
-.panel { background: linear-gradient(90deg, var(--model3d-ui-fff) 0%, rgba(255,255,255,.98) 78%, rgba(255,255,255,.95) 95%, transparent 100%); }
+.panel { background: var(--model3d-ui-fff); }
 .left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 218px; height: 100%; display: flex; flex-direction: column; padding-right: 12px; border: 0; }
 .sidebar-header { display: grid; gap: 9px; padding: 14px 10px 12px; border-bottom: 1px solid var(--model3d-ui-e7ebe8); }
 .sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; }

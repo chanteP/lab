@@ -35,6 +35,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
+- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
 - `BooleanPreviewController` 只管理多模型 CSG 临时显示：隔离参与模型、透明材质/边框、交集预览和隐藏素材重建；结果实体仍由 `useModelingOperations` 在完成时写入 document。
@@ -59,6 +60,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-04：Grid/比例尺自适应并弱化主线，补齐草图 N 标准视图、隐藏恢复、同层 Shift 选择和紧凑尺寸输入；椭圆弧拓扑明确为曲面，新增多比例侧面推拉回归。
 - 2026-11-04：实体树支持内联重命名并精简单选详情；新增多模型带符号 Boolean 草稿、透明/边框预览和 mini +/-，完成前结果不入树，统一圆角流程按钮与空白提交。
 - 2026-11-04：移除顶部项目栏并迁移到固定渐隐 Sidebar，Canvas 全页化且仅扣除 218px；统一 120px 工具栏、极简 range、形状/裁剪边命名和按上下文提示，实体树改为终端式层级线。
 - 2026-11-04：修复三维/草图坐标球粘手并支持轴球精确视图；新增 3D 动态提示、箭头侧面有符号长度输入和连续面推拉，顶部仅保留 Extrude/Boolean/Symmetry 流程条，普通属性迁入右侧自适应面板。

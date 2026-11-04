@@ -61,7 +61,7 @@ export interface ViewportCallbacks {
     onViewportContext: (id: string | null, x: number, y: number) => void;
     onSpaceChange: (active: boolean) => void;
     onMeasureChange: (active: boolean) => void;
-    onScale: (scale: { width: number; value: number }) => void;
+    onScale: (scale: { width: number; value: number; segments: number; gridSize: number }) => void;
     onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
     onBooleanToggle: (id: string) => void;
 }
@@ -286,14 +286,14 @@ export class Viewport {
             this.sceneSynchronizer.planes.visible = false;
             if (this.sceneSynchronizer.activePlane) {
                 const plane = this.sceneSynchronizer.activePlane;
-                this.engine.grid.position.copy(new THREE.Vector3(...plane.origin));
-                this.engine.grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...plane.normal).normalize());
+                this.engine.grid.mesh.position.copy(new THREE.Vector3(...plane.origin));
+                this.engine.grid.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...plane.normal).normalize());
             }
         } else {
             this.cameraController.camera.up.set(0, 1, 0);
             this.sceneSynchronizer.planes.visible = true;
-            this.engine.grid.position.set(0, -0.02, 0);
-            this.engine.grid.quaternion.identity();
+            this.engine.grid.mesh.position.set(0, -0.02, 0);
+            this.engine.grid.mesh.quaternion.identity();
         }
         this.interaction.updateOrbitRotation();
         this.cameraController.controls.update();

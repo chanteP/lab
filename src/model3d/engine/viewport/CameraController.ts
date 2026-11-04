@@ -7,6 +7,7 @@ import { INTERACTION } from '../../config/const';
 import type { LengthUnit, SketchPlane } from '../../types';
 import type { ViewportEngine } from './ViewportEngine';
 import { gizmoAxisDirection } from './gizmoOrbit';
+import { gridStepForUnitsPerPixel, scaleBarForGrid } from './gridScale';
 
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -36,7 +37,7 @@ export class CameraController {
     constructor(
         private readonly engine: ViewportEngine,
         private readonly getLengthUnit: () => LengthUnit,
-        private readonly onScale: (scale: { width: number; value: number }) => void,
+        private readonly onScale: (scale: { width: number; value: number; segments: number; gridSize: number }) => void,
     ) {
         this.perspectiveCamera.position.set(115, 95, 135);
         this.controls = new OrbitControls(this.camera, engine.renderer.domElement);
@@ -114,15 +115,13 @@ export class CameraController {
         const unitsPerPixel = this.camera instanceof THREE.OrthographicCamera
             ? (this.camera.top - this.camera.bottom) / this.camera.zoom / height
             : 2 * distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / height;
-        const raw = unitsPerPixel * 76;
-        const power = Math.pow(10, Math.floor(Math.log10(raw)));
-        const fraction = raw / power;
-        const nice = (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power;
-        const width = Math.round(nice / unitsPerPixel);
-        const key = `${width}/${nice}/${this.getLengthUnit()}`;
+        const gridSize = gridStepForUnitsPerPixel(unitsPerPixel);
+        this.engine.setGridSize(gridSize);
+        const scale = scaleBarForGrid(unitsPerPixel, gridSize);
+        const key = `${scale.width}/${scale.value}/${scale.segments}/${gridSize}/${this.getLengthUnit()}`;
         if (key !== this.lastScale) {
             this.lastScale = key;
-            this.onScale({ width, value: nice });
+            this.onScale(scale);
         }
     }
 
@@ -172,19 +171,17 @@ export class CameraController {
         const helper = sketchMode ? this.planeGizmo : this.viewHelper;
         const axis = helper.getAxisAt(event);
         if (!axis) return false;
+        if (sketchMode && axis.userData.type !== 'posZ') return false;
 
-        const direction = gizmoAxisDirection(axis.userData.type, helper.orientation);
+        const direction = sketchMode && plane ? new THREE.Vector3(...plane.normal).normalize() : gizmoAxisDirection(axis.userData.type, helper.orientation);
         const target = this.controls.target.clone();
         const distance = Math.max(5, this.camera.position.distanceTo(target));
         const position = target.clone().add(direction.clone().multiplyScalar(distance));
         let up = new THREE.Vector3(0, 1, 0);
 
         if (sketchMode) {
-            const u = plane?.u ? new THREE.Vector3(...plane.u).normalize() : new THREE.Vector3(1, 0, 0);
             const v = plane?.v ? new THREE.Vector3(...plane.v).normalize() : new THREE.Vector3(0, 1, 0);
-            up = [v, v.clone().negate(), u, u.clone().negate()]
-                .filter((candidate) => Math.abs(candidate.dot(direction)) < 0.9)
-                .sort((a, b) => b.dot(this.camera.up) - a.dot(this.camera.up))[0] || v;
+            up = v;
         } else if (Math.abs(direction.y) > 0.9) {
             up.set(0, 0, direction.y > 0 ? -1 : 1);
         }

@@ -52,6 +52,7 @@ export function useSketchSession(options: SketchSessionOptions) {
         clearSketchDragState, activateSketchSelectionTool, beginSketchHandleDrag, finishSketchHandleDrag,
     } = editing;
     let sketchRefreshFrame = 0;
+    let visibilityBeforeSketch: { entityId: string; visible: boolean; planeId: string | null; planeVisible: boolean } | null = null;
 
     function startSketch(editProfile = false) {
         if (sketchMode.value) return;
@@ -70,6 +71,14 @@ export function useSketchSession(options: SketchSessionOptions) {
             viewport()?.setActivePlane(plane);
         }
         editingSketchId.value = editing?.id || null;
+        if (editing) {
+            const plane = document.value.planes.find((item) => item.id === editing.planeId);
+            visibilityBeforeSketch = !editing.visible || (plane && !plane.visible)
+                ? { entityId: editing.id, visible: editing.visible, planeId: plane?.id || null, planeVisible: plane?.visible ?? true }
+                : null;
+            editing.visible = true;
+            if (plane) plane.visible = true;
+        }
         if (editing?.planeId) activePlaneId.value = editing.planeId;
         if (!activePlaneId.value && !editing) activePlaneId.value = document.value.planes[0].id;
         sketchPoints.value = editing?.points ? cloneEntity(editing).points! : [];
@@ -291,6 +300,13 @@ export function useSketchSession(options: SketchSessionOptions) {
     }
     function cancelSketch() {
         finishSketchHandleDrag();
+        if (visibilityBeforeSketch) {
+            const entity = document.value.entities.find((item) => item.id === visibilityBeforeSketch!.entityId);
+            if (entity) entity.visible = visibilityBeforeSketch.visible;
+            const plane = document.value.planes.find((item) => item.id === visibilityBeforeSketch!.planeId);
+            if (plane) plane.visible = visibilityBeforeSketch.planeVisible;
+            visibilityBeforeSketch = null;
+        }
         viewport()?.setSketchEdgeEditing(null);
         selectedShapes.value = [];
         selectedEdges.value = [];

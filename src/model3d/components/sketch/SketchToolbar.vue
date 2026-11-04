@@ -40,7 +40,7 @@ function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').repla
         <div v-else class="sketch-tool-list">
             <div class="tool-group">
                 <ViewportToolItem label="选择" :active="selectionTool && activeTool === 'select'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('select')"><NIcon><NavigateOutline /></NIcon></ViewportToolItem>
-                <ViewportToolItem label="线条曲线" :active="active('polygon')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'polygon')"><NIcon><CreateOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem label="线条/曲线" :active="active('polygon')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'polygon')"><NIcon><CreateOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="矩形" :active="active('rectangle')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'rectangle')"><NIcon><GridOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="圆形" :active="active('circle')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'circle')"><NIcon><EllipseOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="椭圆" :active="active('ellipse')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'ellipse')"><SvgIcon name="ellipse" /></ViewportToolItem>
