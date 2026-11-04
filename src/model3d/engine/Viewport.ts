@@ -52,9 +52,10 @@ export interface ViewportCallbacks {
     onSketchDimension: (target: SketchDimension, value: number) => void;
     onSketchDragEnd: () => void;
     onLengthUnitChange: (unit: LengthUnit) => void;
+    onDirectDistance: (value: number) => void;
+    onExtrudeDistance: (value: number) => void;
     onExtrudeGesture: (profileId: string, direction: 1 | -1, delta: number, phase: EditPhase) => void;
     onBlankCommit: () => void;
-    onExtrudeDimension: () => void;
     onMarqueeSelect: (ids: string[], additive: boolean) => void;
     onHoverSketch: (id: string, normal: Vec3, point: Vec3) => void;
     onViewportContext: (id: string | null, x: number, y: number) => void;
@@ -154,7 +155,7 @@ export class Viewport {
             getHoverFaceAnchor: () => this.interaction?.hoverFaceAnchor || null,
             getSectionPlane: () => this.sceneSynchronizer.sectionPlane,
             isSketchMode: () => this.sketchMode,
-            formatLength: (value) => this.formatLength(value),
+            getLengthUnit: () => this.lengthUnit,
         });
         this.engine.scene.add(
             this.sceneSynchronizer.model,
@@ -234,6 +235,7 @@ export class Viewport {
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
     clearGeometrySelection() { this.interaction.clearGeometrySelection(); }
     getGeometryAnchor() { return this.interaction.geometryAnchor; }
+    offsetGeometryAnchor(offset: Vec3) { this.interaction.offsetGeometryAnchor(offset); }
     setSelectThrough(active: boolean) { this.interaction.setSelectThrough(active); }
     setIncludeTangent(active: boolean) { this.interaction.setIncludeTangent(active); }
 

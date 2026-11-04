@@ -12,9 +12,9 @@ import type { SketchRenderer } from './SketchRenderer';
 import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
-import { advanceGizmoOrbit } from './gizmoOrbit';
 import { pickLogicalEdge } from './EdgePicker';
 import { DirectDragController } from './DirectDragController';
+import { GizmoDragController } from './GizmoDragController';
 
 type SketchGuideOptions = { edgeStart?: Point2; excludeEntityId?: string; excludePointIndex?: number; disabled?: boolean };
 
@@ -62,8 +62,8 @@ export class InteractionController {
     private spaceSketchPointerBlocked = false;
     private lastPointer: { clientX: number; clientY: number } | null = null;
     private readonly directEditor: DirectDragController;
+    private readonly gizmo: GizmoDragController;
     private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
-    private gizmoDrag: { x: number; y: number; centerX: number; centerY: number; moved: boolean; spherical: THREE.Spherical } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private marquee: { startX: number; startY: number; x: number; y: number; additive: boolean; moved: boolean } | null = null;
     private readonly selectionRectangle: HTMLDivElement;
@@ -77,7 +77,6 @@ export class InteractionController {
     private get renderer() { return this.engine.renderer; }
     private get camera() { return this.cameraController.camera; }
     private get controls() { return this.cameraController.controls; }
-    private get viewHelper() { return this.cameraController.viewHelper; }
     private get model() { return this.sceneSynchronizer.model; }
     private get planes() { return this.sceneSynchronizer.planes; }
     private get document() { return this.sceneSynchronizer.document; }
@@ -123,6 +122,11 @@ export class InteractionController {
                 this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
             },
         });
+        this.gizmo = new GizmoDragController(this.cameraController, {
+            capture: (event) => this.capturePointer(event),
+            release: (event) => this.releasePointer(event),
+            rotatePlane: (event, drag) => this.rotatePlaneView(event, drag),
+        });
         this.getTool = options.getTool;
         this.isSketchMode = options.isSketchMode;
 
@@ -163,11 +167,18 @@ export class InteractionController {
         this.controls.enabled = true;
     }
 
-    private onWindowBlur() { this.cancelDirectGesture(); }
+    private onWindowBlur() {
+        this.cancelDirectGesture();
+        this.gizmo.cancel();
+    }
 
     private onPointerCancel(event: PointerEvent) {
         this.releasePointer(event);
-        if (this.directEditor.active) {
+        if (this.gizmo.active) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            this.gizmo.cancel(event);
+        } else if (this.directEditor.active) {
             event.preventDefault();
             event.stopImmediatePropagation();
             this.cancelDirectGesture();
@@ -339,11 +350,6 @@ export class InteractionController {
         return true;
     }
 
-    private isGizmoEvent(event: PointerEvent) {
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        return event.clientX >= rect.right - 128 && event.clientY >= rect.bottom - 170 && event.clientY <= rect.bottom - 12;
-    }
-
     // Sketch coordinates are local to the chosen plane; world hit points never become sketch source data.
     sketchPoint(event: PointerEvent, precise = false): Point2 | null {
         if (!this.activePlane) return null;
@@ -436,15 +442,9 @@ export class InteractionController {
             return;
         }
         if (event.button !== 0) return;
-        if (this.isGizmoEvent(event)) {
+        if (this.gizmo.contains(event)) {
             this.clearSketchReferences();
-            if (!this.sketchMode) this.camera.up.set(0, 1, 0);
-            event.preventDefault(); event.stopImmediatePropagation();
-            const rect = this.renderer.domElement.getBoundingClientRect();
-            const spherical = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
-            this.gizmoDrag = { x: event.clientX, y: event.clientY, centerX: rect.right - 64, centerY: rect.bottom - 76, moved: false, spherical };
-            this.capturePointer(event);
-            this.controls.enabled = false;
+            this.gizmo.start(event, this.sketchMode);
             return;
         }
         if (!this.sketchMode && this.tool === 'select') {
@@ -559,8 +559,6 @@ export class InteractionController {
         }
     }
 
-    private snapPlaneCamera(force = false) { this.cameraController.snapPlaneCamera(this.activePlane, force); }
-
     private planeScreenCenter() {
         const rect = this.renderer.domElement.getBoundingClientRect();
         const center = this.sketchRenderer.world([0, 0]).project(this.camera);
@@ -592,26 +590,8 @@ export class InteractionController {
             this.viewRotateDrag.y = event.clientY;
             return;
         }
-        if (this.gizmoDrag) {
-            event.preventDefault(); event.stopImmediatePropagation();
-            const dx = event.clientX - this.gizmoDrag.x;
-            const dy = event.clientY - this.gizmoDrag.y;
-            if (Math.abs(dx) + Math.abs(dy) > 2) this.gizmoDrag.moved = true;
-            if (this.sketchMode) {
-                this.rotatePlaneView(event, this.gizmoDrag);
-                this.gizmoDrag.x = event.clientX;
-                this.gizmoDrag.y = event.clientY;
-                return;
-            }
-            // Continue from the unsnapped orbit; snapping only changes the rendered camera, not the drag state.
-            const spherical = advanceGizmoOrbit(this.gizmoDrag.spherical, dx, dy);
-            this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(spherical));
-            this.camera.lookAt(this.controls.target);
-            this.viewHelper.center.copy(this.controls.target);
-            this.viewHelper.snap();
-            this.gizmoDrag.x = event.clientX;
-            this.gizmoDrag.y = event.clientY;
-            this.gizmoDrag.moved = true;
+        if (this.gizmo.active) {
+            this.gizmo.move(event, this.sketchMode);
             return;
         }
         if (this.sketchMode && performance.now() < this.sketchSelectionGuardUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
@@ -762,11 +742,8 @@ export class InteractionController {
             this.controls.update();
             return;
         }
-        if (this.gizmoDrag) {
-            event.preventDefault(); event.stopImmediatePropagation();
-            if (!this.gizmoDrag.moved) this.sketchMode ? this.snapPlaneCamera(true) : this.viewHelper.handleClick(event);
-            this.gizmoDrag = null;
-            this.controls.enabled = true;
+        if (this.gizmo.active) {
+            this.gizmo.finish(event, this.sketchMode, this.activePlane);
             return;
         }
         if (this.sketchMode && event.button === 0 && (this.sketchSelectionGuardPointerUp || performance.now() < this.sketchSelectionGuardUntil)) {
@@ -966,6 +943,16 @@ export class InteractionController {
         this.transform.detach();
         this.clearHoverFace();
         this.refreshFaceFeedback();
+    }
+
+    offsetGeometryAnchor(offset: Vec3) {
+        if (!this.geometryAnchor) return;
+        const delta = new THREE.Vector3(...offset);
+        this.geometryAnchor = {
+            ...this.geometryAnchor,
+            point: new THREE.Vector3(...this.geometryAnchor.point).add(delta).toArray(),
+            vertices: this.geometryAnchor.vertices.map((point) => new THREE.Vector3(...point).add(delta).toArray()),
+        };
     }
 
     resetSketchGesture() {

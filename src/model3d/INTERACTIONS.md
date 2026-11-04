@@ -51,6 +51,8 @@
 - 右键拖动 Orbit，中键拖动 Pan，Shift + 右键拖动也可 Pan；右键单击打开上下文菜单，普通滚轮缩放。
 - 悬停实体平面时按空格，在该面建立草图并切换到正交正视图。
 - 坐标球点击轴端点切换对应方向视图，拖动坐标球旋转相机。
+- 点击只对实际命中的轴球生效，三维切换到对应 ±X/±Y/±Z，草图按平面基切换到对应 ±U/±V/±N；相机使用既有过渡，保持当前目标点与轨道距离。点击空白不再吸附到最近轴。
+- 坐标球手势使用 `INTERACTION.clickTolerancePx` 区分点击与拖动，并统一处理 pointer capture 释放、`pointercancel`、`event.buttons === 0` 和窗口失焦，避免点击后相机粘住指针。
 - 拖动坐标球接近主轴时，以点积阈值 `0.975` 磁吸到该轴，保持当前轨道半径。拖动状态始终保存未磁吸的轨道角，渲染吸附不得覆盖它，因此吸附后仍能继续拖离主轴；`gizmoOrbit.spec.ts` 覆盖该回归。
 - 正负轴均显示对应 X/Y/Z 中等饱和配色和轴线，负轴端点仅降低不透明度；三维与草图坐标球、测量轴和移动/旋转/缩放 TransformControls 共用 `AXIS_COLORS`，控件每帧使用的缓存色同步更新。
 - 草图平面坐标球拖动期间不做逐帧主轴吸附，右键旋转直接更新相机与 OrbitControls，避免主轴附近往返跳动。
@@ -98,8 +100,12 @@
 - `Sketch`：平面草图上下文，显示 Line、Rectangle、Circle、Arc，另一侧保留视图和约束扩展位置。
 - 普通草图不显示顶部参数操作条，厚度、平面和点编辑不占用画布顶部；对称工具的步骤条除外。
 - `SelectionAdaptive`：Items 或画布选择变化后的推荐状态。
-- `ToolActive`：Extrude、Face Extrude 或 Boolean 正在预览；显示参数、Done、Cancel。
+- `ToolActive`：Extrude 或 Boolean 正在预览时显示顶部流程操作条；Face Extrude 只显示右侧自适应工具和箭头输入。
 - `HistoryEdit`：从 History 重新打开已有 Extrude/Boolean，引用和参数在提交后写回同一实体。
+
+顶部操作条只承载需要完成/取消的流程：默认、单选、多选、Move/Rotate/Scale 与 Face Extrude 均不显示；普通实体名称、尺寸、颜色及变换向量在右侧自适应面板编辑。Extrude 显示方向、侧面、拔模、结果/目标和 Done/Cancel，Boolean 显示运算、Target/Tool 交换、保留项和 Done/Cancel；草图仅 Symmetry 多步骤工具显示独立步骤条。所有操作条左对齐并允许字段换行。
+
+3D 与草图均在右侧显示操作提示。3D 提示随测量、Extrude/Boolean、当前变换工具以及 Body/Face/Edge/Profile/Plane/多选状态切换，主要列出单击、双击、拖拽和快捷键；提示在右侧工具/约束面板下方的剩余空间中居中，不与操作面板重叠。
 
 实体面和实体边单击只选择并高亮，拖动面上的粗箭头才进入 Face Extrude；Body 通过实体树或双击选择后可 Move/Rotate。闭合 Profile 单击只选择，必须拖动视图中的双向粗箭头才进入 Extrude。双击画布中的面选择完整 Body。
 
@@ -122,7 +128,7 @@
 - 拖动 Profile/箭头方向或输入距离都会更新同一 `depth` 参数。
 - 支持正向/反向、One-Sided/Symmetric、Draft Angle。
 - Result 支持 New Body、Union、Subtract、Intersect；默认始终为 New Body，只有用户显式选择结果和目标后才执行布尔。
-- 点击画布尺寸标签聚焦距离输入；空白提交和 Done 等价，Esc/Cancel 恢复执行前文档。
+- 箭头侧面的长度输入与拖动共用同一 `depth`；空白提交和 Done 等价，Esc/Cancel 恢复执行前文档。
 - 导出只包含 Body，不把辅助 Profile 面写入 STL/GLB。
 
 ## Face Extrude
@@ -131,7 +137,8 @@
 - 正位移执行 Union、负位移执行 Subtract；切穿可产生空实体，不从背面反向生成实体，也不因接触其他 Body 自动合并。
 - 箭头锚点固定手势开始时的 S0/F0/n0 和 revision。preview 只计算绝对距离，pointerup 重新求最终值；cancel、Esc 和失焦恢复 S0。
 - 工具体直接复用选中面的真实三角形与边界环，支持凹面、孔洞和多组件结果；禁止凸包、smooth vertex normal 或仅移动顶点冒充。
-- 粗箭头按相机距离和投影参数逐帧换算为世界缩放，屏幕长度固定为 `INTERACTION.arrowScreenLengthPx`；长度标注位于箭头尖端之外。
+- 粗箭头按相机距离和投影参数逐帧换算为世界缩放，屏幕长度固定为 `INTERACTION.arrowScreenLengthPx`；可编辑长度输入位于箭头侧面，支持正负值、Enter、失焦、方向键、滚轮和单位切换。输入值是本次手势初始状态与当前状态的差值，正值沿箭头方向。
+- pointerup 烘焙后保留更新后的面锚点和粗箭头，下一次拖动以新提交状态为零点；输入提交同样更新面锚点，Enter 后的 blur 不得重复应用同一差值。
 - 单击选择面，双击选择完整实体。选中面使用 active 色并做透明度呼吸；选中实体使用天蓝色并做亮度呼吸。
 
 ## Boolean 执行态与 History

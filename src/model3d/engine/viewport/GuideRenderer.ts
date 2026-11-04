@@ -3,7 +3,7 @@ import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
 import { SKETCH_COLORS } from '../../config/colors';
 import { INTERACTION } from '../../config/const';
-import type { ModelDocument, Vec3 } from '../../types';
+import type { LengthUnit, ModelDocument, Vec3 } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
 import type { OverlayController } from './OverlayController';
@@ -21,7 +21,7 @@ interface GuideRendererOptions {
     getHoverFaceAnchor: () => GeometryAnchor | null;
     getSectionPlane: () => THREE.Plane | null;
     isSketchMode: () => boolean;
-    formatLength: (value: number) => string;
+    getLengthUnit: () => LengthUnit;
 }
 
 /** Direct-edit/extrude arrows and the face or edge feedback associated with them. */
@@ -77,8 +77,9 @@ export class GuideRenderer {
             const length = 18;
             this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
             this.options.overlay.set({
-                id: 'guide-label:direct', kind: 'label', position: origin.clone().add(normal.clone().multiplyScalar(length + 10)).toArray(),
-                text: this.options.formatLength(value), className: 'extrude-dimension', action: 'extrude-dimension',
+                id: 'guide-label:direct', kind: 'dimension', target: { kind: 'directFace' },
+                position: origin.clone().add(normal.clone().multiplyScalar(length * 0.65)).toArray(), screenOffset: [76, 0],
+                value, unit: this.options.getLengthUnit(), signed: true,
             });
             return;
         }
@@ -118,11 +119,9 @@ export class GuideRenderer {
         this.group.add(this.createThickArrow(arrowOrigin, normal.clone().multiplyScalar(direction), 18, { directArrow: { id: body.id, normal: [0, 1, 0] as Vec3 } }));
         this.options.overlay.set({
             id: 'guide-label:extrude',
-            kind: 'label',
-            position: arrowOrigin.clone().add(normal.multiplyScalar(direction * (18 + 10))).toArray(),
-            text: this.options.formatLength(length),
-            className: 'extrude-dimension',
-            action: 'extrude-dimension',
+            kind: 'dimension', target: { kind: 'extrudeDepth' },
+            position: arrowOrigin.clone().add(normal.multiplyScalar(direction * 12)).toArray(), screenOffset: [76, 0],
+            value: length, unit: this.options.getLengthUnit(),
         });
     }
 

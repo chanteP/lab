@@ -48,7 +48,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     let directHistoryPushed = false;
     let directRequestedDistance: number | null = null;
     let directErrorShown = false;
-    const directDisplayDistance = ref<number | null>(null);
     let extrudeGestureMoved = false;
 
     const canBoolean = computed(() => selectedEntities.value.length === 2);
@@ -303,6 +302,8 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         onDirectEdit(item.id, anchor.localNormal, 0, 'start', anchor);
         onDirectEdit(item.id, anchor.localNormal, value, 'move');
         onDirectEdit(item.id, anchor.localNormal, value, 'end');
+        const offset = new THREE.Vector3(...anchor.normal).normalize().multiplyScalar(value);
+        viewport()?.offsetGeometryAnchor(offset.toArray());
     }
 
     function onDirectEdit(id: string, normal: Vec3, delta: number, phase: EditPhase, anchor?: GeometryAnchor) {
@@ -333,7 +334,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             directTransaction.close();
             directTransaction = null;
             directRequestedDistance = null;
-            directDisplayDistance.value = null;
             viewport()?.clearGeometrySelection();
             return;
         }
@@ -343,7 +343,6 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         }
         const distance = (directTransaction.baseEntity.faceOffset?.distance || 0) + delta;
         directRequestedDistance = distance;
-        directDisplayDistance.value = distance;
         const previousOffset = item.faceOffset;
         if (!directHistoryPushed) {
             pushHistory();
@@ -392,15 +391,14 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         transaction.close();
         directTransaction = null;
         directRequestedDistance = null;
-        directDisplayDistance.value = null;
         directHistoryPushed = false;
-        viewport()?.clearGeometrySelection();
+        // Keep the committed face anchor so its arrow and signed input remain available for another edit.
     }
 
 
 
     return {
-        operation, historyEditId, directDisplayDistance, canBoolean, extrudeBody, booleanDraft, operationTargets,
+        operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
         updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
         updateFaceOffsetInput, onDirectEdit, finishDirectEdit, cancelDirectEdit,

@@ -150,6 +150,19 @@ export class OrientationGizmo extends Object3D {
 
 			if ( this.animating === true ) return false;
 
+			const object = this.getAxisAt( event );
+			if ( ! object ) return false;
+
+			prepareAnimationData( object, this.center );
+
+			this.animating = true;
+
+			return true;
+
+		};
+
+		this.getAxisAt = function ( event ) {
+
 			const rect = domElement.getBoundingClientRect();
 			const offsetX = rect.left + ( domElement.offsetWidth - dim );
 			const offsetY = rect.top + ( domElement.offsetHeight - dim - marginBottom );
@@ -160,22 +173,7 @@ export class OrientationGizmo extends Object3D {
 
 			const intersects = raycaster.intersectObjects( interactiveObjects );
 
-			if ( intersects.length > 0 ) {
-
-				const intersection = intersects[ 0 ];
-				const object = intersection.object;
-
-				prepareAnimationData( object, this.center );
-
-				this.animating = true;
-
-				return true;
-
-			} else {
-
-				return false;
-
-			}
+			return intersects.length > 0 ? intersects[ 0 ].object : null;
 
 		};
 

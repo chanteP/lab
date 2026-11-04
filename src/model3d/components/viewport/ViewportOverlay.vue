@@ -18,8 +18,14 @@ function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
     if (timer) clearTimeout(timer);
     wheelTimers.delete(item.id);
     const next = Number(input.value);
-    if (Number.isFinite(next) && next > 0) {
-        window.setTimeout(() => props.callbacks.onSketchDimension(item.target, next), 0);
+    if (Number.isFinite(next) && (item.signed || next > 0)) {
+        window.setTimeout(() => {
+            if (item.target.kind === 'directFace') props.callbacks.onDirectDistance(next);
+            else if (item.target.kind === 'extrudeDepth') props.callbacks.onExtrudeDistance(next);
+            else props.callbacks.onSketchDimension(item.target, next);
+        }, 0);
+        // A direct-face value is relative to the current gesture; reset it so Enter followed by blur cannot apply it twice.
+        if (item.target.kind === 'directFace') input.value = '0.00';
     } else input.value = item.value.toFixed(2);
 }
 
@@ -66,7 +72,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                     type="number"
                     step="1"
                     :value="item.value.toFixed(2)"
-                    :aria-label="item.target.kind === 'angle' ? '角度' : '尺寸'"
+                    :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' ? '推拉距离' : item.target.kind === 'extrudeDepth' ? '拉伸距离' : '尺寸'"
                     @blur="commitDimension(item, $event.currentTarget as HTMLInputElement)"
                     @wheel.prevent.stop="onDimensionWheel(item, $event)"
                     @keydown="onDimensionKey(item, $event)"
@@ -104,7 +110,6 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                 class="viewport-overlay-item measure-value"
                 :class="item.className"
                 :style="positionStyle(item)"
-                @click="item.action === 'extrude-dimension' && callbacks.onExtrudeDimension()"
             >{{ item.text }}</div>
         </template>
     </div>

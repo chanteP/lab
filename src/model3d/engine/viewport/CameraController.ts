@@ -6,6 +6,7 @@ import { GIZMO_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 import { INTERACTION } from '../../config/const';
 import type { LengthUnit, SketchPlane } from '../../types';
 import type { ViewportEngine } from './ViewportEngine';
+import { gizmoAxisDirection } from './gizmoOrbit';
 
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -57,6 +58,8 @@ export class CameraController {
         this.planeGizmo.setLabels('U', 'V', 'N');
         this.planeGizmo.setLabelStyle('bold 22px Arial', GIZMO_COLORS.label, 15);
     }
+
+    get renderer() { return this.engine.renderer; }
 
     resize() {
         const { width, height } = this.engine.renderer.domElement.parentElement!.getBoundingClientRect();
@@ -165,29 +168,41 @@ export class CameraController {
         this.controls.enabled = false;
     }
 
-    snapPlaneCamera(plane: SketchPlane | null, force = false) {
-        if (!plane) return;
-        const u = new THREE.Vector3(...plane.u).normalize();
-        const v = new THREE.Vector3(...plane.v).normalize();
-        const normal = new THREE.Vector3(...plane.normal).normalize();
-        const target = new THREE.Vector3(...plane.origin);
-        const offset = this.camera.position.clone().sub(target);
-        const radius = offset.length();
-        const direction = offset.normalize();
-        const axes = [u, u.clone().negate(), v, v.clone().negate(), normal, normal.clone().negate()];
-        let best = normal;
-        let bestDot = -1;
-        axes.forEach((axis) => { const dot = direction.dot(axis); if (dot > bestDot) { bestDot = dot; best = axis; } });
-        if (!force && bestDot < 0.975) return;
-        const currentUp = this.camera.up.clone();
-        const up = [v, v.clone().negate(), u, u.clone().negate(), normal, normal.clone().negate()]
-            .filter((axis) => Math.abs(axis.dot(best)) < 0.9)
-            .sort((a, b) => b.dot(currentUp) - a.dot(currentUp))[0] || v;
-        this.camera.up.copy(up);
-        this.camera.position.copy(target).add(best.multiplyScalar(radius));
-        this.camera.lookAt(target);
-        this.controls.target.copy(target);
-        this.controls.update();
+    snapGizmoCamera(event: PointerEvent, sketchMode: boolean, plane: SketchPlane | null) {
+        const helper = sketchMode ? this.planeGizmo : this.viewHelper;
+        const axis = helper.getAxisAt(event);
+        if (!axis) return false;
+
+        const direction = gizmoAxisDirection(axis.userData.type, helper.orientation);
+        const target = this.controls.target.clone();
+        const distance = Math.max(5, this.camera.position.distanceTo(target));
+        const position = target.clone().add(direction.clone().multiplyScalar(distance));
+        let up = new THREE.Vector3(0, 1, 0);
+
+        if (sketchMode) {
+            const u = plane?.u ? new THREE.Vector3(...plane.u).normalize() : new THREE.Vector3(1, 0, 0);
+            const v = plane?.v ? new THREE.Vector3(...plane.v).normalize() : new THREE.Vector3(0, 1, 0);
+            up = [v, v.clone().negate(), u, u.clone().negate()]
+                .filter((candidate) => Math.abs(candidate.dot(direction)) < 0.9)
+                .sort((a, b) => b.dot(this.camera.up) - a.dot(this.camera.up))[0] || v;
+        } else if (Math.abs(direction.y) > 0.9) {
+            up.set(0, 0, direction.y > 0 ? -1 : 1);
+        }
+
+        const orientationCamera = new THREE.PerspectiveCamera();
+        orientationCamera.position.copy(position);
+        orientationCamera.up.copy(up);
+        orientationCamera.lookAt(target);
+        this.fitAnimation = null;
+        this.cameraTransition = {
+            started: performance.now(), fromPosition: this.camera.position.clone(), toPosition: position,
+            fromTarget: this.controls.target.clone(), toTarget: target,
+            fromQuaternion: this.camera.quaternion.clone(), toQuaternion: orientationCamera.quaternion.clone(),
+            fromUp: this.camera.up.clone(), toUp: up,
+            fromColor: this.clearColor.clone(), toColor: this.clearColor.clone(), fromAlpha: this.clearAlpha, toAlpha: this.clearAlpha,
+        };
+        this.controls.enabled = false;
+        return true;
     }
 
     rotatePlaneView(event: PointerEvent, drag: { x: number; y: number; centerX: number; centerY: number }, plane: SketchPlane | null) {
