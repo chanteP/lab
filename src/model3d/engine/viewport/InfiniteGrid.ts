@@ -47,10 +47,10 @@ export class InfiniteGrid {
 
                 void main() {
                     float minor = gridLine(vGridPosition, uGridSize, 1.0);
-                    float major = gridLine(vGridPosition, uGridSize * 10.0, 1.65);
-                    float radiusFade = 1.0 - smoothstep(uFadeRadius * 0.7, uFadeRadius, distance(vWorldPosition, uFadeCenter));
+                    float major = gridLine(vGridPosition, uGridSize * 10.0, 1.25);
+                    float radiusFade = 1.0 - smoothstep(uFadeRadius * 1.1, uFadeRadius * 1.5, distance(vWorldPosition, uFadeCenter));
                     // Major lines remain subtle so axis colors and model geometry stay visually dominant.
-                    float alpha = max(minor * 0.42, major * 0.45) * radiusFade;
+                    float alpha = max(minor * 0.42, major * 0.32) * radiusFade;
                     if (alpha < 0.003) discard;
                     gl_FragColor = vec4(mix(uMinorColor, uMajorColor, major), alpha);
                 }
@@ -72,6 +72,16 @@ export class InfiniteGrid {
     }
 
     setVisible(visible: boolean) { this.mesh.visible = visible; }
+
+    setPlaneOrientation(normal: THREE.Vector3) {
+        const xz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
+        this.mesh.quaternion.copy(orientation).multiply(xz);
+    }
+
+    resetOrientation() {
+        this.mesh.rotation.set(-Math.PI / 2, 0, 0);
+    }
 
     setFade(center: THREE.Vector3, radius: number) {
         this.material.uniforms.uFadeCenter.value.copy(center);

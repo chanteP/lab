@@ -119,6 +119,7 @@ export class Viewport {
             isSketchMode: () => this.sketchMode,
             getTool: () => this.tool,
             onStats: callbacks.onStats,
+            onContentRadius: (radius) => this.cameraController.setContentRadius(radius),
             onClearAltBorder: () => this.sketchRenderer.clearAltBorder(),
             onClearSketchReferences: () => this.sketchRenderer.clearReferences(),
             onUpdateExtrudeGuide: (document) => this.guideRenderer.update(document),
@@ -289,13 +290,13 @@ export class Viewport {
             if (this.sceneSynchronizer.activePlane) {
                 const plane = this.sceneSynchronizer.activePlane;
                 this.engine.grid.mesh.position.copy(new THREE.Vector3(...plane.origin));
-                this.engine.grid.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...plane.normal).normalize());
+                this.engine.grid.setPlaneOrientation(new THREE.Vector3(...plane.normal));
             }
         } else {
             this.cameraController.camera.up.set(0, 1, 0);
             this.sceneSynchronizer.planes.visible = true;
             this.engine.grid.mesh.position.set(0, -0.02, 0);
-            this.engine.grid.mesh.quaternion.identity();
+            this.engine.grid.resetOrientation();
         }
         this.interaction.updateOrbitRotation();
         this.cameraController.controls.update();

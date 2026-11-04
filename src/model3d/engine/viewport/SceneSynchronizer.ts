@@ -36,6 +36,7 @@ interface SceneSynchronizerOptions {
     isSketchMode: () => boolean;
     getTool: () => ViewTool;
     onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
+    onContentRadius: (radius: number) => void;
     onClearAltBorder: () => void;
     onClearSketchReferences: () => void;
     onUpdateExtrudeGuide: (document: ModelDocument) => void;
@@ -247,6 +248,12 @@ export class SceneSynchronizer {
             const source = this.model.children.find((child) => child.userData.entityId === outline.userData.sourceEntityId);
             outline.visible = !!source?.visible;
         });
+        this.options.onContentRadius(this.getContentRadius());
+    }
+
+    getContentRadius() {
+        const visible = this.model.children.filter((child) => child.visible);
+        return Math.max(5, measureSectionRadius(visible) || 20);
     }
 
     setIsolate(ids: string[] | null) {

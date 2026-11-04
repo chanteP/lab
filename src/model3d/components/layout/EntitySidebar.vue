@@ -82,6 +82,17 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
                 <NInput :value="projectName" size="small" :bordered="false" aria-label="项目名称" @update:value="emit('name', $event)" />
                 <span v-if="saving" class="project-saving" title="保存中" aria-live="polite"><i></i></span>
             </div>
+
+        </section>
+
+        <section class="objects-section">
+            <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span v-if="!specialMode" class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
+            <div class="object-list">
+                <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
+                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @activate="(id) => emit('activate', id)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
+            </div>
+        </section>
+        <div class="sidebar-export-row">
             <NPopover trigger="click" placement="bottom-start" :show-arrow="false" content-class="export-popover">
                 <template #trigger><NButton class="sidebar-export" size="small" type="primary" block :loading="exporting"><template #icon><NIcon><DownloadOutline /></NIcon></template>导出<NIcon><ChevronDownOutline /></NIcon></NButton></template>
                 <div class="export-panel">
@@ -95,15 +106,8 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
                     <button class="text-action" @click="emit('export', 'project')"><NIcon><DocumentOutline /></NIcon>项目 JSON</button>
                 </div>
             </NPopover>
-        </section>
+        </div>
 
-        <section class="objects-section">
-            <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span v-if="!specialMode" class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
-            <div class="object-list">
-                <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
-                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @activate="(id) => emit('activate', id)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
-            </div>
-        </section>
         <section class="project-section">
             <div class="section-label">项目</div>
             <NSelect :value="projectId" :options="options" size="small" aria-label="当前项目" @update:value="emit('open', $event)" />
@@ -134,6 +138,8 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
 .sidebar-project :deep(.n-input) { min-width: 0; font-size: 12px; font-weight: 600; }
 .sidebar-local { display: grid; place-items: center; width: 16px; flex: 0 0 16px; }
 .sidebar-local i { width: 5px; height: 5px; background: var(--model3d-ui-54a184); border-radius: 50%; }
+.sidebar-export-row { padding: 0 10px 10px; border-top: 1px solid var(--model3d-ui-e7ebe8); }
+.sidebar-export-row .sidebar-export { width: 100%; }
 .sidebar-export { background: var(--model3d-ui-147d70); border-radius: 5px; }
 .project-saving { width: 16px; height: 16px; display: inline-grid; place-items: center; }
 .project-saving i { width: 12px; height: 12px; border: 2px solid var(--model3d-ui-b8c6bf); border-top-color: var(--model3d-ui-147d70); border-radius: 50%; animation: spin .7s linear infinite; }

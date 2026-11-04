@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'render' | 'clay' | 'wireframe' | 'xray' }>();
+defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'section' | 'render' | 'clay' | 'wireframe' | 'xray' }>();
 </script>
 
 <template>
@@ -15,6 +15,9 @@ defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'render' | 'cl
         </template>
         <ellipse v-else-if="name === 'ellipse'" cx="12" cy="12" rx="9" ry="5.5" transform="rotate(-28 12 12)" />
         <path v-else-if="name === 'freehand'" d="M3 17c3.5-11 6-11 7.5-4.5S14 20 21 5" />
+        <template v-else-if="name === 'section'">
+            <path d="M8 4H5v16h3M16 4h3v16h-3M12 4v16" />
+        </template>
         <template v-else-if="name === 'render'">
             <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" fill="currentColor" fill-opacity=".16" />
             <path d="m4 7.5 8 4.5 8-4.5M12 12v9M8 5.25l8 4.5" />

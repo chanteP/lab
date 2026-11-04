@@ -11,7 +11,7 @@ export function storedLengthUnit(): LengthUnit {
 export function useUnits(document: Ref<ModelDocument>, onChange: () => void) {
     const lengthUnit = ref<LengthUnit>(storedLengthUnit());
     const scaleBar = ref({ width: 150, value: 40, segments: 4, gridSize: 10 });
-    const scaleBarLabel = computed(() => `${scaleBar.value.segments}x${Number(scaleBar.value.gridSize.toFixed(4))}${lengthUnit.value}`);
+    const scaleBarLabel = computed(() => `${scaleBar.value.segments} x ${Number(scaleBar.value.gridSize.toFixed(4))}${lengthUnit.value}`);
 
     function setLengthUnit(unit: LengthUnit) {
         lengthUnit.value = unit;

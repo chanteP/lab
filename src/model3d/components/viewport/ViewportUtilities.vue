@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue';
 import { onClickOutside, useEventListener } from '@vueuse/core';
 import { NCheckbox, NIcon, NTooltip } from 'naive-ui';
-import { CameraOutline, CloseOutline, CutOutline, GridOutline, ScanOutline } from '@vicons/ionicons5';
+import { CameraOutline, CloseOutline, GridOutline, ScanOutline } from '@vicons/ionicons5';
 import SvgIcon from '../ui/SvgIcon.vue';
 import FloatingPanel from '../ui/FloatingPanel.vue';
 import { DISPLAY_MODES } from '../../config/configs';
@@ -66,7 +66,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </template>
         <div class="measure-actions">
             <NTooltip><template #trigger><button aria-label="测量" :class="{ active: measureMode }" @click.stop="emit('measure')"><SvgIcon name="ruler" /></button></template>测量</NTooltip>
-            <NTooltip><template #trigger><button aria-label="剖视图" :aria-pressed="sectionActive && !sketchMode" :disabled="sketchMode" :class="{ active: sectionActive && !sketchMode }" @click.stop="emit('section')"><NIcon><CutOutline /></NIcon></button></template>{{ sketchMode ? '草图模式下不可用' : '剖视图' }}</NTooltip>
+            <NTooltip><template #trigger><button aria-label="剖视图" :aria-pressed="sectionActive && !sketchMode" :disabled="sketchMode" :class="{ active: sectionActive && !sketchMode }" @click.stop="emit('section')"><SvgIcon name="section" /></button></template>剖视图</NTooltip>
             <div class="settings-control">
                 <NTooltip><template #trigger><button ref="settingsButton" aria-label="显示与相机设置" :aria-expanded="settingsOpen" :class="{ active: settingsOpen }" @click.stop="settingsOpen = !settingsOpen"><NIcon><component :is="projectionMode === 'perspective' ? CameraOutline : GridOutline" /></NIcon></button></template>显示与相机设置</NTooltip>
                 <FloatingPanel v-if="settingsOpen" ref="settingsPanel" class="display-settings" arrow="bottom" label="显示与相机设置" @click.stop>

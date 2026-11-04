@@ -116,11 +116,11 @@ button { color: inherit; }
 .viewport.is-measuring { cursor: crosshair; }
 
 /* Bottom-right navigation helpers share one baseline; the WebGL gizmo is raised by 42px. */
-.viewport-utilities { position: absolute; z-index: 7; right: 154px; bottom: 46px; display: flex; align-items: flex-end; gap: 13px; }
+.viewport-utilities { position: absolute; z-index: 7; right: 132px; bottom: 46px; display: flex; align-items: flex-end; gap: 13px; }
 .measure-actions { display: flex; gap: 4px; padding: 3px; background: var(--model3d-ui-surface92); border: 1px solid var(--model3d-ui-d5dfd9); border-radius: 6px; }
 .measure-actions button { width: 28px; height: 27px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--model3d-ui-65766c); font-size: 16px; cursor: pointer; }
 .measure-actions button.active { color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); }
-.scale-indicator { display: flex; align-items: center; gap: 7px; height: 34px; color: var(--model3d-ui-586b60); font-size: 9px; white-space: nowrap; }
+.scale-indicator { display: flex; align-items: center; gap: 7px; height: 34px; padding-top: 10px; color: var(--model3d-ui-586b60); font-size: 9px; white-space: nowrap; }
 .scale-rule { position: relative; height: 8px; display: flex; border-bottom: 1px solid var(--model3d-ui-60746a); transition: width .08s linear; }
 .scale-rule::after { content: ''; position: absolute; right: 0; bottom: -1px; width: 1px; height: 5px; background: var(--model3d-ui-60746a); }
 .scale-rule i { flex: 1; height: 5px; border-left: 1px solid var(--model3d-ui-60746a); }
