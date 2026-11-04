@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { buildScene } from '../geometry';
+import { buildEntityMesh, buildScene } from '../geometry';
 import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 import type { DisplayMode, ModelDocument, SelectionKind, SketchPlane } from '../../types';
@@ -71,6 +71,31 @@ export class SceneSynchronizer {
 
     constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
+    private addEdgeTreatmentProxy(entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
+        const base = { ...entity, edgeTreatments: undefined };
+        const proxy = buildEntityMesh(base, document);
+        proxy.userData.selectionProxy = true;
+        const topology = reconcileTopology(previous, buildMeshTopology(proxy.geometry, entity.id, base, document), entity.faceEdit);
+        proxy.userData.topology = topology;
+        const display = createTopologyEdgeGeometry(topology);
+        const edges = new THREE.LineSegments(display.geometry, new THREE.LineBasicMaterial());
+        edges.userData.displayEdge = true;
+        edges.userData.segmentEdgeIds = display.segmentEdgeIds;
+        proxy.add(edges);
+        proxy.traverse((object) => {
+            object.castShadow = object.receiveShadow = false;
+            const material = (object as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+            if (!material) return;
+            (Array.isArray(material) ? material : [material]).forEach((item) => {
+                item.colorWrite = false;
+                item.depthWrite = false;
+                item.transparent = true;
+                item.opacity = 0;
+            });
+        });
+        this.model.add(proxy);
+    }
+
     sync(document: ModelDocument) {
         this.document = document;
         this.booleanPreview.reset();
@@ -85,13 +110,17 @@ export class SceneSynchronizer {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && !!entity && !['sketch', 'image'].includes(entity.kind)) {
-                const topology = reconcileTopology(previousTopology.get(entity.id), buildMeshTopology(child.geometry, entity.id, entity, document), entity.faceEdit);
+                const treated = !!entity.edgeTreatments?.some((treatment) => treatment.size > 0);
+                child.userData.edgeTreated = treated;
+                const nextTopology = buildMeshTopology(child.geometry, entity.id, entity, document);
+                const topology = treated ? nextTopology : reconcileTopology(previousTopology.get(entity.id), nextTopology, entity.faceEdit);
                 child.userData.topology = topology;
                 const display = createTopologyEdgeGeometry(topology);
                 const edges = new THREE.LineSegments(display.geometry, new THREE.LineBasicMaterial({ color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.48 }));
                 edges.userData.displayEdge = true;
                 edges.userData.segmentEdgeIds = display.segmentEdgeIds;
                 child.add(edges);
+                if (treated) this.addEdgeTreatmentProxy(entity, document, previousTopology.get(entity.id));
             } else if (entity && ['sketch', 'image'].includes(entity.kind) && this.options.isSketchMode()) {
                 child.traverse((object) => { if (object.userData.compoundOutline) object.visible = false; });
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };
@@ -122,12 +151,12 @@ export class SceneSynchronizer {
         let vertices = 0, triangles = 0;
         this.model.children.forEach((object) => {
             const entity = document.entities.find((item) => item.id === object.userData.entityId);
-            if (!entity || ['sketch', 'image'].includes(entity.kind)) return;
+            if (!entity || ['sketch', 'image'].includes(entity.kind) || object.userData.selectionProxy) return;
             const geometry = (object as THREE.Mesh).geometry;
             vertices += geometry.attributes.position?.count || 0;
             triangles += (geometry.index?.count || geometry.attributes.position?.count || 0) / 3;
         });
-        const objects = this.model.children.filter((object) => !['sketch', 'image'].includes(document.entities.find((item) => item.id === object.userData.entityId)?.kind || '')).length;
+        const objects = this.model.children.filter((object) => !object.userData.selectionProxy && !['sketch', 'image'].includes(document.entities.find((item) => item.id === object.userData.entityId)?.kind || '')).length;
         this.options.onStats({ vertices, triangles: Math.round(triangles), objects });
 
         clearGroup(this.planes);
@@ -195,7 +224,7 @@ export class SceneSynchronizer {
     }
 
     getSectionRadius() {
-        const objects = this.model.children.filter((child) => child.visible && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || ''));
+        const objects = this.model.children.filter((child) => child.visible && !child.userData.selectionProxy && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || ''));
         return measureSectionRadius(objects);
     }
 
@@ -217,7 +246,7 @@ export class SceneSynchronizer {
         clearGroup(this.sectionOutlines);
         if (!this.sectionPlane || !this.sectionInversePlane) return;
         this.model.children.forEach((child) => {
-            if (!(child instanceof THREE.Mesh) || !child.visible || ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) return;
+            if (!(child instanceof THREE.Mesh) || !child.visible || child.userData.selectionProxy || ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) return;
             const outline = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({
                 color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.3, depthWrite: false,
                 clippingPlanes: [this.sectionInversePlane!],
@@ -252,7 +281,7 @@ export class SceneSynchronizer {
     }
 
     getContentRadius() {
-        const visible = this.model.children.filter((child) => child.visible);
+        const visible = this.model.children.filter((child) => child.visible && !child.userData.selectionProxy);
         return Math.max(5, measureSectionRadius(visible) || 20);
     }
 
@@ -379,7 +408,7 @@ export class SceneSynchronizer {
             }
         });
         const id = this.selected[this.selected.length - 1];
-        const object = this.model.children.find((item) => item.userData.entityId === id);
+        const object = this.model.children.find((item) => item.userData.entityId === id && !item.userData.selectionProxy);
         const planeObject = this.planes.children.find((item) => item.userData.planeId === id);
         if (planeObject && ['translate', 'rotate'].includes(this.options.getTool()) && !this.options.isSketchMode()) this.options.transform.attach(planeObject);
         else if (object && ['translate', 'rotate', 'scale'].includes(this.options.getTool()) && !this.options.isSketchMode()) this.options.transform.attach(object);

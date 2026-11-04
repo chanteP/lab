@@ -383,7 +383,7 @@ export class Viewport {
     fit(animate = true) { this.cameraController.fitBox(new THREE.Box3().setFromObject(this.sceneSynchronizer.model), animate); }
 
     fitSelection() {
-        const selected = this.sceneSynchronizer.model.children.filter((item) => this.sceneSynchronizer.selected.includes(item.userData.entityId));
+        const selected = this.sceneSynchronizer.model.children.filter((item) => this.sceneSynchronizer.selected.includes(item.userData.entityId) && !item.userData.selectionProxy);
         if (!selected.length) return this.fit();
         const box = new THREE.Box3();
         selected.forEach((item) => box.expandByObject(item));

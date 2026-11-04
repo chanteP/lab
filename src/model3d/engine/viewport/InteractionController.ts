@@ -110,6 +110,7 @@ export class InteractionController {
             onEdit: options.callbacks.onDirectEdit,
             onState: options.callbacks.onDirectDragState,
             onPreview: (anchor, delta, worldNormal) => {
+                if (anchor.type === 'edge') { this.geometryAnchor = { ...anchor, edgeTreatmentId: this.geometryAnchor?.edgeTreatmentId || anchor.edgeTreatmentId }; return; }
                 const offset = new THREE.Vector3(...worldNormal).multiplyScalar(delta);
                 this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
             },
@@ -289,7 +290,8 @@ export class InteractionController {
 
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
-        return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
+        return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point)
+            && (item.object.userData.selectionProxy || !this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.edgeTreatments?.some((treatment) => treatment.size > 0)));
     }
 
     private hitSketchEntities(event: PointerEvent) {
@@ -974,11 +976,9 @@ export class InteractionController {
         this.assetEditor.reset();
         this.shapeDrag = null;
     }
-
     clearSurfaceCache() {
         this.geometrySelector.clear();
     }
-
     dispose() {
         this.directEditor.dispose();
         const canvas = this.renderer.domElement;

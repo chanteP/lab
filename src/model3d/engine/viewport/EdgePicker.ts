@@ -23,12 +23,12 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
     const ndc = new THREE.Vector2(pointer.x / rect.width * 2 - 1, -(pointer.y / rect.height) * 2 + 1);
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, camera);
-    const meshes = model.children.filter((child) => child.visible && child instanceof THREE.Mesh) as THREE.Mesh[];
+    const meshes = model.children.filter((child) => child.visible && !child.userData.selectionProxy && child instanceof THREE.Mesh) as THREE.Mesh[];
     const occlusions = selectThrough ? [] : raycaster.intersectObjects(meshes, false);
     const firstOcclusion = occlusions[0];
     let best: { score: number; intersection: THREE.Intersection } | null = null;
     model.children.forEach((body) => {
-        if (!body.visible) return;
+        if (!body.visible || (body.userData.edgeTreated && !body.userData.selectionProxy)) return;
         body.children.forEach((child) => {
             if (!(child instanceof THREE.LineSegments) || !child.userData.displayEdge || !child.visible) return;
             const positions = child.geometry.attributes.position;
@@ -44,7 +44,7 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
                 if (closest.distance > thresholdPx) continue;
                 const point = aWorld.clone().lerp(bWorld, closest.t);
                 const distance = raycaster.ray.origin.distanceTo(point);
-                if (firstOcclusion && firstOcclusion.distance < distance - 0.05) continue;
+                if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - 0.05) continue;
                 const score = closest.distance + distance * 1e-7;
                 if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance } as unknown as THREE.Intersection };
             }

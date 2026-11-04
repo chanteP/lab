@@ -58,12 +58,13 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
 - `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
 - `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
-- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体，并把生成边解析回原参数；`BakedGeometry` 保留未切削基体，防止重复切削。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`SceneSynchronizer` 为处理后的实体同时保留最终显示网格与不写色、不导出的基础选择代理，原面/原边拓扑统一用于再次编辑和末端重放。`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 
 ## Changelog
 
+- 2026-11-04：重做圆角/倒角选择链路，最终显示网格与原拓扑选择代理分离，支持原边重复编辑、相邻面推拉和相邻边连续处理；修复新 treatment ID 冻结导致的长度输入不更新，并补 chamfer 切换与正方体代理回归。
 - 2026-11-04：修复贝塞尔矩形拆线后的区域闭合与拉伸，禁止来源线 open/曲线索引污染区域 body；开放线点击不再建立面锚点，失效三角面映射安全回退，新增 6 面选择及 5 平面推拉/1 曲面禁用集成回归。
 - 2026-11-04：矩形/正多边形贝塞尔边拖拽后于选择收尾拆成独立 line，保留对应曲线并清除形状约束，新增矩形与 N 边形拆分回归。
 - 2026-11-04：修复图片/SVG 锁比例角点拖拽先磁吸鼠标造成的偏移，改为对实际换算控制点磁吸并沿宽高比选择最近参考轴，新增专项回归。
