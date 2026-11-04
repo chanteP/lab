@@ -23,3 +23,10 @@ export function intersectionProfileAtPoint(entities: ModelEntity[], planeId: str
     const face = faces.sort((a, b) => area(a.points) - area(b.points))[0];
     return face ? face.points.map((point) => [...point]) : null;
 }
+
+
+/** A selected open-line chain can extrude only when it describes exactly one closed region. */
+export function uniqueClosedProfile(entities: ModelEntity[], planeId: string): Point2[] | null {
+    const faces = computeSketchFaces(entities, planeId);
+    return faces.length === 1 ? faces[0].points.map((point) => [...point]) : null;
+}

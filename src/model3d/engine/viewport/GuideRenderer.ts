@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
+import { uniqueClosedProfile } from '../profileIntersection';
 import { SKETCH_COLORS } from '../../config/colors';
 import { INTERACTION } from '../../config/const';
 import type { LengthUnit, ModelDocument, Vec3 } from '../../types';
@@ -96,31 +97,42 @@ export class GuideRenderer {
             return;
         }
         if (tool === 'select') {
-            const profiles = selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch' && entityProfileClosed(item))).filter(Boolean) as ModelDocument['entities'];
-            if (!profiles.length) return;
+            const sketches = selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch')).filter(Boolean) as ModelDocument['entities'];
+            const profiles = sketches.filter((item) => entityProfileClosed(item));
+            const open = sketches.filter((item) => !entityProfileClosed(item));
+            const regionPoints = open.length && open[0].planeId ? (() => {
+                const selectedRegion = sketches.filter((item) => item.planeId === open[0].planeId);
+                return uniqueClosedProfile(selectedRegion, open[0].planeId!) || uniqueClosedProfile(document.entities, open[0].planeId!);
+            })() : null;
+            if (!profiles.length && !regionPoints) return;
+            const sources = profiles.length ? profiles : open;
+            const plane = document.planes.find((item) => item.id === sources[0]?.planeId);
             const box = new THREE.Box3();
             profiles.forEach((profile) => {
                 const object = this.options.model.children.find((item) => item.userData.entityId === profile.id);
                 if (object) box.expandByObject(object);
             });
+            if (regionPoints && plane) {
+                const origin = new THREE.Vector3(...plane.origin), u = new THREE.Vector3(...plane.u), v = new THREE.Vector3(...plane.v);
+                regionPoints.forEach(([x, y]) => box.expandByPoint(origin.clone().addScaledVector(u, x).addScaledVector(v, y)));
+            }
             if (box.isEmpty()) return;
             const center = box.getCenter(new THREE.Vector3());
-            const plane = document.planes.find((item) => item.id === profiles[0].planeId);
             const normal = plane ? new THREE.Vector3(...plane.normal).normalize() : new THREE.Vector3(0, 1, 0);
             if (geometryAnchor?.key.endsWith(':intersection') && selected.includes(geometryAnchor.id)) {
                 center.copy(new THREE.Vector3(...geometryAnchor.point));
                 normal.copy(new THREE.Vector3(...geometryAnchor.normal));
             }
-            for (const direction of [1, -1] as const) {
-                this.group.add(this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId: profiles[profiles.length - 1].id, direction } }));
-            }
+            const profileId = sources[sources.length - 1].id;
+            for (const direction of [1, -1] as const) this.group.add(this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId, direction } }));
             return;
         }
         if (tool !== 'extrude') return;
         const profile = document.entities.find((item) => item.id === selected[selected.length - 1] && item.kind === 'sketch');
-        const body = document.entities.find((item) => item.profileId === profile?.id);
+        const body = document.entities.find((item) => item.profileId === profile?.id)
+            || [...document.entities].reverse().find((item) => item.kind === 'extrude' && !item.profileId && item.planeId === profile?.planeId);
         if (!profile || !body) return;
-        const object = this.options.model.children.find((item) => item.userData.entityId === profile.id);
+        const object = this.options.model.children.find((item) => item.userData.entityId === (body.profileId ? profile.id : body.id));
         if (!object) return;
         const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
         const plane = document.planes.find((item) => item.id === profile.planeId);

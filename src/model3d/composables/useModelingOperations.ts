@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useMessage } from 'naive-ui';
 import type { EditPhase, Viewport, ViewTool } from '../engine/Viewport';
 import { entityProfileClosed } from '../engine/profiles';
+import { uniqueClosedProfile } from '../engine/profileIntersection';
 import { applyEntityTransform, buildEntityMesh } from '../engine/geometry';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { DirectEditTransaction } from '../engine/modeling/DirectEditTransaction';
@@ -98,8 +99,12 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     function startExtrude(profileId: string, existingBody?: ModelEntity, keepView = false) {
         if (operation.value) return;
         const primary = document.value.entities.find((item) => item.id === profileId && item.kind === 'sketch');
-        if (!primary || !entityProfileClosed(primary)) return;
-        const activeIntersection = existingBody ? null : profileFace();
+        if (!primary) return;
+        const activeIntersection = existingBody ? null : profileFace() || (!entityProfileClosed(primary) && primary.planeId ? (() => {
+            const selected = selectedEntities.value.filter((item) => item.kind === 'sketch' && item.planeId === primary.planeId);
+            return uniqueClosedProfile(selected, primary.planeId!) || uniqueClosedProfile(document.value.entities, primary.planeId!);
+        })() : null);
+        if (!activeIntersection && !entityProfileClosed(primary)) return;
         const profiles = activeIntersection ? [primary] : existingBody ? [primary] : [primary, ...selectedEntities.value.filter((item) => item.kind === 'sketch' && item.id !== profileId && entityProfileClosed(item))];
         const before = cloneDocument(document.value);
         pushHistory();
@@ -118,14 +123,15 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             }
             body.profileId = activeIntersection ? undefined : profile.id;
             body.points = (activeIntersection || profile.points!).map((point) => [...point]);
-            body.parts = profile.parts?.map((part) => ({ ...part, points: part.points.map((point) => [...point]) }));
+            body.parts = activeIntersection ? undefined : profile.parts?.map((part) => ({ ...part, points: part.points.map((point) => [...point]) }));
             body.profileType = activeIntersection ? 'polygon' : profile.profileType;
             body.planeId = profile.planeId;
-            body.curves = cloneEntity(profile).curves;
-            body.analyticCurves = cloneEntity(profile).analyticCurves;
+            // A region has its own ordered outline; the picked open line's curve indices do not apply to it.
+            body.curves = activeIntersection ? {} : cloneEntity(profile).curves;
+            body.analyticCurves = activeIntersection ? {} : cloneEntity(profile).analyticCurves;
             body.sides = profile.sides;
             body.sectorAngle = profile.sectorAngle;
-            body.open = profile.open;
+            body.open = activeIntersection ? false : profile.open;
             body.profileStartAngle = profile.profileStartAngle;
             delete body.meshGeometry;
             delete body.axisBox;

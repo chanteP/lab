@@ -62,7 +62,18 @@ export class GeometrySelector {
         const topology = this.topology(mesh);
         const triangleId = hit.faceIndex ?? 0;
         const faceId = topology.triangleFaceIds[triangleId];
-        const face = topology.faces.find((item) => item.id === faceId) || topology.faces[0];
+        let face = topology.faces.find((item) => item.id === faceId) || topology.faces[0];
+        if (!face) {
+            // A stale triangle-to-face mapping must not turn a pointer selection into a runtime failure.
+            const triangle = topology.triangles[triangleId];
+            const normal = triangle?.normal || [0, 1, 0];
+            const center = triangle?.center || [0, 0, 0];
+            face = {
+                id: `__triangle_${triangleId}`, triangleIds: triangle ? [triangleId] : [],
+                domain: { kind: 'plane', normal: [...normal], offset: new THREE.Vector3(...normal).dot(new THREE.Vector3(...center)), analytic: true },
+                normal: [...normal], point: [...center], planar: true, boundaryLoops: [], edgeIds: [], adjacentFaceIds: [], sourceIds: [],
+            };
+        }
         return this.surface(mesh, face);
     }
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { sketchAssetExcludedIds } from '../sketchAssets';
-import { intersectionProfileAtPoint } from '../profileIntersection';
+import { intersectionProfileAtPoint } from '../profileIntersection'; import { entityProfileClosed } from '../profiles';
 import { INTERACTION } from '../../config/const';
 import type { ModelEntity, Point2, Vec3 } from '../../types';
 import type { ViewTool, ViewportCallbacks } from '../Viewport';
@@ -856,6 +856,8 @@ export class InteractionController {
         if (hit && hitIsSketch) {
             const hits = this.hitSketchEntities(event);
             const intersection = this.sketchIntersectionAnchor(hits);
+            const openSketch = this.document?.entities.find((item) => item.id === hit.object.userData.entityId && item.kind === 'sketch' && !entityProfileClosed(item));
+            if (!intersection && openSketch) { this.geometryAnchor = this.hoverFaceAnchor = null; this.callbacks.onBodySelect(openSketch.id); return; }
             const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
             this.geometryAnchor = intersection || this.createGeometryAnchor(hit);
             this.hoverFaceAnchor = null;
@@ -996,5 +998,3 @@ export class InteractionController {
         this.selectionRectangle.remove();
     }
 }
-
-

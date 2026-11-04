@@ -112,3 +112,17 @@ test('circular logical-edge highlighting follows the ordered seam without cross-
         assert(new THREE.Vector3(...anchor.vertices[index]).distanceTo(new THREE.Vector3(...anchor.vertices[index - 1])) <= maxChord, 'highlight must not connect unrelated arc vertices');
     }
 });
+
+
+test('a stale triangle-face mapping falls back to the hit triangle instead of throwing', () => {
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    document.entities.push(entity);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    mesh.userData.entityId = entity.id;
+    const topology = buildMeshTopology(mesh.geometry, entity.id, entity, document);
+    topology.triangleFaceIds = topology.triangleFaceIds.map(() => 'deleted-face');
+    mesh.userData.topology = topology;
+    const selector = new GeometrySelector();
+    assert.doesNotThrow(() => selector.createFaceAnchor(hit(mesh, 0), entity));
+});
