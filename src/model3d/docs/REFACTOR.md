@@ -36,7 +36,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
-- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42，以 orbit target 的世界半径在 70%–100% 区间淡出。
+- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42，以 orbit target 的世界半径在 200%–300% 区间淡出。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
@@ -63,6 +63,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-04：Grid 径向淡出调整为视口世界半径 200% 开始、300% 完全消失，保留更远范围的辅助线。
 - 2026-11-04：新增草图图片 drop、SVG 元素/文件夹导入、比例锁与 viewBox 四角磁吸缩放；新增直线边 45° 圆角/倒角箭头、尺寸输入和原边参数化重复编辑，拆出资产/参考线控制器，97 项回归全部通过。
 - 2026-11-04：修复草图切换导致 Grid 丢失 XZ 朝向，主线减细并调整半径淡出、比例尺、剖视图标和导出位置；缩放上下限按可见内容半径动态设置。
 - 2026-11-04：Grid 改为视口世界半径淡出，树支持同层建组归组/根级拖出/空白取消，条件工具统一动效；Boolean 改为独立 Venn 区域控制并修复初始深色与空白完成粘手。

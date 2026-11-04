@@ -48,7 +48,7 @@ export class InfiniteGrid {
                 void main() {
                     float minor = gridLine(vGridPosition, uGridSize, 1.0);
                     float major = gridLine(vGridPosition, uGridSize * 10.0, 1.25);
-                    float radiusFade = 1.0 - smoothstep(uFadeRadius * 1.1, uFadeRadius * 1.5, distance(vWorldPosition, uFadeCenter));
+                    float radiusFade = 1.0 - smoothstep(uFadeRadius * 2.0, uFadeRadius * 3.0, distance(vWorldPosition, uFadeCenter));
                     // Major lines remain subtle so axis colors and model geometry stay visually dominant.
                     float alpha = max(minor * 0.42, major * 0.32) * radiusFade;
                     if (alpha < 0.003) discard;
