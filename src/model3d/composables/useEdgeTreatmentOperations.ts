@@ -5,9 +5,10 @@ import type { EditPhase, ViewTool, Viewport } from '../engine/Viewport';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { buildEntityMesh } from '../engine/geometry';
 import { resolveEdgeTreatment, treatmentFromAnchor } from '../engine/modeling/EdgeTreatments';
+import { resolveVertexTreatment, vertexTreatmentFromAnchor } from '../engine/modeling/VertexTreatments';
 import { cloneEntity } from '../utils/entity';
 import { uid } from '../utils/id';
-import type { EdgeTreatment, ModelDocument, ModelEntity, Vec3 } from '../types';
+import type { EdgeTreatment, ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../types';
 
 interface EdgeTreatmentOptions {
     document: Ref<ModelDocument>;
@@ -19,19 +20,23 @@ interface EdgeTreatmentOptions {
     setTool: (tool: ViewTool) => void;
 }
 
-type EdgeTransaction = {
+type Treatment = EdgeTreatment | VertexTreatment;
+type Transaction = {
+    kind: 'edge' | 'vertex';
     entityId: string;
     baseEntity: ModelEntity;
-    treatment: EdgeTreatment;
-    baseSize: number;
+    treatment: Treatment;
+    baseValue: number;
     limit: number;
     historyPushed: boolean;
 };
 
-/** Parametric convex-edge fillet/chamfer gestures; generated edges reuse the original transaction. */
+const signedValue = (treatment: Treatment) => treatment.type === 'fillet' ? treatment.size : -treatment.size;
+
+/** Signed edge/vertex treatment gestures: inward is fillet (+), outward is chamfer (-). */
 export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
-    const { document, activeTool, viewport, message, pushHistory, popHistory, setTool } = options;
-    let transaction: EdgeTransaction | null = null;
+    const { document, viewport, message, pushHistory, popHistory } = options;
+    let transaction: Transaction | null = null;
 
     function straightAnchor(anchor: GeometryAnchor) {
         if (!anchor.localEdge || anchor.localEdge.normals.length < 2 || anchor.vertices.length < 2) return false;
@@ -45,27 +50,24 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
 
     function begin(id: string, anchor?: GeometryAnchor) {
         const item = document.value.entities.find((entity) => entity.id === id);
-        if (!item || !anchor || anchor.type !== 'edge') return message.warning('请先选择实体边');
-        if (!straightAnchor(anchor)) return message.warning('当前仅支持直线边圆角和倒角');
-        const existing = resolveEdgeTreatment(item, anchor);
-        const treatment = existing || treatmentFromAnchor(anchor, activeTool.value === 'chamfer' ? 'chamfer' : 'fillet', uid());
-        if (!treatment) return message.warning('无法识别该边的相邻面');
-        const type = activeTool.value === 'fillet' || activeTool.value === 'chamfer' ? activeTool.value : existing?.type || 'fillet';
-        if (activeTool.value !== type) setTool(type);
+        const kind = anchor?.type === 'vertex' ? 'vertex' : anchor?.type === 'edge' ? 'edge' : null;
+        if (!item || !anchor || !kind) return message.warning('请先选择实体边或角点');
+        if (kind === 'edge' && !straightAnchor(anchor)) return message.warning('当前仅支持直线边圆角和倒角');
+        if (kind === 'vertex' && (anchor.localVertex?.normals.length || 0) < 3) return message.warning('该角点缺少至少三个相邻面');
+        const existing = kind === 'edge' ? resolveEdgeTreatment(item, anchor) : resolveVertexTreatment(item, anchor);
+        const treatment = existing || (kind === 'edge' ? treatmentFromAnchor(anchor, 'fillet', uid()) : vertexTreatmentFromAnchor(anchor, uid()));
+        if (!treatment) return message.warning('无法识别相邻面');
         const mesh = buildEntityMesh(item, document.value);
         mesh.geometry.computeBoundingBox();
         const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3());
         const limit = Math.max(0.1, Math.min(size.x, size.y, size.z) / 2);
         mesh.geometry.dispose();
         (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
-        anchor.edgeTreatmentId = treatment.id;
+        if (kind === 'edge') anchor.edgeTreatmentId = treatment.id;
+        else anchor.vertexTreatmentId = treatment.id;
         transaction = {
-            entityId: id,
-            baseEntity: cloneEntity(item),
-            treatment: { ...treatment, type, edge: JSON.parse(JSON.stringify(treatment.edge)) },
-            baseSize: existing?.size || 0,
-            limit,
-            historyPushed: false,
+            kind, entityId: id, baseEntity: cloneEntity(item), treatment: JSON.parse(JSON.stringify(treatment)),
+            baseValue: existing ? signedValue(existing) : 0, limit, historyPushed: false,
         };
     }
 
@@ -77,14 +79,21 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
             pushHistory();
             transaction.historyPushed = true;
         }
-        // The arrow points out of the convex edge; dragging it inward (negative delta) increases the cut size.
-        const size = Math.round(THREE.MathUtils.clamp(transaction.baseSize - delta, 0, transaction.limit) * 10000) / 10000;
-        const treatments = (transaction.baseEntity.edgeTreatments || []).map((treatment) => ({ ...treatment, edge: JSON.parse(JSON.stringify(treatment.edge)) })) as EdgeTreatment[];
-        const next = { ...transaction.treatment, size, edge: JSON.parse(JSON.stringify(transaction.treatment.edge)) } as EdgeTreatment;
-        const index = treatments.findIndex((treatment) => treatment.id === next.id);
-        if (index >= 0) treatments[index] = next;
-        else treatments.push(next);
-        item.edgeTreatments = treatments;
+        const value = Math.round(THREE.MathUtils.clamp(transaction.baseValue - delta, -transaction.limit, transaction.limit) * 10000) / 10000;
+        const next = { ...JSON.parse(JSON.stringify(transaction.treatment)), type: value < 0 ? 'chamfer' : 'fillet', size: Math.abs(value) } as Treatment;
+        if (transaction.kind === 'edge') {
+            const treatments = (transaction.baseEntity.edgeTreatments || []).map((item) => JSON.parse(JSON.stringify(item))) as EdgeTreatment[];
+            const index = treatments.findIndex((item) => item.id === next.id);
+            if (index >= 0) treatments[index] = next as EdgeTreatment;
+            else treatments.push(next as EdgeTreatment);
+            item.edgeTreatments = treatments;
+        } else {
+            const treatments = (transaction.baseEntity.vertexTreatments || []).map((item) => JSON.parse(JSON.stringify(item))) as VertexTreatment[];
+            const index = treatments.findIndex((item) => item.id === next.id);
+            if (index >= 0) treatments[index] = next as VertexTreatment;
+            else treatments.push(next as VertexTreatment);
+            item.vertexTreatments = treatments;
+        }
     }
 
     function onEdgeTreatmentEdit(id: string, _normal: Vec3, delta: number, phase: EditPhase, anchor?: GeometryAnchor) {
@@ -93,7 +102,10 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         if (phase === 'move') return move(delta);
         if (phase === 'cancel') {
             const item = document.value.entities.find((entity) => entity.id === id);
-            if (item) item.edgeTreatments = transaction.baseEntity.edgeTreatments;
+            if (item) {
+                item.edgeTreatments = transaction.baseEntity.edgeTreatments;
+                item.vertexTreatments = transaction.baseEntity.vertexTreatments;
+            }
             if (transaction.historyPushed) popHistory();
             transaction = null;
             return;
@@ -103,11 +115,10 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
 
     function updateEdgeTreatmentDistance(value: number | null) {
         const anchor = viewport()?.getGeometryAnchor();
-        if (value === null || !anchor || anchor.type !== 'edge') return message.warning('请先选择实体边');
+        if (value === null || !anchor || !['edge', 'vertex'].includes(anchor.type)) return message.warning('请先选择实体边或角点');
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, 0, 'start', anchor);
         if (!transaction) return;
-        // move() subtracts delta from the frozen size; use the difference to commit an absolute input value.
-        onEdgeTreatmentEdit(anchor.id, anchor.localNormal, transaction.baseSize - value, 'move');
+        onEdgeTreatmentEdit(anchor.id, anchor.localNormal, transaction.baseValue - value, 'move');
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, 0, 'end');
     }
 

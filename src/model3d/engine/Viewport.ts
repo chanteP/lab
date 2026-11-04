@@ -14,6 +14,7 @@ import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
 import { applyTransformControlColors } from './viewport/transformColors';
 import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
+import { resolveVertexTreatment } from './modeling/VertexTreatments';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type { CameraView } from './viewport/CameraController';
@@ -23,7 +24,7 @@ export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 
 
 export interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
-    onGeometrySelect: (id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive?: boolean, profileFace?: Point2[]) => void;
+    onGeometrySelect: (id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive?: boolean, profileFace?: Point2[]) => void;
     onBodySelect: (id: string) => void;
     onPlaneSelect: (id: string) => void;
     onPlaneTransform: (id: string, position: Vec3, quaternion: THREE.Quaternion) => void;
@@ -266,6 +267,10 @@ export class Viewport {
         const anchor = this.interaction.geometryAnchor;
         const entity = this.sceneSynchronizer.document?.entities.find((item) => item.id === anchor?.id);
         if (anchor?.type === 'edge' && entity) resolveEdgeTreatmentAnchor(anchor, entity, this.sceneSynchronizer.model.children.find((item) => item.userData.entityId === entity.id));
+        else if (anchor?.type === 'vertex' && entity) {
+            const treatment = resolveVertexTreatment(entity, anchor);
+            anchor.vertexTreatmentId = treatment?.id;
+        }
     }
     offsetGeometryAnchor(offset: Vec3) { this.interaction.offsetGeometryAnchor(offset); }
     setSelectThrough(active: boolean) { this.interaction.setSelectThrough(active); }

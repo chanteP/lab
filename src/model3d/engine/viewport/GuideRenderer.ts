@@ -3,6 +3,7 @@ import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
 import { uniqueClosedProfile } from '../profileIntersection';
 import { resolveEdgeTreatment } from '../modeling/EdgeTreatments';
+import { resolveVertexTreatment } from '../modeling/VertexTreatments';
 import { SKETCH_COLORS } from '../../config/colors';
 import { INTERACTION } from '../../config/const';
 import type { LengthUnit, ModelDocument, Vec3 } from '../../types';
@@ -70,16 +71,19 @@ export class GuideRenderer {
         const selected = this.options.getSelected();
         const geometryAnchor = this.options.getGeometryAnchor();
         const geometryEntity = document.entities.find((item) => item.id === geometryAnchor?.id);
-        if (['select', 'fillet', 'chamfer'].includes(tool) && geometryAnchor?.type === 'edge' && geometryEntity && selected.includes(geometryAnchor.id)) {
+        if (['select', 'fillet', 'chamfer'].includes(tool) && ['edge', 'vertex'].includes(geometryAnchor?.type || '') && geometryEntity && selected.includes(geometryAnchor.id)) {
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
             const origin = new THREE.Vector3(...geometryAnchor.point);
-            const treatment = geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || resolveEdgeTreatment(geometryEntity, geometryAnchor);
-            if (treatment) geometryAnchor.edgeTreatmentId = treatment.id;
+            const treatment = geometryAnchor.type === 'vertex'
+                ? geometryEntity.vertexTreatments?.find((item) => item.id === geometryAnchor.vertexTreatmentId) || resolveVertexTreatment(geometryEntity, geometryAnchor)
+                : geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || resolveEdgeTreatment(geometryEntity, geometryAnchor);
+            if (treatment && geometryAnchor.type === 'vertex') geometryAnchor.vertexTreatmentId = treatment.id;
+            else if (treatment) geometryAnchor.edgeTreatmentId = treatment.id;
             this.group.add(this.createThickArrow(origin, normal, 18, { directArrow: { id: geometryEntity.id, normal: geometryAnchor.localNormal } }));
             this.options.overlay.set({
                 id: 'guide-label:edge-treatment', kind: 'dimension', target: { kind: 'edgeTreatment' },
                 position: origin.clone().add(normal.clone().multiplyScalar(12)).toArray(), screenOffset: [76, 0],
-                value: treatment?.size || 0, unit: this.options.getLengthUnit(),
+                value: treatment ? treatment.type === 'fillet' ? treatment.size : -treatment.size : 0, unit: this.options.getLengthUnit(), signed: true,
             });
             return;
         }

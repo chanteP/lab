@@ -58,12 +58,13 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
 - `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
 - `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
-- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`SceneSynchronizer` 为处理后的实体同时保留最终显示网格与不写色、不导出的基础选择代理，原面/原边拓扑统一用于再次编辑；末端重放前按当前基础拓扑重定位处理边，保证面拖拽后仍在新的公共边切削。`BakedGeometry` 保留未切削基体，防止重复切削。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以相邻三面切点生成角点平面/球面切削，`VertexPicker.ts` 直接拾取基础拓扑顶点；边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 为处理后的实体同时保留最终显示网格与不写色、不导出的基础选择代理，原面/原边拓扑统一用于再次编辑；末端重放前按当前基础拓扑重定位处理边，保证面拖拽后仍在新的公共边切削。`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 
 ## Changelog
 
+- 2026-11-05：圆角/倒角改为有符号尺寸，内拖正数圆角、外拖负数倒角，移除右侧类型与厚度设置；边热区增至 16px，新增 18px 角点热区和角点平面/球面末端切削，补面拖动重定位回归。
 - 2026-11-04：修复圆角/倒角长度输入被累加而非绝对赋值的问题，并保留拖拽方向的正负约定，补当前值输入 5 必须得到 5 的回归。
 - 2026-11-04：圆角/倒角覆盖层在拖拽锚点丢失 treatment ID 时按原边重新解析，确保 chamfer/fillet 尺寸与几何同步；保留其他对话的侧栏与拖拽方向修改并通过合并回归。
 - 2026-11-04：修复面拖拽后边处理停留旧坐标形成拼接体的问题，A/B/C 面编辑均按当前基础拓扑重定位到新公共边；边箭头跟随实际点击位置，并补三方向体积对照及 chamfer 平面回归。

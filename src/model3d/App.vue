@@ -380,11 +380,11 @@ function selectRangeFromItems(ids: string[]) {
     parameterCardOpen.value = true;
     setTool('select');
 }
-function onGeometrySelect(id: string, type: 'face' | 'edge', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
+function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     finishDirectEdit();
     finishEdgeTreatment();
     const picked = document.value.entities.find((item) => item.id === id);
-    if (type === 'edge') viewport?.resolveGeometryEdgeTreatment();
+    if (['edge', 'vertex'].includes(type)) viewport?.resolveGeometryEdgeTreatment();
     if (operation.value?.type === 'extrude' && picked && picked.kind !== 'sketch' && picked.id !== operation.value.bodyId) {
         operation.value.targetId = id;
         return;
@@ -487,7 +487,7 @@ watch(document, () => {
 watch([selectedIds, selectedShapes, sketchMode, selectionKind], ([ids, shapes, active, kind]) => {
     if (!ids.length) selectedProfileFace.value = null;
     viewport?.setSelected(active ? shapes : ids, active ? 'sketch' : kind);
-    if (!active && kind !== 'face' && kind !== 'edge' && !selectedProfileFace.value) viewport?.clearGeometrySelection();
+    if (!active && !['face', 'edge', 'vertex'].includes(kind || '') && !selectedProfileFace.value) viewport?.clearGeometrySelection();
 }, { deep: true });
 watch([selectedEdges, selectedPoints, sketchMode], ([edges, points]) => viewport?.setSketchSelectionState(edges, points), { deep: true });
 watch(selectedAssetId, (id) => viewport?.setSketchAssetSelection(id));
@@ -547,7 +547,7 @@ Object.defineProperty(window, 'projectData', {
 });
 
 const handleDirectEdit: ViewportCallbacks['onDirectEdit'] = (id, normal, delta, phase, anchor) => {
-    if (anchor?.type === 'edge' || ['fillet', 'chamfer'].includes(activeTool.value)) onEdgeTreatmentEdit(id, normal, delta, phase, anchor);
+    if (['edge', 'vertex'].includes(anchor?.type || '') || ['fillet', 'chamfer'].includes(activeTool.value)) onEdgeTreatmentEdit(id, normal, delta, phase, anchor);
     else onDirectEdit(id, normal, delta, phase, anchor);
 };
 
@@ -604,7 +604,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchDimension: (target: SketchDimension, value: number) => target.assetId ? onSketchAssetDimension(target, value) : onSketchDimension(target, value),
         onSketchDragEnd: refreshSketch,
         onLengthUnitChange: setLengthUnit,
-        onDirectDistance: (value) => selectionKind.value === 'edge' ? updateEdgeTreatmentDistance(value) : updateFaceOffsetInput(value),
+        onDirectDistance: (value) => ['edge', 'vertex'].includes(selectionKind.value || '') ? updateEdgeTreatmentDistance(value) : updateFaceOffsetInput(value),
         onExtrudeDistance: updateExtrudeLength,
         onExtrudeGesture,
         onBlankCommit,

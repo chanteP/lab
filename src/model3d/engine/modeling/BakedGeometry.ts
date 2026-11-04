@@ -6,10 +6,12 @@ import { assertValidSolid } from './GeometryValidator';
 export function bakeEntityGeometry(entity: ModelEntity, document: ModelDocument) {
     // Baked geometry is the untreated base; parametric edge cuts are applied once on the next rebuild.
     const edgeTreatments = entity.edgeTreatments;
+    const vertexTreatments = entity.vertexTreatments;
     delete entity.edgeTreatments;
+    delete entity.vertexTreatments;
     let mesh: ReturnType<typeof buildEntityMesh>;
     try { mesh = buildEntityMesh(entity, document); }
-    finally { entity.edgeTreatments = edgeTreatments; }
+    finally { entity.edgeTreatments = edgeTreatments; entity.vertexTreatments = vertexTreatments; }
     // The release result gets its own validation; the next gesture must not be responsible for repairing it.
     assertValidSolid(mesh.geometry);
     entity.meshGeometry = {

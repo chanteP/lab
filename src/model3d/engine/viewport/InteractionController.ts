@@ -14,6 +14,7 @@ import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { pickLogicalEdge } from './EdgePicker';
+import { pickLogicalVertex } from './VertexPicker';
 import { DirectDragController } from './DirectDragController';
 import { GizmoDragController } from './GizmoDragController';
 import { SketchAssetDragController } from './SketchAssetDragController';
@@ -110,7 +111,7 @@ export class InteractionController {
             onEdit: options.callbacks.onDirectEdit,
             onState: options.callbacks.onDirectDragState,
             onPreview: (anchor, delta, worldNormal) => {
-                if (anchor.type === 'edge') { this.geometryAnchor = { ...anchor, edgeTreatmentId: this.geometryAnchor?.edgeTreatmentId || anchor.edgeTreatmentId }; return; }
+                if (anchor.type !== 'face') { this.geometryAnchor = { ...anchor, edgeTreatmentId: this.geometryAnchor?.edgeTreatmentId || anchor.edgeTreatmentId }; return; }
                 const offset = new THREE.Vector3(...worldNormal).multiplyScalar(delta);
                 this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
             },
@@ -291,7 +292,7 @@ export class InteractionController {
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
         return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point)
-            && (item.object.userData.selectionProxy || !this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.edgeTreatments?.some((treatment) => treatment.size > 0)));
+            && (item.object.userData.selectionProxy || ![...(this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.edgeTreatments || []), ...(this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.vertexTreatments || [])].some((treatment) => treatment.size > 0)));
     }
 
     private hitSketchEntities(event: PointerEvent) {
@@ -320,6 +321,10 @@ export class InteractionController {
         const indices = points.slice(1, -1).flatMap((_, index) => [0, index + 1, index + 2]);
         const point = vertices.reduce((center, vertex) => center.add(new THREE.Vector3(...vertex)), new THREE.Vector3()).multiplyScalar(1 / vertices.length).toArray() as Vec3;
         return { id: entities[0].id, key: `${entities[0].id}:intersection`, normal: [...plane.normal], localNormal: [...plane.normal], point, type: 'face', planar: true, vertices, indices, profilePoints: points };
+    }
+
+    private hitEntityVertex(event: PointerEvent) {
+        return pickLogicalVertex({ camera: this.camera, canvas: this.renderer.domElement, model: this.model, event, thresholdPx: INTERACTION.vertexSelectionPx, selectThrough: this.selectThrough });
     }
 
     private hitEntityEdge(event: PointerEvent) {
@@ -402,15 +407,12 @@ export class InteractionController {
     private drawingEdgeStart() {
         return !this.sketchSelectionTool && ['polygon', 'line'].includes(this.sketchProfileType) ? this.currentSketchPoints[this.currentSketchPoints.length - 1] : undefined;
     }
-
     private capturePointer(event: PointerEvent) {
         try { this.renderer.domElement.setPointerCapture(event.pointerId); } catch { /* Pointer may already be released. */ }
     }
-
     private releasePointer(event: PointerEvent) {
         try { if (this.renderer.domElement.hasPointerCapture(event.pointerId)) this.renderer.domElement.releasePointerCapture(event.pointerId); } catch { /* No active capture. */ }
     }
-
     private onPointerDown(event: PointerEvent) {
         this.cameraController.cancelTransitions();
         this.pointerStart.set(event.clientX, event.clientY);
@@ -558,17 +560,14 @@ export class InteractionController {
             return;
         }
     }
-
     private planeScreenCenter() {
         const rect = this.renderer.domElement.getBoundingClientRect();
         const center = this.sketchRenderer.world([0, 0]).project(this.camera);
         return { x: rect.left + (center.x + 1) * rect.width / 2, y: rect.top + (1 - center.y) * rect.height / 2 };
     }
-
     private rotatePlaneView(event: PointerEvent, drag: { x: number; y: number; centerX: number; centerY: number }) {
         this.cameraController.rotatePlaneView(event, drag, this.activePlane);
     }
-
     private onPointerMove(event: PointerEvent) {
         this.lastPointer = { clientX: event.clientX, clientY: event.clientY };
         if (this.spacePressed && event.buttons === 1) this.spaceDragMoved = true;
@@ -683,7 +682,6 @@ export class InteractionController {
             this.refreshFaceFeedback();
         }
     }
-
     private updateSelectionRectangle() {
         if (!this.marquee) return;
         const rect = this.container.getBoundingClientRect();
@@ -695,7 +693,6 @@ export class InteractionController {
         });
         this.selectionRectangle.classList.toggle('intersect', this.marquee.x < this.marquee.startX);
     }
-
     private finishMarquee() {
         const marquee = this.marquee;
         if (!marquee) return;
@@ -722,7 +719,6 @@ export class InteractionController {
         });
         this.callbacks.onMarqueeSelect(ids, marquee.additive);
     }
-
     private onPointerUp(event: PointerEvent) {
         this.releasePointer(event);
         if (this.sketchMode && (this.spacePressed || this.spaceSketchPointerBlocked)) {
@@ -852,6 +848,7 @@ export class InteractionController {
         }
         const hit = this.hitEntity(event);
         const edgeHit = this.hitEntityEdge(event);
+        const vertexHit = this.hitEntityVertex(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
         const hitIsSketch = !!hit && ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '');
@@ -868,6 +865,15 @@ export class InteractionController {
             selectedHits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0, intersection?.profilePoints));
             return;
         }
+        if (vertexHit && (!hit || vertexHit.distance <= hit.distance + 0.5)) {
+            const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
+            if (anchor) {
+                this.geometryAnchor = anchor;
+                this.hoverFaceAnchor = null;
+                this.callbacks.onGeometrySelect(anchor.id, 'vertex', anchor.normal, anchor.point, additive);
+                return;
+            }
+        }
         if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
@@ -880,12 +886,10 @@ export class InteractionController {
         } else if (['extrude', 'offsetFace'].includes(this.tool)) this.callbacks.onBlankCommit();
         else this.callbacks.onSelect(null, additive);
     }
-
     private createGeometryAnchor(hit: THREE.Intersection): GeometryAnchor {
         const entity = this.document?.entities.find((item) => item.id === hit.object.userData.entityId);
         return this.geometrySelector.createFaceAnchor(hit, entity, this.includeTangent);
     }
-
     private updateSketchCursor(event: PointerEvent) {
         this.setPointer(event);
         this.container.classList.toggle('is-link-cursor', this.shouldCloseSketchPath(event));
@@ -906,7 +910,6 @@ export class InteractionController {
         this.sketchRenderer.updateMarkerColors();
         this.sketchRenderer.updateSegmentColors();
     }
-
     private shouldCloseSketchPath(event: PointerEvent) { return this.sketchRenderer.shouldClosePath(event); }
     private refreshSketchSelectionFeedback() { this.sketchRenderer.refreshSelectionFeedback(); }
     private clearAltBorder() { this.sketchRenderer.clearAltBorder(); }
@@ -920,7 +923,6 @@ export class InteractionController {
     private showHoverFace(hit: THREE.Intersection) { this.measurementRenderer.showHoverFace(hit); }
     private addMeasurePoint(point: THREE.Vector3) { this.measurementRenderer.addPoint(point); }
     private addSketchMeasurePoint(point: Point2) { this.measurementRenderer.addSketchPoint(this.sketchRenderer.world(point, 0.4)); }
-
     private onDoubleClick(event: MouseEvent) {
         if (this.measureMode) return;
         if (this.sketchMode) {
@@ -945,7 +947,6 @@ export class InteractionController {
             if (hit && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '')) this.callbacks.onBodySelect(hit.object.userData.entityId);
         }
     }
-
     setMeasureMode(active: boolean) {
         this.measureMode = active;
         this.container.classList.toggle('is-measuring', active);
@@ -953,7 +954,6 @@ export class InteractionController {
         this.clearSketchReferences();
         this.updateOrbitRotation();
     }
-
     clearGeometrySelection() {
         this.geometryAnchor = null;
         this.hoverFaceAnchor = null;
@@ -962,7 +962,6 @@ export class InteractionController {
         this.refreshFaceFeedback();
         if (this.document) this.guideRenderer.update(this.document);
     }
-
     offsetGeometryAnchor(offset: Vec3) {
         if (!this.geometryAnchor) return;
         const delta = new THREE.Vector3(...offset);

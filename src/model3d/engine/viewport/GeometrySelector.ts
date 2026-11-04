@@ -11,7 +11,7 @@ export type GeometryAnchor = {
     normal: Vec3;
     localNormal: Vec3;
     point: Vec3;
-    type: 'face' | 'edge';
+    type: 'face' | 'edge' | 'vertex';
     planar: boolean;
     vertices: Vec3[];
     indices: number[];
@@ -20,6 +20,9 @@ export type GeometryAnchor = {
     edgeIds?: string[];
     edgeTreatmentId?: string;
     localEdge?: { a: Vec3; b: Vec3; normals: Vec3[] };
+    vertexId?: string;
+    vertexTreatmentId?: string;
+    localVertex?: { point: Vec3; normals: Vec3[] };
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
@@ -101,6 +104,25 @@ export class GeometrySelector {
             id: mesh.userData.entityId || entity?.id || '', key: `${mesh.userData.entityId}:face:${faces.map((face) => face.id).sort().join(',')}`,
             normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', planar: samePlane,
             vertices, indices, faceIds: faces.map((face) => face.id), revision: topology.revision,
+        };
+    }
+
+    createVertexAnchor(hit: THREE.Intersection & { vertexId?: string }): GeometryAnchor | null {
+        const mesh = hit.object as THREE.Mesh;
+        const topology = this.topology(mesh);
+        const vertex = topology.vertices.find((item) => item.id === hit.vertexId);
+        if (!vertex) return null;
+        const faceIds = new Set(topology.triangles.filter((triangle) => triangle.vertexIds.includes(vertex.id)).map((triangle) => topology.triangleFaceIds[triangle.id]));
+        const normals = [...faceIds].map((id) => topology.faces.find((face) => face.id === id)?.normal).filter(Boolean) as Vec3[];
+        if (normals.length < 3) return null;
+        mesh.updateWorldMatrix(true, false);
+        const point = new THREE.Vector3(...vertex.point).applyMatrix4(mesh.matrixWorld);
+        const localNormal = normals.reduce((sum, normal) => sum.add(new THREE.Vector3(...normal)), new THREE.Vector3()).normalize();
+        return {
+            id: mesh.userData.entityId || '', key: `${mesh.userData.entityId}:vertex:${vertex.id}`,
+            normal: localNormal.clone().transformDirection(mesh.matrixWorld).toArray(), localNormal: localNormal.toArray(),
+            point: point.toArray(), type: 'vertex', planar: false, vertices: [point.toArray()], indices: [0],
+            vertexId: vertex.id, localVertex: { point: [...vertex.point], normals }, revision: topology.revision,
         };
     }
 

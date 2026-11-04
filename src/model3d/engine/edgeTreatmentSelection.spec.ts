@@ -101,38 +101,37 @@ test('original edges remain pickable through the final treated surface and adjac
     assert.equal(validateSolidGeometry(adjacent.geometry).valid, true, 'adjacent edges must accept another treatment after a face edit');
 });
 
-test('negative chamfer drag creates a positive cut and the overlay reads the same size', () => {
+test('signed edge gestures switch between fillet and chamfer and keep the overlay in sync', () => {
     const document = ref(createDocument());
     document.value.entities.push(createEntity('box', 'box'));
-    const activeTool = ref<'chamfer' | 'fillet'>('chamfer');
+    const activeTool = ref<'select'>('select');
     const operations = useEdgeTreatmentOperations({
-        document, activeTool, viewport: () => ({ getGeometryAnchor: () => anchor } as any), message: { warning: () => undefined, error: () => undefined } as any,
-        pushHistory: () => undefined, popHistory: () => undefined, setTool: (tool) => { activeTool.value = tool; },
+        document, activeTool: activeTool as any, viewport: () => ({ getGeometryAnchor: () => anchor } as any), message: { warning: () => undefined, error: () => undefined } as any,
+        pushHistory: () => undefined, popHistory: () => undefined, setTool: () => undefined,
     });
     const anchor = edgeAnchor();
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, -5, 'move');
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     const entity = document.value.entities[0];
-    assert.equal(entity.edgeTreatments?.[0].type, 'chamfer');
-    assert.equal(entity.edgeTreatments?.[0].size, 5);
-    activeTool.value = 'fillet';
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, -2, 'move');
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     assert.equal(entity.edgeTreatments?.[0].type, 'fillet');
-    activeTool.value = 'chamfer';
+    assert.equal(entity.edgeTreatments?.[0].size, 5);
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, -5, 'move');
+    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 7, 'move');
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     assert.equal(entity.edgeTreatments?.[0].type, 'chamfer');
+    assert.equal(entity.edgeTreatments?.[0].size, 2);
     operations.updateEdgeTreatmentDistance(5);
+    assert.equal(entity.edgeTreatments?.[0].type, 'fillet');
     assert.equal(entity.edgeTreatments?.[0].size, 5, 'numeric input must replace rather than accumulate the current size');
+    operations.updateEdgeTreatmentDistance(-3);
+    assert.equal(entity.edgeTreatments?.[0].type, 'chamfer');
+    assert.equal(entity.edgeTreatments?.[0].size, 3);
 
     const overlay = new OverlayController();
     const guide = new GuideRenderer({
         overlay, model: new THREE.Group(), renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
-        getSelected: () => ['box'], getTool: () => 'chamfer', getGeometryAnchor: () => anchor,
+        getSelected: () => ['box'], getTool: () => 'select', getGeometryAnchor: () => anchor,
         getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
     });
     delete anchor.edgeTreatmentId;
@@ -141,5 +140,6 @@ test('negative chamfer drag creates a positive cut and the overlay reads the sam
     camera.position.z = 100;
     camera.updateMatrixWorld(true);
     const item = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement).find((item) => item.kind === 'dimension' && item.target.kind === 'edgeTreatment');
-    assert.equal(item?.value, 5);
+    assert.equal(item?.value, -3);
+    assert.equal(item?.signed, true);
 });

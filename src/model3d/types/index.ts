@@ -56,6 +56,14 @@ export type EdgeTreatment = {
     edge: { a: Vec3; b: Vec3; normals: Vec3[] };
 };
 
+export type VertexTreatment = {
+    id: string;
+    type: 'fillet' | 'chamfer';
+    size: number;
+    /** Original body-local vertex and adjacent outward normals. */
+    vertex: { point: Vec3; normals: Vec3[] };
+};
+
 export interface ModelEntity {
     id: string;
     name: string;
@@ -107,6 +115,7 @@ export interface ModelEntity {
     assetSource?: string;
     aspectLocked?: boolean;
     edgeTreatments?: EdgeTreatment[];
+    vertexTreatments?: VertexTreatment[];
 }
 
 export interface ModelDocument {
@@ -190,7 +199,7 @@ export function isDocument(value: any): value is ModelDocument {
 }
 
 export type PrimaryPanel = 'search' | 'sketch' | 'insert' | 'construct' | 'tools';
-export type SelectionKind = 'face' | 'edge' | 'body' | 'plane' | 'sketch' | 'mixed' | null;
+export type SelectionKind = 'face' | 'edge' | 'vertex' | 'body' | 'plane' | 'sketch' | 'mixed' | null;
 export type TrimmedSelection = { entityId: string; index: number; sourceCount: number; kind: 'line' | 'curve' };
 export type ConstraintRuleListItem = { id: string; label: string; entityId: string; index: number; ruleId?: string; lock?: 'point' | 'edge' };
 export type OperationState = {

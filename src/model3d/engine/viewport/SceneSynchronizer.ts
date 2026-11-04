@@ -73,7 +73,7 @@ export class SceneSynchronizer {
     constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
     private addEdgeTreatmentProxy(entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
-        const base = { ...entity, edgeTreatments: undefined };
+        const base = { ...entity, edgeTreatments: undefined, vertexTreatments: undefined };
         const proxy = buildEntityMesh(base, document);
         proxy.userData.selectionProxy = true;
         const topology = reconcileTopology(previous, buildMeshTopology(proxy.geometry, entity.id, base, document), entity.faceEdit);
@@ -112,7 +112,7 @@ export class SceneSynchronizer {
             this.model.add(child);
             const entity = document.entities.find((item) => item.id === child.userData.entityId);
             if (child instanceof THREE.Mesh && !!entity && !['sketch', 'image'].includes(entity.kind)) {
-                const treated = !!entity.edgeTreatments?.some((treatment) => treatment.size > 0);
+                const treated = [...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0);
                 child.userData.edgeTreated = treated;
                 const nextTopology = buildMeshTopology(child.geometry, entity.id, entity, document);
                 const topology = treated ? nextTopology : reconcileTopology(previousTopology.get(entity.id), nextTopology, entity.faceEdit);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { NIcon, NInput } from 'naive-ui';
-import { ArrowUpOutline, CloseOutline, CubeOutline, CutOutline, EllipseOutline, FolderOpenOutline, GridOutline, MoveOutline, ShapesOutline } from '@vicons/ionicons5';
+import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, FolderOpenOutline, GridOutline, MoveOutline, ShapesOutline } from '@vicons/ionicons5';
 import MenuCommand from '../ui/MenuCommand.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
@@ -103,16 +103,16 @@ function runCommand(id: string) {
         </aside>
 
         <aside v-if="!activePanel && parameterCardOpen && selectedEntities.length === 1 && !sketchMode && !operation" class="tool-panel adaptive-panel">
-            <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button aria-label="取消选择" @click="emit('clearSelection')"><NIcon><CloseOutline /></NIcon></button></div>
+            <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'vertex' ? '角点' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button aria-label="取消选择" @click="emit('clearSelection')"><NIcon><CloseOutline /></NIcon></button></div>
             <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
             <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button></template>
-            <template v-else-if="selectionKind === 'edge'"><button class="menu-command" :class="{ active: activeTool === 'fillet' }" @click="emit('tool', 'fillet')"><NIcon><EllipseOutline /></NIcon><span><strong>圆角</strong><small>拖动边旁 45° 箭头或输入半径</small></span></button><button class="menu-command" :class="{ active: activeTool === 'chamfer' }" @click="emit('tool', 'chamfer')"><NIcon><CutOutline /></NIcon><span><strong>倒角</strong><small>拖动边旁 45° 箭头或输入距离</small></span></button></template>
+            <template v-else-if="selectionKind === 'edge' || selectionKind === 'vertex'"><p class="panel-note">往内拖动为圆角（正数），往外拖动为倒角（负数）。</p></template>
             <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>推拉面</strong><small>{{ selectedFacePlanar ? '拖动模型平面或输入距离' : '曲面暂不支持推拉' }}</small></span></button><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
-            <div v-if="selectionKind === 'face' || selectionKind === 'edge'" class="inline-command-row vertical">
+            <div v-if="['face', 'edge', 'vertex'].includes(selectionKind || '')" class="inline-command-row vertical">
                 <button :class="{ active: includeTangent }" @click="emit('update:includeTangent', !includeTangent)">相切扩选</button>
                 <button :class="{ active: selectThrough }" @click="emit('update:selectThrough', !selectThrough)">穿透选择</button>
             </div>
-            <section v-if="selected" class="selection-properties" aria-label="所选实体参数">
+            <section v-if="selected && !['edge', 'vertex'].includes(selectionKind || '')" class="selection-properties" aria-label="所选实体参数">
                 <div v-if="dimensionFields.length" class="property-grid">
                     <label v-for="field in dimensionFields" :key="field.key">{{ field.label }}<IntegerInputNumber :precision="4" :value="displayLength(field.value)" size="small" :show-button="false" @update:value="emit('updateDimension', field.key, $event)" /></label>
                 </div>

@@ -5,6 +5,7 @@ import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
 import { profileClosed, profilePoints, profileShape } from './profiles';
 import { sketchImageTexture } from './sketchImageTexture';
 import { applyEdgeTreatments, rebindEdgeTreatments } from './modeling/EdgeTreatments';
+import { applyVertexTreatments, rebindVertexTreatments } from './modeling/VertexTreatments';
 import { SKETCH_COLORS } from '../config/colors';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
@@ -51,9 +52,12 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
 }
 
 function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document: ModelDocument) {
-    if (!entity.edgeTreatments?.some((treatment) => treatment.size > 0)) return mesh;
-    const treatments = rebindEdgeTreatments(mesh.geometry, entity.edgeTreatments, entity, document);
-    const treated = applyEdgeTreatments(mesh.geometry, treatments);
+    if (![...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0)) return mesh;
+    const vertices = rebindVertexTreatments(mesh.geometry, entity.vertexTreatments || [], entity, document);
+    const withVertices = applyVertexTreatments(mesh.geometry, vertices);
+    const treatments = rebindEdgeTreatments(withVertices, entity.edgeTreatments || [], entity, document);
+    const treated = applyEdgeTreatments(withVertices, treatments);
+    if (withVertices !== mesh.geometry && treated !== withVertices) withVertices.dispose();
     if (treated !== mesh.geometry) {
         mesh.geometry.dispose();
         mesh.geometry = treated;

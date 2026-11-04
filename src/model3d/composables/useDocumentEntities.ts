@@ -96,6 +96,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
             delete selected.value.axisBox;
             delete selected.value.compositeGeometry;
             delete selected.value.edgeTreatments;
+            delete selected.value.vertexTreatments;
         }
         (selected.value as any)[key] = value;
     }
