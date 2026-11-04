@@ -10,7 +10,7 @@ import {
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 import { createEntity, type LengthUnit, type ModelDocument, type ModelEntity, type Point2, type SketchProfilePart } from '../../types';
 import { uid } from '../../utils/id';
-import { uniqueEntityName } from '../../utils/entity';
+import { uniqueSketchName } from '../../utils/entity';
 import { profilePoints } from '../../engine/profiles';
 import { borderInterval, sliceBorder, type BorderSegment } from '../../engine/sketchBorders';
 import { matchSketchGuide, type SketchGuideMatch } from '../../engine/sketchGuides';
@@ -165,7 +165,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
         pushHistory();
         const entity = createEntity('sketch', uid());
-        entity.name = uniqueEntityName(document.value, 'sketch');
+        entity.name = uniqueSketchName(document.value, 'polygon');
         entity.planeId = activePlaneId.value;
         entity.profileType = 'polygon';
         entity.points = [];

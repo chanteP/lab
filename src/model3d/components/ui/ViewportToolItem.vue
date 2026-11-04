@@ -66,9 +66,9 @@ const subtitleLabel = computed(() => selectedOption.value?.label ?? props.subtit
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 10px;
+    gap: 6px;
     margin: 0;
-    padding: 3px 5px;
+    padding: 3px 4px;
     color: var(--model3d-ui-4d5e54);
     background: transparent;
     border: 0;
@@ -91,7 +91,7 @@ const subtitleLabel = computed(() => selectedOption.value?.label ?? props.subtit
     transition: transform .22s cubic-bezier(.34, 1.56, .64, 1), color .15s ease, border-color .15s ease;
 }
 .viewport-tool-item__description { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; background: transparent; text-shadow: 0 1px 2px var(--model3d-ui-f4f7f4); }
-.viewport-tool-item__title { font-size: 11px; font-weight: 550; line-height: 1.25; white-space: nowrap; }
+.viewport-tool-item__title { max-width: 5em; overflow: hidden; font-size: 11px; font-weight: 550; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .viewport-tool-item__subtitle { display: flex; align-items: center; gap: 2px; color: var(--model3d-ui-89958e); font-size: 10px; font-weight: 400; line-height: 1.3; white-space: nowrap; }
 .viewport-tool-item__subtitle .n-icon { font-size: 10px; }
 .viewport-tool-item:hover, .viewport-tool-item.active { color: var(--model3d-ui-147d70); }
@@ -111,7 +111,7 @@ const subtitleLabel = computed(() => selectedOption.value?.label ?? props.subtit
 .viewport-tool-item.danger:hover .viewport-tool-item__icon { color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border-color: var(--model3d-ui-c94f4f); }
 .viewport-tool-item.large { min-height: 46px; }
 .viewport-tool-item.large .viewport-tool-item__icon { width: 36px; height: 36px; flex-basis: 36px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border-color: var(--model3d-ui-ffffff70); font-size: 19px; }
-.viewport-tool-item.large .viewport-tool-item__title { font-size: 14px; font-weight: 700; }
+.viewport-tool-item.large .viewport-tool-item__title { font-size: 12px; font-weight: 700; }
 
 .viewport-tool-options { display: flex; flex-direction: column; gap: 2px; }
 .viewport-tool-options button { min-width: 68px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px; color: var(--model3d-ui-56675d); background: transparent; border: 0; border-radius: 4px; font-size: 10px; text-align: left; cursor: pointer; }

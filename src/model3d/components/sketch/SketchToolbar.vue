@@ -23,6 +23,7 @@ const emit = defineEmits<{
 const polygonOptions = POLYGON_SIDES.map(sides => ({ label: `${sides} 边`, value: sides }));
 function active(type: ProfileType) { return props.activeTool === 'select' && !props.selectionTool && props.sketchType === type; }
 function toolsLocked() { return props.symmetryStep === 1 || props.symmetryStep === 2; }
+function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').replace(/\s+/g, '').slice(0, 5); }
 </script>
 
 <template>
@@ -33,13 +34,13 @@ function toolsLocked() { return props.symmetryStep === 1 || props.symmetryStep =
         <div v-if="!sketchMode" class="sketch-plane-picker">
             <p>选择绘制平面。</p>
             <div class="inline-command-row"><button @click="emit('construct', 'XZ')">XZ</button><button @click="emit('construct', 'XY')">XY</button><button @click="emit('construct', 'YZ')">YZ</button></div>
-            <ViewportToolItem v-for="plane in planes" :key="plane.id" :label="plane.name" :description-on-hover="false" @click="emit('plane', plane.id)"><NIcon><GridOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem v-if="selectionKind === 'face'" label="所选实体平面" :description-on-hover="false" @click="emit('face')"><NIcon><ShapesOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem v-for="plane in planes" :key="plane.id" :label="planeToolLabel(plane.name)" :description-on-hover="false" @click="emit('plane', plane.id)"><NIcon><GridOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem v-if="selectionKind === 'face'" label="所选平面" :description-on-hover="false" @click="emit('face')"><NIcon><ShapesOutline /></NIcon></ViewportToolItem>
         </div>
         <div v-else class="sketch-tool-list">
             <div class="tool-group">
                 <ViewportToolItem label="选择" :active="selectionTool && activeTool === 'select'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('select')"><NIcon><NavigateOutline /></NIcon></ViewportToolItem>
-                <ViewportToolItem label="线条 / 曲线" :active="active('polygon')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'polygon')"><NIcon><CreateOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem label="线条曲线" :active="active('polygon')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'polygon')"><NIcon><CreateOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="矩形" :active="active('rectangle')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'rectangle')"><NIcon><GridOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="圆形" :active="active('circle')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'circle')"><NIcon><EllipseOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="椭圆" :active="active('ellipse')" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('type', 'ellipse')"><SvgIcon name="ellipse" /></ViewportToolItem>
@@ -60,7 +61,7 @@ function toolsLocked() { return props.symmetryStep === 1 || props.symmetryStep =
 </template>
 
 <style lang="scss" scoped>
-.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 172px; max-height: calc(100% - 55px); padding: 10px; overflow-y: auto; scrollbar-width: thin; transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; transition: transform .24s ease, opacity .18s ease; }
+.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 120px; max-height: calc(100% - 55px); padding: 10px; overflow-y: auto; scrollbar-width: thin; transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; transition: transform .24s ease, opacity .18s ease; }
 .sketch-toolbar.toolbar-enter { transform: translateX(0); opacity: 1; pointer-events: auto; }
 .sketch-toolbar button { font: inherit; }
 .sketch-close { margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--model3d-ui-e2e8e4); }

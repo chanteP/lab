@@ -151,6 +151,8 @@
 
 ## 一级工具、Adaptive menu 与绘制工具栏
 
+- 页面无顶部项目栏，项目操作集中在 218px fixed Sidebar；Canvas 从页面顶部开始并占满剩余宽度。3D/草图左侧工具栏均为 120px，工具 title 不超过 5 个字。
+- Sidebar 使用右侧渐隐背景；实体树用终端 `tree` 式连线表达层级。剖面和约束检查等 range 全部复用 `MinimalRange.vue`，轨道为 3px 横线，手柄为竖线。
 - 一级入口包含 Search、Sketch、Insert、Construct、Tools、Section View、Isolate、Measure、Display Modes、Items 和 History；Move/Rotate/Scale 直接放在独立圆形按钮分组。
 - 选中几何后显示 Adaptive menu：face 推荐 Face Extrude / Sketch，edge 提供相切扩选与穿透选择，Body 推荐 Move/Rotate/Scale，多 Body 推荐 Boolean。
 - 再次点击当前工具只展开或收起 Parameter Card，不退出工具；单击不修改几何，拖动或数值输入才产生编辑。

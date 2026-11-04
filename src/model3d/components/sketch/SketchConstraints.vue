@@ -2,6 +2,7 @@
 import { NIcon, NSwitch } from 'naive-ui';
 import { CloseOutline, LockClosedOutline, LockOpenOutline } from '@vicons/ionicons5';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
+import MinimalRange from '../ui/MinimalRange.vue';
 
 const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; rules: { id: string; label: string }[]; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean }>();
 const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; deleteRule: [id: string]; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean] }>();
@@ -20,7 +21,7 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; d
         <button :disabled="selectedPoint < 0 && !edgeSelected" @click="emit('lock')"><NIcon><component :is="selectionLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectionLocked ? '取消固定' : '固定' }}</button>
         <div v-if="rules.length" class="constraint-rules"><div class="constraint-rules-title">当前规则</div><div v-for="rule in rules" :key="rule.id" class="constraint-rule"><span>{{ rule.label }}</span><button class="constraint-rule-delete" :aria-label="`删除${rule.label}规则`" @click="emit('deleteRule', rule.id)"><NIcon><CloseOutline /></NIcon></button></div></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
-        <div class="constraint-limit"><label for="constraint-limit-range">关联检查 <output>{{ constraintLimit }}</output></label><input id="constraint-limit-range" type="range" min="10" max="100" step="1" :value="constraintLimit" aria-label="关联检查元素上限" @input="emit('update:constraintLimit', Number(($event.target as HTMLInputElement).value))" /></div>
+        <div class="constraint-limit"><label for="constraint-limit-range">关联检查 <output>{{ constraintLimit }}</output></label><MinimalRange id="constraint-limit-range" :min="10" :max="100" :value="constraintLimit" aria-label="关联检查元素上限" @update:value="emit('update:constraintLimit', $event)" /></div>
         <div class="constraint-snap"><span>磁吸</span><NSwitch size="small" :value="guideSnapEnabled" aria-label="参考线磁吸" @update:value="emit('update:guideSnapEnabled', $event)" /></div>
     </aside>
 </template>
@@ -48,6 +49,6 @@ button.constraint-rule-delete { width: 20px; min-width: 20px; height: 20px; min-
 button.constraint-rule-delete:hover { background: var(--model3d-ui-df4b5a); color: var(--model3d-ui-fff); }
 .constraint-limit { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }
 .constraint-limit label { display: flex; justify-content: space-between; color: var(--model3d-ui-8a968f); font-size: 9px; }
-.constraint-limit input { width: 100%; margin-top: 6px; accent-color: var(--model3d-ui-147d70); }
+.constraint-limit .minimal-range { display: block; margin-top: 3px; }
 .constraint-snap { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--model3d-ui-8a968f); font-size: 9px; }
 </style>

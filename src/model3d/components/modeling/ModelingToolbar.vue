@@ -55,7 +55,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 </template>
 
 <style lang="scss" scoped>
-.vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 172px; display: flex; flex-direction: column; padding: 10px; overflow-y: auto; scrollbar-width: thin; transition: transform .24s ease, opacity .18s ease; }
+.vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 120px; display: flex; flex-direction: column; padding: 10px; overflow-y: auto; scrollbar-width: thin; transition: transform .24s ease, opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
 .menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
 .tool-group { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 auto; gap: 3px; padding: 4px 0; }

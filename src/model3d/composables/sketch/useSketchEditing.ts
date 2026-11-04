@@ -8,8 +8,8 @@ import { detachFeatureReferences } from '../../engine/modeling/FeatureReferences
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
 import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
-import { cloneEntity } from '../../utils/entity';
-import { cloneDocument, createEntity, ENTITY_NAMES, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
+import { cloneEntity, uniqueSketchName } from '../../utils/entity';
+import { cloneDocument, createEntity, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
 import type { SketchState } from './useSketchState';
 import type { SketchConstraints } from './useSketchConstraints';
 
@@ -459,7 +459,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false, analyticCurve?: SketchCurve) => {
             if (points.length < 2) return;
             const next = createEntity('sketch', uid());
-            next.name = `${ENTITY_NAMES.sketch} ${document.value.entities.filter((item) => item.kind === 'sketch').length + remaining.length + 1}`;
+            next.name = uniqueSketchName(document.value, undefined, true, remaining);
             next.parentId = entity.parentId;
             next.planeId = entity.planeId;
             next.position = [0, 0, 0];
@@ -513,9 +513,12 @@ export function useSketchEditing(options: SketchEditingOptions) {
             c2: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c2 : undefined,
             curve: segment.curve,
         })));
-        const rebuilt = restitchSketchEdges(edges).map((path, index) => {
+        // Temporary split entities are replaced below; do not let their names consume the final trimmed-edge sequence.
+        const namingDocument = { ...document.value, entities: document.value.entities.filter((item) => !candidates.includes(item)) };
+        const rebuilt: ModelEntity[] = [];
+        restitchSketchEdges(edges).forEach((path) => {
             const entity = createEntity('sketch', uid());
-            entity.name = `${ENTITY_NAMES.sketch} ${document.value.entities.length + index + 1}`;
+            entity.name = uniqueSketchName(namingDocument, undefined, true, rebuilt);
             entity.planeId = planeId;
             entity.position = [0, 0, 0];
             entity.profileType = 'polygon';
@@ -526,7 +529,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             entity.curves = path.curves;
             entity.analyticCurves = path.analyticCurves;
             delete entity.depth;
-            return entity;
+            rebuilt.push(entity);
         });
         document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
         document.value.entities.push(...rebuilt);

@@ -16,12 +16,12 @@ const emit = defineEmits<{ close: [] }>();
     z-index: 12;
     top: 12px;
     right: 12px;
-    left: 196px;
+    left: 144px;
     display: flex;
     align-items: center;
     gap: 10px;
     width: fit-content;
-    max-width: calc(100% - 208px);
+    max-width: calc(100% - 156px);
     min-height: 42px;
     padding: 6px 7px 6px 12px;
     color: var(--model3d-ui-42554b);
@@ -35,6 +35,6 @@ const emit = defineEmits<{ close: [] }>();
 .operation-bar__close { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; padding: 0 0 2px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border: 0; border-radius: 50%; font-size: 23px; line-height: 1; cursor: pointer; }
 .operation-bar__close:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
 @media (max-width: 1100px) {
-    .operation-bar { right: 12px; left: 196px; max-width: calc(100% - 208px); }
+    .operation-bar { right: 12px; left: 144px; max-width: calc(100% - 156px); }
 }
 </style>

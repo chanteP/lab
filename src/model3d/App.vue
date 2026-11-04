@@ -22,7 +22,6 @@ import { useSketchEditing } from './composables/sketch/useSketchEditing';
 import { useSketchSession } from './composables/sketch/useSketchSession';
 import { useSketchAdvanced } from './composables/sketch/useSketchAdvanced';
 import { storedLengthUnit, useUnits } from './composables/useUnits';
-import AppTopBar from './components/layout/AppTopBar.vue';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
 import ModelingToolbar from './components/modeling/ModelingToolbar.vue';
 import SketchToolbar from './components/sketch/SketchToolbar.vue';
@@ -85,6 +84,16 @@ const {
     selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
     autoConstraintActive, selectedConstraintRuleItems,
 } = sketchState;
+const hintSketchEntity = computed(() => {
+    const id = selectedShapes.value[selectedShapes.value.length - 1]
+        || selectedEdges.value[selectedEdges.value.length - 1]?.entityId
+        || selectedPoints.value[selectedPoints.value.length - 1]?.entityId
+        || trimmedSelection.value?.entityId
+        || editingSketchId.value;
+    return document.value.entities.find((entity) => entity.id === id) || null;
+});
+const hintSketchProfileType = computed(() => hintSketchEntity.value?.trimmed ? 'trimmed' as const : hintSketchEntity.value?.profileType || null);
+const hintSketchHasSelection = computed(() => !!(selectedShapes.value.length || selectedEdges.value.length || selectedPoints.value.length || trimmedSelection.value || (sketchSelectionTool.value && editingSketchId.value)));
 const { canUndo, canRedo, pushHistory, popHistory, undo, redo, clearHistory } = useUndoHistory(document, selectedIds);
 const { lengthUnit, scaleBar, scaleBarLabel, setLengthUnit, displayLength, inputLength } = useUnits(document, () => { viewport?.setLengthUnit(lengthUnit.value); refreshSketch(); });
 const sketchConstraints = useSketchConstraints({
@@ -595,13 +604,12 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
-        <AppTopBar :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
-            @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
-
         <div class="workspace">
             <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
+                :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
-                @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility" />
+                @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
+                @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
@@ -625,7 +633,8 @@ onBeforeUnmount(() => {
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
-                <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool" />
+                <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
+                    :selected-profile-type="hintSketchProfileType" :has-selection="hintSketchHasSelection" />
                 <ModelingHints v-if="!sketchMode" :selection-kind="selectionKind" :active-tool="activeTool" :selected-count="selectedIds.length" :measure-mode="measureMode" :operation="operation" />
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><NSelect class="unit-select" size="small" aria-label="全局长度单位" :value="lengthUnit" :options="LENGTH_UNITS" :consistent-menu-width="false" @update:value="setLengthUnit" /></div>

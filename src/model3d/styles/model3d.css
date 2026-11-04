@@ -3,28 +3,10 @@
 html, body, #app, .naive-container { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 button, input { font: inherit; }
 button { color: inherit; }
-.studio-shell { --ink: var(--model3d-ui-24302d); --muted: var(--model3d-ui-7a8580); --line: var(--model3d-ui-e4e8e5); --accent: var(--model3d-ui-147d70); display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 760px; background: var(--model3d-ui-f5f7f5); }
-.topbar { height: 62px; flex: 0 0 62px; display: flex; align-items: center; gap: 24px; padding: 0 20px; background: var(--model3d-ui-surface98); border-bottom: 1px solid var(--model3d-ui-dfe5e1); z-index: 20; }
-.brand { display: flex; align-items: center; gap: 10px; min-width: 196px; }
-.brand-mark { width: 36px; height: 36px; display: grid; place-items: center; color: var(--model3d-ui-white); background: var(--accent); border-radius: 10px; box-shadow: 0 4px 12px var(--model3d-ui-147d7026); }
-.brand > div:last-child { display: flex; align-items: baseline; gap: 7px; }
-.brand strong { font-size: 17px; letter-spacing: 2.4px; }
-.brand span { font-size: 9px; color: var(--model3d-ui-89938e); letter-spacing: 1.5px; }
-.topbar-project { display: flex; align-items: center; gap: 10px; flex: 1; max-width: 430px; }
-.local-badge { white-space: nowrap; color: var(--model3d-ui-6d7873); font-size: 11px; padding: 5px 8px; border: 1px solid var(--model3d-ui-e2e7e4); border-radius: 5px; }
-.local-badge i { display: inline-block; width: 5px; height: 5px; margin: 0 4px 1px 0; background: var(--model3d-ui-54a184); border-radius: 50%; }
-.project-name { flex: 1; min-width: 80px; font-size: 13px; font-weight: 600; }
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 5px; }
-.topbar-actions .n-button { margin-left: 10px; background: var(--accent); border-radius: 7px; font-weight: 600; }
-.chevron { margin-left: 5px; opacity: .75; }
-.save-state { display: flex; align-items: center; gap: 4px; margin-right: 10px; color: var(--model3d-ui-7d8982); font-size: 11px; white-space: nowrap; }
-.save-state.dirty { color: var(--model3d-ui-a57a3b); }
-.icon-button { width: 31px; height: 31px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; font-size: 18px; }
-.icon-button:hover { background: var(--model3d-ui-edf1ee); }
-.icon-button:disabled { opacity: .25; cursor: default; }
-.workspace { display: flex; flex: 1; min-height: 0; }
-.panel { background: var(--model3d-ui-fafbfa); }
-.left-panel { width: 218px; flex: 0 0 218px; display: flex; flex-direction: column; border-right: 1px solid var(--model3d-ui-dfe5e1); z-index: 5; }
+.studio-shell { --ink: var(--model3d-ui-24302d); --muted: var(--model3d-ui-7a8580); --line: var(--model3d-ui-e4e8e5); --accent: var(--model3d-ui-147d70); display: block; width: 100%; height: 100%; min-width: 760px; background: var(--model3d-ui-f5f7f5); }
+.workspace { position: fixed; inset: 0; }
+.panel { background: linear-gradient(90deg, var(--model3d-ui-fff) 0%, rgba(255,255,255,.98) 78%, rgba(255,255,255,.95) 95%, transparent 100%); }
+.left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 218px; height: 100%; display: flex; flex-direction: column; border: 0; }
 .section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: var(--model3d-ui-707d76); font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
 .section-label > span { min-width: 20px; padding: 1px 5px; text-align: center; background: var(--model3d-ui-e9edea); border-radius: 8px; font-size: 9px; letter-spacing: 0; }
 .objects-section { display: flex; flex-direction: column; flex: 1; min-height: 160px; padding: 18px 10px 10px; }
@@ -34,7 +16,7 @@ button { color: inherit; }
 .object-row:hover { background: var(--model3d-ui-f0f3f1); }
 .object-row.selected { color: var(--model3d-ui-0e6a5e); background: var(--model3d-ui-e5f1ed); border-color: var(--model3d-ui-d5e9e2); }
 .object-row.muted > span, .object-row.muted > .object-type { opacity: .42; }
-.object-row > span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.object-row > .object-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .object-type { color: var(--model3d-ui-87938d); font-size: 16px; }
 .object-row.selected .object-type { color: var(--accent); }
 .visibility { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--model3d-ui-87938d); cursor: pointer; }
@@ -50,7 +32,7 @@ button { color: inherit; }
 .storage-note div { display: flex; flex-direction: column; gap: 3px; }
 .storage-note strong { font-size: 10px; font-weight: 600; }
 .storage-note span { color: var(--model3d-ui-89958e); font-size: 9px; line-height: 1.5; }
-.viewport-area { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--model3d-ui-e7ebe8); }
+.viewport-area { position: fixed; inset: 0 0 0 218px; min-width: 0; overflow: hidden; background: var(--model3d-ui-e7ebe8); }
 .viewport { position: absolute; inset: 0; cursor: default; }
 .viewport canvas { display: block; width: 100%; height: 100%; outline: none; }
 .viewport.is-panning { cursor: grab; }
@@ -101,10 +83,9 @@ button { color: inherit; }
 .help-content strong { font-size: 12px; }
 .help-content p { margin: 7px 0 0; color: var(--model3d-ui-6e7c74); font-size: 11px; line-height: 1.8; }
 @media (max-width: 1050px) {
-    .left-panel { width: 194px; flex-basis: 194px; }
+    .left-panel { width: 218px; }
     .brand { min-width: 170px; }
     .save-state, .local-badge { display: none; }
-    .topbar { gap: 12px; padding: 0 12px; }
     .context-title span { display: none; }
     .context-panel { gap: 9px; max-width: calc(100% - 165px); }
     .view-options { top: 64px; }
@@ -179,7 +160,7 @@ button { color: inherit; }
 /* Default tools slide left; the labelled sketch toolbar enters from the same edge. */
 .vertical-toolbar, .sketch-toolbar { transition: transform .24s cubic-bezier(.2,.8,.2,1), opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
-.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 172px; padding: 10px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
+.sketch-toolbar { position: absolute; z-index: 6; top: 12px; bottom: auto; left: 12px; width: 120px; padding: 10px; background: var(--model3d-ui-surface97); border: 1px solid var(--model3d-ui-d4dfd8); border-radius: 10px; box-shadow: 0 6px 20px var(--model3d-ui-2c433616); transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
 .sketch-toolbar.toolbar-enter { transform: translateX(0); opacity: 1; pointer-events: auto; }
 .sketch-toolbar button { font: inherit; }
 .drawing-active .viewport-status { background: var(--model3d-ui-drawing90); }
@@ -249,11 +230,10 @@ button { color: inherit; }
 }
 .drawing-active .context-panel { flex-wrap: wrap; row-gap: 6px; }
 .drawing-active .context-fields { flex-wrap: wrap; }
-/* Compact outliner: disclosure and type icon stay left; visibility stays on the trailing edge. */
-.tree-children { margin-left: 8px; padding-left: 2px; }
+/* Compact outliner: terminal-style guides and type icons stay left; visibility stays on the trailing edge. */
+.tree-children { margin-left: 0; padding-left: 0; }
 .object-row { gap: 5px; padding-left: 4px; }
-.object-row > span { flex: 0 1 auto; }
-.object-row > span:not(.tree-disclosure-spacer) { flex: 1 1 auto; min-width: 0; }
+.object-row > .object-name { flex: 1 1 auto; min-width: 0; }
 .tree-disclosure, .tree-disclosure-spacer { width: 12px; flex: 0 0 12px; }
 .object-row .visibility { margin-left: auto; flex: 0 0 25px; }
 /* Sketch length input: two-decimal value plus a persistent project display unit. */
@@ -286,9 +266,6 @@ button { color: inherit; }
 .viewport-status, .drawing-active .viewport-status { position: fixed; z-index: 30; left: 50%; right: auto; bottom: 12px; width: auto; height: auto; min-height: 28px; padding: 6px 12px; transform: translateX(-50%); color: var(--model3d-ui-f4f7f5cc); background: var(--model3d-ui-18201dcc); border: 0; border-radius: 15px; box-shadow: 0 3px 12px var(--model3d-ui-00000018); backdrop-filter: blur(8px); white-space: nowrap; }
 .viewport-status > i { background: var(--model3d-ui-ffffff38); }
 .viewport-status > div { color: var(--model3d-ui-ffffffa8); }
-/* Compact 50px project bar. */
-.topbar { height: 50px; flex-basis: 50px; }
-.brand-mark { width: 32px; height: 32px; border-radius: 9px; }
 /* The tool rail stays above adjacent panels while its item labels expand. */
 .vertical-toolbar { z-index: 8; overflow: visible; }
 .vertical-toolbar .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }

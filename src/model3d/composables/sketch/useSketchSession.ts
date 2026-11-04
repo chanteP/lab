@@ -5,7 +5,7 @@ import type { EditPhase, SketchDimension, Viewport, ViewTool } from '../../engin
 import { profileArcCenter, profileEllipseAngle, type ProfileType } from '../../engine/profiles';
 import { INTERACTION } from '../../config/const';
 import { uid } from '../../utils/id';
-import { cloneEntity, uniqueEntityName } from '../../utils/entity';
+import { cloneEntity, uniqueSketchName } from '../../utils/entity';
 import {
     createEntity, type LengthUnit, type ModelDocument, type ModelEntity,
     type SelectionKind, type SketchPlane, type Vec3, type Point2,
@@ -103,7 +103,7 @@ export function useSketchSession(options: SketchSessionOptions) {
         if (!id) {
             pushHistory();
             const entity = createEntity('sketch', uid());
-            entity.name = uniqueEntityName(document.value, 'sketch');
+            entity.name = uniqueSketchName(document.value, sketchType.value);
             entity.planeId = activePlaneId.value!;
             entity.position = [0, 0, 0];
             delete entity.depth;
@@ -266,7 +266,7 @@ export function useSketchSession(options: SketchSessionOptions) {
         } else {
             pushHistory();
             const entity = createEntity('sketch', uid());
-            entity.name = uniqueEntityName(document.value, 'sketch');
+            entity.name = uniqueSketchName(document.value, sketchType.value);
             entity.points = points;
             entity.profileType = sketchType.value;
             entity.sides = sketchSides.value;
