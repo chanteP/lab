@@ -49,7 +49,7 @@ export function useSketchSession(options: SketchSessionOptions) {
     } = state;
     const { ensureShapeConstraints, syncEditingSketch } = constraints;
     const {
-        clearSketchDragState, activateSketchSelectionTool, beginSketchHandleDrag, finishSketchHandleDrag,
+        clearSketchDragState, activateSketchSelectionTool, beginSketchHandleDrag, finishSketchHandleDrag, flushSemanticBezierSplit,
     } = editing;
     let sketchRefreshFrame = 0;
     let visibilityBeforeSketch: { entityId: string; visible: boolean; planeId: string | null; planeVisible: boolean } | null = null;
@@ -161,6 +161,7 @@ export function useSketchSession(options: SketchSessionOptions) {
         viewport()?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value, controlPoints, trimmed?.kind === 'curve');
     }
     function setSketchType(type: ProfileType) {
+        flushSemanticBezierSplit();
         viewport()?.setSketchEdgeEditing(null);
         selectedShapes.value = [];
         selectedEdges.value = [];
@@ -300,6 +301,7 @@ export function useSketchSession(options: SketchSessionOptions) {
     }
     function cancelSketch() {
         finishSketchHandleDrag();
+        flushSemanticBezierSplit();
         if (visibilityBeforeSketch) {
             const entity = document.value.entities.find((item) => item.id === visibilityBeforeSketch!.entityId);
             if (entity) entity.visible = visibilityBeforeSketch.visible;
