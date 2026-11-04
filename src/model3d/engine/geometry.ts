@@ -149,6 +149,48 @@ export function createMaterial(color: string) {
     return new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
 }
 
+function disposeOperand(mesh: THREE.Mesh) {
+    mesh.geometry.dispose();
+    (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
+}
+
+function evaluateSignedBoolean(entity: ModelEntity, document: ModelDocument, quality: GeometryQuality, stack: string[]) {
+    const ids = entity.operands || [];
+    const signs = entity.operandSigns || {};
+    const positive = ids.filter((id) => (signs[id] || 1) === 1);
+    const negative = ids.filter((id) => signs[id] === -1);
+    if (!positive.length) throw new Error('至少保留一个目标实体');
+
+    const combine = (operandIds: string[], operation: BooleanOperation) => {
+        let geometry: THREE.BufferGeometry | null = null;
+        for (const id of operandIds) {
+            const source = document.entities.find((item) => item.id === id);
+            if (!source) throw new Error(`${entity.name} 缺少布尔操作数`);
+            const operand = buildEntityMesh(source, document, quality, [...stack, entity.id]);
+            const transformed = operand.geometry.clone().applyMatrix4(operand.matrixWorld);
+            disposeOperand(operand);
+            if (!geometry) geometry = transformed;
+            else {
+                const result = evaluateBoolean(geometry, transformed, operation);
+                geometry.dispose();
+                transformed.dispose();
+                geometry = result;
+            }
+        }
+        return geometry || new THREE.BufferGeometry();
+    };
+
+    let result = combine(positive, entity.operation === 'intersect' ? 'intersect' : 'union');
+    if (negative.length && result.attributes.position?.count) {
+        const tools = combine(negative, 'union');
+        const next = evaluateBoolean(result, tools, 'subtract');
+        result.dispose();
+        tools.dispose();
+        result = next;
+    }
+    return result;
+}
+
 export function buildEntityMesh(
     entity: ModelEntity,
     document: ModelDocument,
@@ -189,6 +231,18 @@ export function buildEntityMesh(
         // Committed bodies use their own profile snapshot; source sketches are History references only.
         mesh = new THREE.Mesh(baseGeometry(entity, quality, document), createMaterial(entity.color));
     } else {
+        if (entity.operandSigns) {
+            mesh = new THREE.Mesh(evaluateSignedBoolean(entity, document, quality, stack));
+            if (entity.faceOffset?.distance) mesh.geometry = evaluateFaceExtrusion(mesh.geometry, entity.faceOffset).geometry;
+            mesh.material = createMaterial(entity.color);
+            mesh.name = entity.name;
+            mesh.userData.entityId = entity.id;
+            mesh.geometry.clearGroups();
+            applyEntityTransform(mesh, entity);
+            mesh.castShadow = false;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);
         const b = document.entities.find((item) => item.id === bId);

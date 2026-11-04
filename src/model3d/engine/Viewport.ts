@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { ProfileType, ProfileCurves } from './profiles';
-import type { DisplayMode, LengthUnit, ModelDocument, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
+import type { DisplayMode, LengthUnit, ModelDocument, OperationState, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
 import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
@@ -63,6 +63,7 @@ export interface ViewportCallbacks {
     onMeasureChange: (active: boolean) => void;
     onScale: (scale: { width: number; value: number }) => void;
     onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
+    onBooleanToggle: (id: string) => void;
 }
 
 export interface ViewportOptions {
@@ -127,6 +128,7 @@ export class Viewport {
                 this.cameraController.planeGizmo.setOrientation(new THREE.Quaternion().setFromRotationMatrix(basis));
             },
             isProfileIntersection: () => !!this.interaction?.geometryAnchor?.key.endsWith(':intersection'),
+            overlay: this.overlay,
         });
         this.sketchRenderer = new SketchRenderer({
             container,
@@ -166,6 +168,7 @@ export class Viewport {
             this.measurementRenderer.group,
             this.guideRenderer.group,
             this.guideRenderer.faceFeedback,
+            this.sceneSynchronizer.booleanPreview.group,
             this.sketchRenderer.trimFeedback,
             this.sketchRenderer.references,
             this.sketchRenderer.selectionFeedback,
@@ -182,6 +185,7 @@ export class Viewport {
             callbacks,
             getTool: () => this.tool,
             isSketchMode: () => this.sketchMode,
+            isBooleanActive: () => this.booleanPreviewActive,
         });
 
         this.cameraController.resize();
@@ -311,7 +315,8 @@ export class Viewport {
         this.sketchRenderer.update(points, selectedIndex, profileType, curves, sides, selectedSegment, lockedPoints, sectorAngle, unit, open, startAngle, controlPoints, trimmedCurve);
     }
 
-    setBooleanRoles(roles: { target: string; tool: string } | null) { this.sceneSynchronizer.setBooleanRoles(roles); }
+    setBooleanPreview(state: Extract<OperationState, { type: 'boolean' }> | null) { this.sceneSynchronizer.setBooleanPreview(state); }
+    get booleanPreviewActive() { return !!this.sceneSynchronizer.booleanState; }
     normalToSketch() { this.cameraController.normalToSketch(this.sceneSynchronizer.activePlane, this.transform); }
     sketchScreen(point: Point2) {
         const projected = this.sketchRenderer.world(point, 0.4).project(this.cameraController.camera);

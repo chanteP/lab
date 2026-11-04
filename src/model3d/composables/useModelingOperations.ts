@@ -50,7 +50,11 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     let directErrorShown = false;
     let extrudeGestureMoved = false;
 
-    const canBoolean = computed(() => selectedEntities.value.length === 2);
+    const canBoolean = computed(() => selectedEntities.value.filter((item) => item.kind !== 'sketch').length >= 2);
+    const booleanCanCommit = computed(() => {
+        const draft = booleanDraft.value;
+        return !!draft && draft.operandIds.some((id) => draft.signs[id] === 1);
+    });
     const extrudeBody = computed(() => {
         const current = operation.value;
         return current?.type === 'extrude' ? document.value.entities.find((item) => item.id === current.bodyId) : null;
@@ -72,25 +76,20 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     }
 
     function applyBoolean(type: BooleanOperation) {
-        if (!canBoolean.value) return;
+        if (operation.value || !canBoolean.value) return;
         const bodies = selectedEntities.value.filter((item) => item.kind !== 'sketch');
-        if (bodies.length !== 2) return message.warning('请选择两个实体 Body');
-        const [first, second] = bodies;
-        const target = type === 'union' ? second : first;
-        const tool = type === 'union' ? first : second;
+        if (bodies.length < 2) return message.warning('请选择至少两个实体 Body');
         const before = cloneDocument(document.value);
         pushHistory();
-        const names = { union: '并集', subtract: '差集', intersect: '交集' };
-        const entity: ModelEntity = {
-            id: uid(), parentId: null, name: `${names[type]} ${document.value.entities.filter((item) => item.kind === 'boolean').length + 1}`,
-            kind: 'boolean', color: target.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
-            operation: type, operands: [target.id, tool.id],
+        operation.value = {
+            type: 'boolean', resultId: uid(), operation: type === 'intersect' ? 'intersect' : 'union', operandIds: bodies.map((item) => item.id),
+            signs: Object.fromEntries(bodies.map((item) => [item.id, 1 as const])), before, keepTarget: false, existing: false,
         };
-        document.value.entities.push(entity);
-        operation.value = { type: 'boolean', resultId: entity.id, targetId: target.id, toolId: tool.id, before, keepTarget: false, keepTool: false, existing: false };
         activePanel.value = null;
-        selectedIds.value = [target.id, tool.id];
-        viewport()?.setBooleanRoles({ target: target.id, tool: tool.id });
+        selectedIds.value = bodies.map((item) => item.id);
+        activeTool.value = 'select';
+        viewport()?.setTool('select');
+        viewport()?.setBooleanPreview(booleanDraft.value);
     }
     function startExtrude(profileId: string, existingBody?: ModelEntity, keepView = false) {
         if (operation.value) return;
@@ -183,14 +182,12 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     function updateExtrudeResult(result: 'new' | BooleanOperation) {
         if (operation.value?.type === 'extrude') operation.value.result = result;
     }
-    function swapBooleanRoles() {
+    function toggleBooleanOperand(id: string) {
         const draft = booleanDraft.value;
-        if (!draft) return;
-        [draft.targetId, draft.toolId] = [draft.toolId, draft.targetId];
-        const entity = document.value.entities.find((item) => item.id === draft.resultId);
-        if (entity) entity.operands = [draft.targetId, draft.toolId];
-        selectedIds.value = [draft.targetId, draft.toolId];
-        viewport()?.setBooleanRoles({ target: draft.targetId, tool: draft.toolId });
+        if (!draft || !draft.operandIds.includes(id)) return;
+        draft.signs[id] = draft.signs[id] === 1 ? -1 : 1;
+        if (draft.operation !== 'intersect') draft.operation = Object.values(draft.signs).every((sign) => sign === 1) ? 'union' : 'subtract';
+        viewport()?.setBooleanPreview(draft);
     }
     function doneOperation() {
         const current = operation.value;
@@ -223,14 +220,29 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             });
             selectedIds.value = [selectedId];
         } else {
-            const target = document.value.entities.find((item) => item.id === current.targetId);
-            const tool = document.value.entities.find((item) => item.id === current.toolId);
-            if (target) target.visible = current.keepTarget;
-            if (tool) tool.visible = current.keepTool;
-            const result = document.value.entities.find((item) => item.id === current.resultId);
-            if (result) bakeEntityGeometry(result, document.value);
+            if (!booleanCanCommit.value) return;
+            const targetId = current.operandIds.find((id) => current.signs[id] === 1)!;
+            const target = document.value.entities.find((item) => item.id === targetId);
+            viewport()?.setBooleanPreview(null);
+            let result = document.value.entities.find((item) => item.id === current.resultId);
+            if (!result) {
+                const names = { union: '并集', subtract: '差集', intersect: '交集' };
+                result = {
+                    id: current.resultId, parentId: target?.parentId || null, name: `${names[current.operation]} ${document.value.entities.filter((item) => item.kind === 'boolean').length + 1}`,
+                    kind: 'boolean', color: target?.color || '#9a9a9a', visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+                };
+                document.value.entities.push(result);
+            }
+            result.operation = current.operation;
+            result.operands = [...current.operandIds];
+            result.operandSigns = { ...current.signs };
+            result.visible = true;
+            bakeEntityGeometry(result, document.value);
+            current.operandIds.forEach((id) => {
+                const source = document.value.entities.find((item) => item.id === id);
+                if (source) source.visible = current.keepTarget && id === targetId;
+            });
             selectedIds.value = [current.resultId];
-            viewport()?.setBooleanRoles(null);
         }
         operation.value = null;
         historyEditId.value = null;
@@ -239,13 +251,13 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     function cancelOperation() {
         const current = operation.value;
         if (!current) return;
-        const selectedId = current.type === 'extrude' ? current.profileId : current.resultId;
+        const selectedId = current.type === 'extrude' ? current.profileId : current.operandIds;
         document.value = current.before;
         popHistory();
         operation.value = null;
         historyEditId.value = null;
-        viewport()?.setBooleanRoles(null);
-        selectedIds.value = document.value.entities.some((item) => item.id === selectedId) ? [selectedId] : [];
+        viewport()?.setBooleanPreview(null);
+        selectedIds.value = Array.isArray(selectedId) ? selectedId.filter((id) => document.value.entities.some((item) => item.id === id)) : document.value.entities.some((item) => item.id === selectedId) ? [selectedId] : [];
         setTool('select');
     }
     function editHistory(id: string) {
@@ -260,14 +272,15 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         if (entity.kind === 'boolean' && entity.operands) {
             const before = cloneDocument(document.value);
             pushHistory();
-            delete entity.meshGeometry;
-            delete entity.compositeGeometry;
-            operation.value = { type: 'boolean', resultId: entity.id, targetId: entity.operands[0], toolId: entity.operands[1], before,
-                keepTarget: !!document.value.entities.find((item) => item.id === entity.operands![0])?.visible,
-                keepTool: !!document.value.entities.find((item) => item.id === entity.operands![1])?.visible, existing: true };
+            const signs = entity.operandSigns || Object.fromEntries(entity.operands.map((id, index) => [id, entity.operation === 'subtract' && index > 0 ? -1 as const : 1 as const]));
+            const targetId = entity.operands.find((id) => signs[id] === 1) || entity.operands[0];
+            operation.value = { type: 'boolean', resultId: entity.id, operation: entity.operation || 'union', operandIds: [...entity.operands], signs, before,
+                keepTarget: !!document.value.entities.find((item) => item.id === targetId)?.visible, existing: true };
             historyEditId.value = entity.id;
             selectedIds.value = [...entity.operands];
-            viewport()?.setBooleanRoles({ target: entity.operands[0], tool: entity.operands[1] });
+            activeTool.value = 'select';
+            viewport()?.setTool('select');
+            viewport()?.setBooleanPreview(booleanDraft.value);
         }
     }
 
@@ -398,9 +411,9 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
 
 
     return {
-        operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
+        operation, historyEditId, canBoolean, booleanCanCommit, extrudeBody, booleanDraft, operationTargets,
         createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
-        updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
+        updateExtrudeResult, toggleBooleanOperand, doneOperation, cancelOperation, editHistory,
         updateFaceOffsetInput, onDirectEdit, finishDirectEdit, cancelDirectEdit,
     };
 }

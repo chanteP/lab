@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { SketchAdvanced } from '../../composables/sketch/useSketchAdvanced';
 import { integerStep } from '../../utils/number';
 import OperationBar from '../ui/OperationBar.vue';
+import AppButton from '../ui/AppButton.vue';
 
 const props = defineProps<{ advanced: SketchAdvanced }>();
 const canvas = ref<HTMLCanvasElement>();
@@ -101,7 +102,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
                     <option value="rotate">旋转对称</option>
                 </select>
             </label>
-            <button type="button" class="next-command" @click="advanced.nextSymmetryStep">{{ session.step === 3 ? '完成' : '下一步' }}</button>
+            <AppButton type="primary" size="small" @click="advanced.nextSymmetryStep">{{ session.step === 3 ? '完成' : '下一步' }}</AppButton>
         </OperationBar>
 
         <div v-if="positions.x" class="gizmo-input sketch-length-input" :style="positionStyle('x')" @pointerdown.stop>
@@ -131,8 +132,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
 :deep(.operation-bar__content) input { width: 66px; height: 28px; padding: 3px 6px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
 :deep(.operation-bar__content) select { height: 28px; color: var(--model3d-ui-4d5e54); background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; }
 .operation-hint { max-width: 250px; overflow: hidden; color: var(--model3d-ui-7e8b83); font-size: 11px; text-overflow: ellipsis; }
-.next-command { height: 30px; padding: 0 14px; color: var(--model3d-ui-fff); background: var(--model3d-ui-147d70); border: 0; border-radius: 6px; cursor: pointer; }
-.next-command:focus-visible, .gizmo-input input:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
+.gizmo-input input:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
 .gizmo-input { position: absolute; z-index: 2; transform: translate(-50%, -50%); }
 @media (max-width: 1000px) {
     .operation-hint { display: none; }

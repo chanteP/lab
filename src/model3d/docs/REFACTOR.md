@@ -37,9 +37,11 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
+- `BooleanPreviewController` 只管理多模型 CSG 临时显示：隔离参与模型、透明材质/边框、交集预览和隐藏素材重建；结果实体仍由 `useModelingOperations` 在完成时写入 document。
 - `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载右侧工具/实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
 
-- `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁和标注。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
+- `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁、标注和面向相机的 Boolean mini +/-。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
+- `AppButton` 统一流程按钮的类型、尺寸、禁用态和圆角；`EntityTree` 自持内联重命名编辑态，通过事件写回 document。
 
 销毁顺序为交互监听、TransformControls、相机辅助器、场景/各渲染器资源、渲染核心；Vue 组件卸载时统一触发，App 不再重复 dispose。
 
@@ -57,6 +59,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-04：实体树支持内联重命名并精简单选详情；新增多模型带符号 Boolean 草稿、透明/边框预览和 mini +/-，完成前结果不入树，统一圆角流程按钮与空白提交。
 - 2026-11-04：移除顶部项目栏并迁移到固定渐隐 Sidebar，Canvas 全页化且仅扣除 218px；统一 120px 工具栏、极简 range、形状/裁剪边命名和按上下文提示，实体树改为终端式层级线。
 - 2026-11-04：修复三维/草图坐标球粘手并支持轴球精确视图；新增 3D 动态提示、箭头侧面有符号长度输入和连续面推拉，顶部仅保留 Extrude/Boolean/Symmetry 流程条，普通属性迁入右侧自适应面板。
 - 2026-11-04：文档固定 Face Extrude 的输入清理、同域合并、三角化、法线、校验、烘焙和场景同步顺序，禁止用 mouseup 延迟掩盖问题，并要求 preview/commit 同源回归同时通过。

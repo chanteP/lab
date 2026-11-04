@@ -30,6 +30,7 @@ interface InteractionOptions {
     callbacks: ViewportCallbacks;
     getTool: () => ViewTool;
     isSketchMode: () => boolean;
+    isBooleanActive: () => boolean;
 }
 
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
@@ -51,6 +52,7 @@ export class InteractionController {
     private readonly callbacks: ViewportCallbacks;
     private readonly getTool: () => ViewTool;
     private readonly isSketchMode: () => boolean;
+    private readonly isBooleanActive: () => boolean;
     private readonly raycaster = new THREE.Raycaster();
     private readonly pointer = new THREE.Vector2();
     private readonly pointerStart = new THREE.Vector2();
@@ -129,6 +131,7 @@ export class InteractionController {
         });
         this.getTool = options.getTool;
         this.isSketchMode = options.isSketchMode;
+        this.isBooleanActive = options.isBooleanActive;
 
         this.selectionRectangle = window.document.createElement('div');
         this.selectionRectangle.className = 'selection-rectangle';
@@ -447,6 +450,7 @@ export class InteractionController {
             this.gizmo.start(event, this.sketchMode);
             return;
         }
+        if (this.isBooleanActive()) return;
         if (!this.sketchMode && this.tool === 'select') {
             const arrow = this.hitExtrudeArrow(event);
             if (arrow) {
@@ -833,6 +837,15 @@ export class InteractionController {
             const point = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
             if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
             this.clearSketchReferences();
+            return;
+        }
+        if (this.isBooleanActive()) {
+            const hit = this.hitEntity(event);
+            if (!hit) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.callbacks.onBlankCommit();
+            }
             return;
         }
         const hit = this.hitEntity(event);

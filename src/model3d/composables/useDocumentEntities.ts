@@ -44,9 +44,6 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         setTool, selectSketchEntity, cancelSketch, clearSketchSelection, beginSketch, refreshSketch,
     } = options;
     const contextMenu = ref<{ x: number; y: number; node: OutlinerNode } | null>(null);
-    const showRename = ref(false);
-    const renameValue = ref('');
-    const renameTarget = ref<OutlinerNode | null>(null);
 
     const treeNodes = computed(() => {
         // Folders and entities share one parent graph, so either can contain nested nodes.
@@ -186,21 +183,15 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         if (!selectedIds.value.includes(node.id)) selectedIds.value = [node.id];
         contextMenu.value = { node, x: Math.min(event.clientX, window.innerWidth - 150), y: Math.min(event.clientY, window.innerHeight - 100) };
     }
-    function requestRename(node: OutlinerNode) {
-        renameTarget.value = node;
-        renameValue.value = node.name;
-        showRename.value = true;
-        contextMenu.value = null;
-    }
-    function applyRename() {
-        const target = renameTarget.value;
-        const name = renameValue.value.trim();
-        if (!target || !name) return;
+    function renameNode(id: string, value: string) {
+        const name = value.trim();
+        if (!name) return;
+        const item = document.value.entities.find((entity) => entity.id === id)
+            || document.value.folders.find((folder) => folder.id === id)
+            || document.value.planes.find((plane) => plane.id === id);
+        if (!item || item.name === name) return;
         pushHistory();
-        const collection = target.kind === 'folder' ? document.value.folders : document.value.entities;
-        const item = collection.find((entry) => entry.id === target.id);
-        if (item) item.name = name;
-        showRename.value = false;
+        item.name = name;
     }
     function deleteContextNodes() {
         const menu = contextMenu.value;
@@ -255,9 +246,6 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         viewport()?.setActivePlane(activePlane.value);
         setTool('select');
     }
-    function activateTreeNode(id: string) {
-        if (document.value.planes.some((plane) => plane.id === id)) beginSketch(id);
-    }
     function toggleNodeVisibility(id: string) {
         pushHistory();
         const setEntity = (entity: ModelEntity, visible: boolean) => entity.visible = visible;
@@ -288,11 +276,11 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
     }
 
     return {
-        treeNodes, contextMenu, showRename, renameValue, renameTarget,
+        treeNodes, contextMenu,
         selectEntity, updateEntity, updateLengthEntity, updateVector,
         removeSelected, removeConstraintsForEdge, removeConstraintsForEntity, deleteNodeIds, duplicateSelected,
-        createFolder, openNodeContext, requestRename, applyRename, deleteContextNodes, reparentNodes,
-        createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
+        createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
+        createPlane, constructPlane, createPlaneAndSketch, selectPlane,
         toggleNodeVisibility, changeActivePlane,
     };
 }

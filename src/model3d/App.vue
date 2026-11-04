@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
     AnalyticsOutline, CloseOutline, CubeOutline, EllipseOutline, EyeOutline, LayersOutline,
-    ShapesOutline, TrashOutline, PencilOutline, ScanOutline,
+    ShapesOutline, TrashOutline, ScanOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type ViewTool, type ViewportCallbacks } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
@@ -38,7 +38,7 @@ import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/conf
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     createDocument,
-    type BooleanOperation, type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
+    type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
 } from './types';
 
 const message = useMessage();
@@ -106,9 +106,9 @@ const {
     applySketchConstraint, toggleSketchPointLock,
 } = sketchConstraints;
 const {
-    operation, historyEditId, canBoolean, extrudeBody, booleanDraft, operationTargets,
+    operation, historyEditId, canBoolean, booleanCanCommit, extrudeBody, booleanDraft, operationTargets,
     createPrimitive, applyBoolean, startExtrude, updateExtrude, updateExtrudeLength, onExtrudeGesture,
-    updateExtrudeResult, swapBooleanRoles, doneOperation, cancelOperation, editHistory,
+    updateExtrudeResult, toggleBooleanOperand, doneOperation, cancelOperation, editHistory,
     updateFaceOffsetInput, onDirectEdit, finishDirectEdit, cancelDirectEdit,
 } = useModelingOperations({
     document, selectedIds, selectedEntities, selected, selectionKind, activeTool, activePanel,
@@ -132,11 +132,11 @@ const {
     viewport: () => viewport, clearHistory, cancelSketch: () => sketchSession.cancelSketch(), setTool, message,
 });
 const {
-    treeNodes, contextMenu, showRename, renameValue,
-    selectEntity, updateEntity, updateLengthEntity, updateVector,
+    treeNodes, contextMenu,
+    selectEntity, updateEntity, updateLengthEntity,
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
-    createFolder, openNodeContext, requestRename, applyRename, deleteContextNodes, reparentNodes,
-    createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
+    createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
+    createPlane, constructPlane, createPlaneAndSketch, selectPlane,
     toggleNodeVisibility,
 } = useDocumentEntities({
     document, selectedIds, selected, selectionKind, activeTool, activePanel, activePlaneId, activePlane,
@@ -398,12 +398,7 @@ function toggleProjection() { projectionMode.value = viewport?.toggleProjection(
 function closeOperationBar() {
     cancelOperation();
 }
-function updateBooleanOperation(value: BooleanOperation) {
-    if (!booleanDraft.value) return;
-    const entity = document.value.entities.find((item) => item.id === booleanDraft.value!.resultId);
-    if (entity) entity.operation = value;
-}
-function updateBooleanKeep(key: 'keepTarget' | 'keepTool', value: boolean) {
+function updateBooleanKeep(key: 'keepTarget', value: boolean) {
     if (booleanDraft.value) booleanDraft.value[key] = value;
 }
 function onKeyDown(event: KeyboardEvent) {
@@ -566,6 +561,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onMeasureChange: (active) => measureMode.value = active,
         onScale: (value) => scaleBar.value = value,
         onStats: (value) => stats.value = value,
+        onBooleanToggle: toggleBooleanOperand,
 };
 
 function onViewportReady(instance: Viewport) {
@@ -608,24 +604,24 @@ onBeforeUnmount(() => {
             <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :entity-count="visibleEntityCount"
                 :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
-                @select="selectFromItems" @activate="activateTreeNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
+                @select="selectFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }">
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
-                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @isolate="toggleIsolate"
-                    @history="editHistory" />
+                    @history="editHistory" @boolean="applyBoolean" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
-                <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-ids="selectedIds" :selected-entities="selectedEntities"
+                <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent" :selected-face-planar="selectedFacePlanar"
                     :parameter-card-open="parameterCardOpen" :display-length="displayLength"
                     @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @import="importProject" @create-plane="createPlane"
                     @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')"
-                    @update-name="updateEntity('name', $event)" @update-vector="updateVector" @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
+                    @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
                     :planes="document.planes" :selection-kind="selectionKind" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
@@ -639,12 +635,11 @@ onBeforeUnmount(() => {
 
                 <div class="viewport-caption"><span v-if="sectionActive" class="mode-badge">剖视</span><span v-if="isolateActive" class="mode-badge">隔离</span><NSelect class="unit-select" size="small" aria-label="全局长度单位" :value="lengthUnit" :options="LENGTH_UNITS" :consistent-menu-width="false" @update:value="setLengthUnit" /></div>
 
-                <ModelingOperationBar v-if="operation && !sketchMode" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId"
-                    :operation-targets="operationTargets" :document="document"
+                <ModelingOperationBar v-if="operation && !sketchMode" :operation="operation" :extrude-body="extrudeBody" :boolean-draft="booleanDraft" :history-edit-id="historyEditId" :boolean-can-commit="booleanCanCommit"
+                    :operation-targets="operationTargets"
                     @close="closeOperationBar" @done="doneOperation" @update-extrude="updateExtrude"
                     @update-extrude-result="updateExtrudeResult" @update-extrude-target="operation?.type === 'extrude' && (operation.targetId = $event)"
-                    @update-boolean-operation="updateBooleanOperation" @update-boolean-keep="updateBooleanKeep"
-                    @swap-boolean-roles="swapBooleanRoles" />
+                    @update-boolean-keep="updateBooleanKeep" />
 
                 <ViewportUtilities :measure-mode="measureMode" :section-active="sectionActive" :sketch-mode="sketchMode" :projection-mode="projectionMode" :scale-bar="scaleBar" :scale-bar-label="scaleBarLabel"
                     :display-mode="displayMode" :show-edges="showEdges" :shadow-visible="shadowVisible" :grid-visible="gridVisible"
@@ -660,7 +655,6 @@ onBeforeUnmount(() => {
             <div class="modal-actions"><NButton @click="showNewProject = false">取消</NButton><NButton type="primary" @click="newProject">创建项目</NButton></div>
         </NModal>
         <div v-if="contextMenu" class="entity-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
-            <button @click="requestRename(contextMenu.node)"><NIcon><PencilOutline /></NIcon>重命名</button>
             <button class="danger" @click="deleteContextNodes"><NIcon><TrashOutline /></NIcon>删除</button>
         </div>
         <div v-if="viewportMenu" class="entity-context-menu viewport-context-menu" :style="{ left: `${viewportMenu.x}px`, top: `${viewportMenu.y}px` }" @click.stop>
@@ -672,11 +666,6 @@ onBeforeUnmount(() => {
             <button class="danger" @click="deleteSketchFromContext"><NIcon><TrashOutline /></NIcon>删除草图</button>
             <button @click="clearSketchSelection"><NIcon><CloseOutline /></NIcon>取消选择</button>
         </div>
-        <NModal v-model:show="showRename" preset="card" title="重命名" style="width: 380px" :bordered="false">
-            <NInput v-model:value="renameValue" autofocus @keyup.enter="applyRename" />
-            <div class="modal-actions"><NButton @click="showRename = false">取消</NButton><NButton type="primary" @click="applyRename">确定</NButton></div>
-        </NModal>
-
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">
                 <section><strong>选择与画布导航</strong><p>左键单击选择，拖拽环绕；Command/Ctrl＋拖拽框选，空格＋拖拽平移。右键环绕，中键平移，滚轮缩放。</p></section>

@@ -23,6 +23,10 @@ export type ViewportOverlay = {
     linked: boolean;
     color: string;
 } | {
+    kind: 'booleanButton';
+    entityId: string;
+    sign: 1 | -1;
+} | {
     kind: 'label';
     text: string;
     className: string;

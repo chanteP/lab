@@ -31,7 +31,7 @@ const emit = defineEmits<{
     remove: [];
     folder: [];
     select: [id: string, additive: boolean];
-    activate: [id: string];
+    rename: [id: string, name: string];
     context: [node: OutlinerNode, event: MouseEvent];
     drop: [ids: string[], targetId: string | null];
     toggle: [id: string];
@@ -80,7 +80,7 @@ const options = computed(() => props.projects.map((item) => ({ label: item.name,
             <div class="section-label">实体 <span class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button><i>{{ entityCount }}</i></span></div>
             <div class="object-list">
                 <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
-                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="(id, additive) => emit('select', id, additive)" @activate="emit('activate', $event)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
+                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="(id, additive) => emit('select', id, additive)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
             </div>
         </section>
         <section class="project-section">

@@ -105,6 +105,16 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                 </button>
             </div>
 
+            <button
+                v-else-if="item.kind === 'booleanButton'"
+                class="viewport-overlay-item boolean-mini-button"
+                :class="{ negative: item.sign === -1 }"
+                :style="positionStyle(item)"
+                :aria-label="item.sign === 1 ? '切换为去除模型' : '切换为保留模型'"
+                @pointerdown.stop
+                @click.stop="callbacks.onBooleanToggle(item.entityId)"
+            >{{ item.sign === 1 ? '+' : '−' }}</button>
+
             <div
                 v-else
                 class="viewport-overlay-item measure-value"
@@ -120,4 +130,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
     position: absolute;
     transform: translate(-50%, -50%);
 }
+.boolean-mini-button { width: 23px; height: 23px; display: grid; place-items: center; padding: 0 0 1px; color: var(--model3d-ui-fff); background: #175fc2; border: 1px solid var(--model3d-ui-ffffff80); border-radius: 6px; box-shadow: 0 2px 7px var(--model3d-ui-1d332b2b); font-size: 17px; font-weight: 650; line-height: 1; cursor: pointer; pointer-events: auto; }
+.boolean-mini-button.negative { background: #a92f3d; }
+.boolean-mini-button:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
 </style>

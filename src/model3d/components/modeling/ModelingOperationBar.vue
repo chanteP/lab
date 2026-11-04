@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { NButton, NCheckbox, NSelect } from 'naive-ui';
+import { NCheckbox, NSelect } from 'naive-ui';
 import OperationBar from '../ui/OperationBar.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
-import type { BooleanOperation, ModelDocument, ModelEntity, OperationState } from '../../types';
+import AppButton from '../ui/AppButton.vue';
+import type { BooleanOperation, ModelEntity, OperationState } from '../../types';
 
-const props = defineProps<{
+defineProps<{
     operation: OperationState;
     extrudeBody: ModelEntity | null;
     booleanDraft: Extract<OperationState, { type: 'boolean' }> | null;
     historyEditId: string | null;
     operationTargets: { label: string; value: string }[];
-    document: ModelDocument;
+    booleanCanCommit: boolean;
 }>();
 const emit = defineEmits<{
     close: [];
@@ -19,11 +19,8 @@ const emit = defineEmits<{
     updateExtrude: [key: 'depth' | 'direction' | 'sideMode' | 'draftAngle', value: unknown];
     updateExtrudeResult: [result: 'new' | BooleanOperation];
     updateExtrudeTarget: [id: string | null];
-    updateBooleanOperation: [operation: BooleanOperation];
-    updateBooleanKeep: [key: 'keepTarget' | 'keepTool', value: boolean];
-    swapBooleanRoles: [];
+    updateBooleanKeep: [key: 'keepTarget', value: boolean];
 }>();
-const booleanOperation = computed(() => props.booleanDraft ? props.document.entities.find((item) => item.id === props.booleanDraft!.resultId)?.operation : null);
 </script>
 
 <template>
@@ -36,17 +33,13 @@ const booleanOperation = computed(() => props.booleanDraft ? props.document.enti
                 <label>拔模°<IntegerInputNumber :precision="4" :value="extrudeBody.draftAngle || 0" :min="-45" :max="45" size="small" @update:value="emit('updateExtrude', 'draftAngle', $event)" /></label>
                 <label>结果<NSelect :value="operation.result" size="small" :options="[{ label: '新实体', value: 'new' }, { label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="emit('updateExtrudeResult', $event)" /></label>
                 <NSelect v-if="operation.result !== 'new'" :value="operation.targetId" :options="operationTargets" placeholder="目标实体" size="small" @update:value="emit('updateExtrudeTarget', $event)" />
-                <NButton size="small" type="primary" @click="emit('done')">完成</NButton>
+                <AppButton type="primary" size="small" @click="emit('done')">完成</AppButton>
             </div>
         </template>
         <template v-else-if="operation.type === 'boolean' && booleanDraft">
-            <div class="context-title"><strong>布尔运算</strong><span>紫色目标 / 蓝色工具</span></div>
             <div class="context-fields operation-fields">
-                <NSelect :value="booleanOperation" size="small" :options="[{ label: '并集', value: 'union' }, { label: '差集', value: 'subtract' }, { label: '交集', value: 'intersect' }]" @update:value="emit('updateBooleanOperation', $event)" />
-                <NButton size="small" secondary @click="emit('swapBooleanRoles')">交换目标 / 工具</NButton>
                 <NCheckbox :checked="booleanDraft.keepTarget" size="small" @update:checked="emit('updateBooleanKeep', 'keepTarget', $event)">保留目标</NCheckbox>
-                <NCheckbox :checked="booleanDraft.keepTool" size="small" @update:checked="emit('updateBooleanKeep', 'keepTool', $event)">保留工具</NCheckbox>
-                <NButton size="small" type="primary" @click="emit('done')">完成</NButton>
+                <AppButton type="primary" size="small" :disabled="!booleanCanCommit" @click="emit('done')">完成</AppButton>
             </div>
         </template>
     </OperationBar>

@@ -10,6 +10,8 @@ import { buildMeshTopology } from '../topology/MeshTopology';
 import { reconcileTopology } from '../topology/TopologyTracker';
 import { createTopologyEdgeGeometry } from './TopologyEdges';
 import type { BodyTopology } from '../topology/types';
+import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
+import type { OverlayController } from './OverlayController';
 
 /** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
 export function measureSectionRadius(objects: THREE.Object3D[]) {
@@ -41,6 +43,7 @@ interface SceneSynchronizerOptions {
     onRefreshSketchSelectionFeedback: () => void;
     onPlaneOrientation: (plane: SketchPlane) => void;
     isProfileIntersection: () => boolean;
+    overlay: OverlayController;
 }
 
 /** Rebuilds Three.js scene content from the document and owns scene-wide display state. */
@@ -54,7 +57,8 @@ export class SceneSynchronizer {
     activePlane: SketchPlane | null = null;
     editingSketchId: string | null = null;
     editingBorderIndex: number | null = null;
-    booleanRoles: { target: string; tool: string } | null = null;
+    readonly booleanPreview: BooleanPreviewController;
+    booleanState: BooleanPreviewState | null = null;
 
     private displayMode: DisplayMode = 'shaded';
     private showEdges = true;
@@ -64,10 +68,11 @@ export class SceneSynchronizer {
     private isolateIds: Set<string> | null = null;
     private sketchHoverIds = new Set<string>();
 
-    constructor(private readonly options: SceneSynchronizerOptions) {}
+    constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
     sync(document: ModelDocument) {
         this.document = document;
+        this.booleanPreview.reset();
         this.options.onClearAltBorder();
         this.options.transform.detach();
         const previousTopology = new Map<string, BodyTopology>();
@@ -133,6 +138,7 @@ export class SceneSynchronizer {
         this.updatePlaneAppearance();
         this.options.onUpdateExtrudeGuide(document);
         this.options.onRefreshSketchFaces();
+        if (this.booleanState) this.booleanPreview.apply(this.model, document, this.booleanState);
     }
 
     private applyObjectDisplay(object: THREE.Object3D) {
@@ -224,6 +230,7 @@ export class SceneSynchronizer {
     }
 
     applyIsolation() {
+        if (this.booleanState) return;
         this.model.children.forEach((child) => {
             const entity = this.document?.entities.find((item) => item.id === child.userData.entityId);
             const inSketch = !this.options.isSketchMode() || (entity?.kind === 'sketch' && entity.planeId === this.activePlane?.id);
@@ -332,13 +339,19 @@ export class SceneSynchronizer {
         if (this.document) this.options.onUpdateExtrudeGuide(this.document);
     }
 
-    setBooleanRoles(roles: { target: string; tool: string } | null) {
-        this.booleanRoles = roles;
-        this.applySelection();
+    setBooleanPreview(state: BooleanPreviewState | null) {
+        this.booleanPreview.restore();
+        this.booleanState = state;
+        if (state && this.document) this.booleanPreview.apply(this.model, this.document, state);
+        else {
+            this.applyIsolation();
+            this.applySelection();
+        }
     }
 
     applySelection() {
         this.options.transform.detach();
+        if (this.booleanState) return;
         this.model.children.forEach((object) => {
             const mesh = object as THREE.Mesh;
             const material = mesh.material as THREE.MeshStandardMaterial;
@@ -348,7 +361,7 @@ export class SceneSynchronizer {
             if (material.emissive) {
                 if (!material.userData.baseColor && material.color) material.userData.baseColor = material.color.getHex();
                 if (material.color) material.color.set(bodyActive ? VIEWPORT_COLORS.selectedBody : this.displayMode === 'clay' ? VIEWPORT_COLORS.clayBody : material.userData.baseColor);
-                const role = this.booleanRoles?.target === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTarget : this.booleanRoles?.tool === mesh.userData.entityId ? VIEWPORT_COLORS.booleanTool : active && !bodyActive && !['face', 'edge'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
+                const role = active && !bodyActive && !['face', 'edge'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);
                 material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;
                 mesh.userData.bodySelected = bodyActive && role === VIEWPORT_COLORS.noEmissive;
@@ -376,6 +389,7 @@ export class SceneSynchronizer {
     }
 
     dispose() {
+        this.booleanPreview.dispose();
         clearGroup(this.model);
         clearGroup(this.planes);
         clearGroup(this.sectionOutlines);

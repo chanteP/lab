@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
-import { AddOutline, BuildOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
+import { AddOutline, BuildOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RemoveOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
@@ -12,6 +12,7 @@ defineProps<{
     isolateActive: boolean;
     selectionKind: string | null;
     canIsolate: boolean;
+    canBoolean: boolean;
     historySteps: HistoryStep[];
 }>();
 const emit = defineEmits<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
     tool: [tool: string];
     isolate: [];
     history: [id: string];
+    boolean: [type: 'union' | 'subtract' | 'intersect'];
 }>();
 const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉伸', boolean: '布尔' };
 </script>
@@ -51,6 +53,11 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
                 </div>
             </NPopover>
         </div>
+        <div v-if="canBoolean" class="tool-group boolean-tools">
+            <ViewportToolItem :description-on-hover="false" label="并集" @click="emit('boolean', 'union')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem :description-on-hover="false" label="差集" @click="emit('boolean', 'subtract')"><NIcon><RemoveOutline /></NIcon></ViewportToolItem>
+            <ViewportToolItem :description-on-hover="false" label="交集" @click="emit('boolean', 'intersect')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
+        </div>
     </nav>
 </template>
 
@@ -63,6 +70,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .toolbar-spacer { flex: 1; min-height: 2px; }
 .history-trigger { display: block; }
+.boolean-tools { margin-top: 8px; padding-top: 8px !important; border-top: 1px solid var(--model3d-ui-e3e8e5); }
 .history-panel { width: 220px; max-height: 340px; overflow-y: auto; }
 .history-panel > strong { display: block; margin-bottom: 8px; font-size: 12px; }
 .history-panel > button { width: 100%; display: flex; align-items: center; gap: 7px; padding: 8px 4px; border: 0; border-bottom: 1px solid var(--model3d-ui-edf0ee); background: transparent; color: var(--model3d-ui-4e5e54); font-size: 10px; text-align: left; cursor: pointer; }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppButton from './AppButton.vue';
+
 defineProps<{ label: string; closeLabel?: string }>();
 const emit = defineEmits<{ close: [] }>();
 </script>
@@ -6,7 +8,7 @@ const emit = defineEmits<{ close: [] }>();
 <template>
     <section class="operation-bar" :aria-label="label" @pointerdown.stop>
         <div class="operation-bar__content"><slot /></div>
-        <button type="button" class="operation-bar__close" :aria-label="closeLabel || `关闭${label}`" @click="emit('close')">×</button>
+        <AppButton class="operation-bar__close" type="danger" size="small" :aria-label="closeLabel || `关闭${label}`" @click="emit('close')">×</AppButton>
     </section>
 </template>
 
@@ -32,8 +34,7 @@ const emit = defineEmits<{ close: [] }>();
     backdrop-filter: blur(12px);
 }
 .operation-bar__content { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
-.operation-bar__close { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; padding: 0 0 2px; color: var(--model3d-ui-fff); background: var(--model3d-ui-c94f4f); border: 0; border-radius: 50%; font-size: 23px; line-height: 1; cursor: pointer; }
-.operation-bar__close:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }
+.operation-bar__close { width: 30px; flex: 0 0 30px; padding: 0 0 2px; font-size: 20px; font-weight: 400; line-height: 1; }
 @media (max-width: 1100px) {
     .operation-bar { right: 12px; left: 144px; max-width: calc(100% - 156px); }
 }

@@ -143,18 +143,21 @@
 
 ## Boolean 执行态与 History
 
-- 两个 Body 进入 Union/Subtract/Intersect 后，首先生成可取消的预览结果。
-- 紫色表示 Target，蓝色表示 Tool；Subtract 默认第一个为 Target，Union 默认最后选择的 Body 为 Target。
-- “交换 Target / Tool”会真正交换 `operands`，不是只改变标签。
-- 保留 Target、保留 Tool 在 Done 时分别应用；Cancel 恢复执行前文档。
-- History 可重新打开 Boolean，切换类型、交换角色和修改保留策略。
+- 两个或更多 Body 可从左侧工具栏最底部的并集/差集/交集组进入草稿。进入时不改变相机，只临时显示参与模型并隐藏无关模型；隐藏素材也会在临时预览层重建，不写入 document。
+- 完成前不创建结果实体、不显示最终模型，实体树保持原样。完成或点击空白才一次性创建并烘焙结果、隐藏素材并恢复无关模型；Cancel/Esc 恢复原展示和选择。
+- 每个参与模型显示透明材质、对应色边框和始终面向相机的 mini 按钮。`+` 为宝蓝色/深蓝按钮，`-` 为深红色按钮；点击只切换临时 `operandSigns`，不修改源实体。
+- Union 全 `+` 保持并集，出现 `-` 自动切换差集；Subtract 全 `+` 自动归入并集，出现 `-` 后执行带符号差集。正操作数先并集，负操作数并集后扣除。
+- Intersect 的正操作数先求交，再扣除负操作数。交集预览使用紫色透明材质和边框，源模型透明度高于其他模式；交集结果本身没有 mini 按钮。
+- 全部操作数均为 `-` 时禁止完成，点击空白不执行任何操作。操作条只提供“保留目标”和“完成”，通用关闭按钮为圆角矩形；保留目标只保留首个正操作数源模型，其余素材隐藏。
+- History 回改复用同一临时预览和提交流程，已有结果在编辑期间不作为额外模型渲染。
 
 ## 一级工具、Adaptive menu 与绘制工具栏
 
 - 页面无顶部项目栏，项目操作集中在 218px fixed Sidebar；Canvas 从页面顶部开始并占满剩余宽度。3D/草图左侧工具栏均为 120px，工具 title 不超过 5 个字。
 - Sidebar 使用右侧渐隐背景；实体树用终端 `tree` 式连线表达层级。剖面和约束检查等 range 全部复用 `MinimalRange.vue`，轨道为 3px 横线，手柄为竖线。
 - 一级入口包含 Search、Sketch、Insert、Construct、Tools、Section View、Isolate、Measure、Display Modes、Items 和 History；Move/Rotate/Scale 直接放在独立圆形按钮分组。
-- 选中几何后显示 Adaptive menu：face 推荐 Face Extrude / Sketch，edge 提供相切扩选与穿透选择，Body 推荐 Move/Rotate/Scale，多 Body 推荐 Boolean。
+- 单选几何时显示精简 Adaptive menu：face 推荐 Face Extrude / Sketch，edge 提供相切扩选与穿透选择，Body 仅保留尺寸与颜色；多选不显示详情面板，Boolean 入口统一放在左侧工具栏最底部。
+- 详情面板不显示名称、坐标、Move/Rotate/Scale 快捷入口或“更多工具”。实体树节点通过双击或再次单击已选节点内联重命名，Enter/blur 提交，Esc 取消，不再使用重命名弹窗。
 - 再次点击当前工具只展开或收起 Parameter Card，不退出工具；单击不修改几何，拖动或数值输入才产生编辑。
 - 添加平面不显示确认弹窗：无面选择时直接创建 XZ 平面；选中模型面后创建同法向平面，示意中心对齐该面的中心。
 - 平面是 Items 中的独立对象，支持点击选择、眼睛显隐、Move/Rotate Gizmo；Scale 对平面禁用。
