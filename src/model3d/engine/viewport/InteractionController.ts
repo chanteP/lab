@@ -118,7 +118,7 @@ export class InteractionController {
             getDocument: () => this.document, getActivePlane: () => this.activePlane,
             getEditingSketchId: () => this.editingSketchId, getProfileType: () => this.sketchProfileType });
         this.assetEditor = new SketchAssetDragController({
-            point: (event, id) => this.sketchOperationPoint(event, { excludeEntityIds: this.document ? sketchAssetExcludedIds(this.document, id) : [id] }),
+            point: (event) => this.sketchPoint(event),
             onGesture: options.callbacks.onSketchAssetCorner,
             onState: (active) => { this.controls.enabled = !active; this.container.classList.toggle('is-handle-dragging', active); },
             onFinish: () => { this.clearSketchReferences(); options.callbacks.onSketchDragEnd(); },
@@ -378,6 +378,10 @@ export class InteractionController {
     setSketchGuideSnapEnabled(active: boolean) { this.guideController.setSnapEnabled(active); }
     setSelectThrough(active: boolean) { this.selectThrough = active; }
     setIncludeTangent(active: boolean) { this.includeTangent = active; }
+
+    snapSketchAssetPoint(id: string, point: Point2) {
+        return this.guideController.operation(point, { excludeEntityIds: this.document ? sketchAssetExcludedIds(this.document, id) : [id] });
+    }
 
     private sketchOperationPoint(event: PointerEvent, options: SketchGuideOptions = {}) {
         return this.guideController.operation(this.sketchPoint(event), options);

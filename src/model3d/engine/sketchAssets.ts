@@ -47,14 +47,18 @@ export function sketchAssetTarget(document: ModelDocument, id: string | null): S
 }
 
 /** Corner resizing keeps the opposite corner fixed and optionally projects the gesture onto the original diagonal. */
-export function resizeAssetCorners(source: Point2[], index: number, point: Point2, aspectLocked: boolean): Point2[] {
+export function resizeAssetCorners(source: Point2[], index: number, point: Point2, aspectLocked: boolean, snapAxis?: 0 | 1): Point2[] {
     if (source.length !== 4 || index < 0 || index > 3) return source.map((corner) => [...corner]);
     const opposite = source[(index + 2) % 4];
     const originalWidth = Math.abs(source[1][0] - source[0][0]) || 1;
     const originalHeight = Math.abs(source[2][1] - source[1][1]) || 1;
     let width = Math.max(0.1, Math.abs(point[0] - opposite[0]));
     let height = Math.max(0.1, Math.abs(point[1] - opposite[1]));
-    if (aspectLocked) {
+    if (aspectLocked && snapAxis === 0) {
+        height = width * originalHeight / originalWidth;
+    } else if (aspectLocked && snapAxis === 1) {
+        width = height * originalWidth / originalHeight;
+    } else if (aspectLocked) {
         const scale = Math.max(0.001, (width * originalWidth + height * originalHeight) / (originalWidth ** 2 + originalHeight ** 2));
         width = originalWidth * scale;
         height = originalHeight * scale;
@@ -65,6 +69,24 @@ export function resizeAssetCorners(source: Point2[], index: number, point: Point
     const result = Array<Point2>(4);
     next.forEach((corner, offset) => { result[(index + 2 + offset) % 4] = corner; });
     return result;
+}
+
+/** Snap the computed handle, then retain aspect by snapping only one axis of the constrained diagonal. */
+export function resizeAssetCornersWithSnap(
+    source: Point2[], index: number, point: Point2, aspectLocked: boolean,
+    snap: (point: Point2) => Point2,
+): Point2[] {
+    const projected = resizeAssetCorners(source, index, point, aspectLocked);
+    const actual = projected[index];
+    const snapped = snap([...actual]);
+    if (snapped[0] === actual[0] && snapped[1] === actual[1]) return projected;
+    if (!aspectLocked) return resizeAssetCorners(source, index, snapped, false);
+
+    const candidates: Point2[][] = [];
+    if (snapped[0] !== actual[0]) candidates.push(resizeAssetCorners(source, index, [snapped[0], actual[1]], true, 0));
+    if (snapped[1] !== actual[1]) candidates.push(resizeAssetCorners(source, index, [actual[0], snapped[1]], true, 1));
+    if (!candidates.length) return projected;
+    return candidates.sort((a, b) => Math.hypot(a[index][0] - snapped[0], a[index][1] - snapped[1]) - Math.hypot(b[index][0] - snapped[0], b[index][1] - snapped[1]))[0];
 }
 
 export function dimensionAssetCorners(source: Point2[], dimension: 'width' | 'height', value: number, aspectLocked: boolean): Point2[] {

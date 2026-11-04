@@ -3,7 +3,7 @@ import { useMessage } from 'naive-ui';
 import type { EditPhase, SketchDimension, Viewport } from '../../engine/Viewport';
 import { parseSvg } from '../../engine/svgImport';
 import {
-    dimensionAssetCorners, folderEntities, resizeAssetCorners, resizeSketchEntity,
+    dimensionAssetCorners, folderEntities, resizeAssetCornersWithSnap, resizeSketchEntity,
     setFolderCorners, sketchAssetTarget,
 } from '../../engine/sketchAssets';
 import { uid } from '../../utils/id';
@@ -83,7 +83,9 @@ export function useSketchAssets(options: SketchAssetsOptions) {
             return;
         }
         const target = sketchAssetTarget(drag.before, id)!;
-        applyResize(id, resizeAssetCorners(drag.corners, drag.index, point, target.aspectLocked), drag.before);
+        const next = resizeAssetCornersWithSnap(drag.corners, drag.index, point, target.aspectLocked,
+            (actual) => viewport()?.snapSketchAssetPoint(id, actual) || actual);
+        applyResize(id, next, drag.before);
         if (phase === 'end') drag = null;
     }
 

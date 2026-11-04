@@ -357,6 +357,7 @@ export class Viewport {
         const canvas = this.engine.renderer.domElement;
         return { x: (projected.x + 1) * canvas.clientWidth / 2, y: (1 - projected.y) * canvas.clientHeight / 2 };
     }
+    snapSketchAssetPoint(id: string, point: Point2) { return this.interaction.snapSketchAssetPoint(id, point); }
     sketchPointAt(clientX: number, clientY: number, precise = false) {
         return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent, precise);
     }

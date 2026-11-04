@@ -38,3 +38,15 @@ test('non-uniform SVG group scaling converts a circle to an ellipse', () => {
     assert.equal(next.profileType, 'ellipse');
     assert.equal(next.points?.length, 3);
 });
+
+test('aspect-locked snapping targets the computed handle and preserves the snapped axis', async () => {
+    const { resizeAssetCornersWithSnap } = await import('./sketchAssets');
+    let received: Point2 | null = null;
+    const next = resizeAssetCornersWithSnap(corners, 2, [80, 60], true, (actual) => {
+        received = actual;
+        return [actual[0], 35];
+    });
+    assert.deepEqual(received, [88, 44]);
+    assert.deepEqual(next[2], [70, 35]);
+    assert.equal(next[2][0] / next[2][1], 2);
+});
