@@ -95,3 +95,19 @@ test('topological corners are pickable and use the same signed treatment gesture
     assert.equal(entity.vertexTreatments?.[0].type, 'chamfer');
     assert.equal(entity.vertexTreatments?.[0].size, 2);
 });
+
+
+test('corner processing runs after adjacent edge processing', async () => {
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    entity.edgeTreatments = [{
+        id: 'edge', type: 'chamfer', size: 2,
+        edge: { a: [20, 20, -20], b: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0]] },
+    }];
+    entity.vertexTreatments = [treatment];
+    const result = buildEntityMesh(entity, document);
+    const base = new THREE.BoxGeometry(40, 40, 40);
+    const edgeFirst = applyVertexTreatments((await import('./modeling/EdgeTreatments')).applyEdgeTreatments(base, entity.edgeTreatments), entity.vertexTreatments);
+    assert.ok(Math.abs(volume(result.geometry) - volume(edgeFirst)) < 1e-5);
+    result.geometry.dispose(); base.dispose(); edgeFirst.dispose();
+});

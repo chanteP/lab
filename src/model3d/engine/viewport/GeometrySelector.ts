@@ -23,6 +23,8 @@ export type GeometryAnchor = {
     vertexId?: string;
     vertexTreatmentId?: string;
     localVertex?: { point: Vec3; normals: Vec3[] };
+    feedbackVertices?: Vec3[];
+    feedbackIndices?: number[];
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
@@ -99,8 +101,54 @@ export class GeometrySelector {
         return this.surface(mesh, face);
     }
 
+    private createTreatedFaceAnchor(hit: THREE.Intersection, entity: ModelEntity): GeometryAnchor | null {
+        const mesh = hit.object as THREE.Mesh;
+        const baseMesh = mesh.userData.baseMesh as THREE.Mesh | undefined;
+        const baseTopology = baseMesh?.userData.topology as BodyTopology | undefined;
+        if (!baseMesh || !baseTopology) return null;
+        const finalSurface = this.collectSurface(mesh, hit);
+        const point = new THREE.Vector3(...finalSurface.point).applyMatrix4(mesh.matrixWorld);
+        const normal = new THREE.Vector3(...finalSurface.normal).normalize();
+        const treatments = entity.edgeTreatments || [];
+        for (const treatment of treatments) {
+            const adjacent = treatment.edge.normals.some((wanted) => Math.abs(normal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
+            if (adjacent) continue;
+            const a = new THREE.Vector3(...treatment.edge.a).applyMatrix4(mesh.matrixWorld);
+            const b = new THREE.Vector3(...treatment.edge.b).applyMatrix4(mesh.matrixWorld);
+            const direction = b.clone().sub(a), lengthSquared = direction.lengthSq();
+            const t = lengthSquared ? THREE.MathUtils.clamp(point.clone().sub(a).dot(direction) / lengthSquared, 0, 1) : 0;
+            const closest = a.clone().addScaledVector(direction, t);
+            if (point.distanceTo(closest) > treatment.size * 1.5 + 0.25) continue;
+            const localNormal = treatment.edge.normals.reduce((sum, value) => sum.add(new THREE.Vector3(...value)), new THREE.Vector3()).normalize();
+            return {
+                id: entity.id, key: `${entity.id}:edge:${treatment.id}`, normal: localNormal.clone().transformDirection(mesh.matrixWorld).toArray(),
+                localNormal: localNormal.toArray(), point: closest.toArray(), type: 'edge', planar: false,
+                vertices: [a.toArray(), b.toArray()], indices: [0, 1], edgeTreatmentId: treatment.id,
+                localEdge: JSON.parse(JSON.stringify(treatment.edge)), revision: baseTopology.revision,
+            };
+        }
+        const candidates = baseTopology.faces.flatMap((face) => {
+            if (!face.planar || normal.dot(new THREE.Vector3(...face.normal)) < 0.995) return [];
+            const center = new THREE.Vector3(...face.point).applyMatrix4(baseMesh.matrixWorld);
+            return [{ face, distance: center.distanceTo(point) }];
+        }).sort((a, b) => a.distance - b.distance);
+        const face = candidates[0]?.face;
+        if (!face) return null;
+        const baseSurface = this.surface(baseMesh, face);
+        return {
+            id: entity.id, key: `${entity.id}:face:${face.id}`, normal: new THREE.Vector3(...face.normal).transformDirection(baseMesh.matrixWorld).toArray(),
+            localNormal: [...face.normal], point: baseSurface.point, type: 'face', planar: true,
+            vertices: baseSurface.vertices, indices: baseSurface.indices, faceIds: [face.id], revision: baseTopology.revision,
+            feedbackVertices: finalSurface.vertices, feedbackIndices: finalSurface.indices,
+        };
+    }
+
     createFaceAnchor(hit: THREE.Intersection, entity?: ModelEntity, includeTangent = false): GeometryAnchor {
         const mesh = hit.object as THREE.Mesh;
+        if (entity && !mesh.userData.selectionProxy && [...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0)) {
+            const treated = this.createTreatedFaceAnchor(hit, entity);
+            if (treated) return treated;
+        }
         const topology = this.topology(mesh);
         const selected = this.collectSurface(mesh, hit);
         const seedFace = selected.face;

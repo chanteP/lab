@@ -200,18 +200,20 @@ export class GuideRenderer {
 
     private renderAnchor(anchor: GeometryAnchor, active: boolean) {
         const color = active ? SKETCH_COLORS.activeDark : SKETCH_COLORS.active;
-        if (anchor.type === 'edge' && anchor.vertices.length >= 2) {
+        const feedbackVertices = anchor.feedbackVertices || anchor.vertices;
+        const feedbackIndices = anchor.feedbackIndices || anchor.indices;
+        if (anchor.type === 'edge' && feedbackVertices.length >= 2) {
             const canvas = this.options.renderer.domElement;
-            const edge = createFatLine(anchor.vertices.map((point) => new THREE.Vector3(...point)), canvas.clientWidth, canvas.clientHeight);
+            const edge = createFatLine(feedbackVertices.map((point) => new THREE.Vector3(...point)), canvas.clientWidth, canvas.clientHeight);
             const material = edge.material as LineMaterial;
             material.color.set(color);
             material.linewidth = 4;
             material.clippingPlanes = this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [];
             edge.renderOrder = 14;
             this.faceFeedback.add(edge);
-        } else if (anchor.vertices.length >= 3) {
-            const geometry = new THREE.BufferGeometry().setFromPoints(anchor.vertices.map((point) => new THREE.Vector3(...point)));
-            geometry.setIndex(anchor.indices);
+        } else if (feedbackVertices.length >= 3) {
+            const geometry = new THREE.BufferGeometry().setFromPoints(feedbackVertices.map((point) => new THREE.Vector3(...point)));
+            geometry.setIndex(feedbackIndices);
             const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
                 color, transparent: true, opacity: active ? 0.48 : 0.3, side: THREE.DoubleSide,
                 depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,

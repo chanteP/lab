@@ -32,7 +32,7 @@ export function pickLogicalVertex({ camera, canvas, model, event, thresholdPx, s
             const pixelDistance = Math.hypot(pointer.x - x, pointer.y - y);
             if (pixelDistance > thresholdPx) return;
             const distance = raycaster.ray.origin.distanceTo(world);
-            if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - Math.max(0.5, distance * 0.02)) return;
+            if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - 2) return;
             const score = pixelDistance + distance * 1e-7;
             const intersection = { object: body, point: world, distance, vertexId: vertex.id } as THREE.Intersection & { vertexId: string };
             if (!best || score < best.score) best = { score, intersection };

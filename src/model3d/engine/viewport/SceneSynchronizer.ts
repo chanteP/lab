@@ -74,7 +74,7 @@ export class SceneSynchronizer {
 
     constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
-    private addEdgeTreatmentProxy(entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
+    private addEdgeTreatmentProxy(child: THREE.Mesh, entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
         const base = { ...entity, edgeTreatments: undefined, vertexTreatments: undefined };
         const proxy = buildEntityMesh(base, document);
         proxy.userData.selectionProxy = true;
@@ -97,6 +97,7 @@ export class SceneSynchronizer {
             });
         });
         this.model.add(proxy);
+        child.userData.baseMesh = proxy;
     }
 
     sync(document: ModelDocument) {
@@ -124,7 +125,7 @@ export class SceneSynchronizer {
                 edges.userData.displayEdge = true;
                 edges.userData.segmentEdgeIds = display.segmentEdgeIds;
                 child.add(edges);
-                if (treated) this.addEdgeTreatmentProxy(entity, document, previousTopology.get(entity.id));
+                if (treated) this.addEdgeTreatmentProxy(child, entity, document, previousTopology.get(entity.id));
             } else if (entity && ['sketch', 'image'].includes(entity.kind) && this.options.isSketchMode()) {
                 child.traverse((object) => { if (object.userData.compoundOutline) object.visible = false; });
                 const material = (child as THREE.Mesh).material as THREE.Material & { opacity?: number; transparent?: boolean };

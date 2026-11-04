@@ -44,7 +44,7 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
                 if (closest.distance > thresholdPx) continue;
                 const point = aWorld.clone().lerp(bWorld, closest.t);
                 const distance = raycaster.ray.origin.distanceTo(point);
-                if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - Math.max(0.5, distance * 0.02)) continue;
+                if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - 2) continue;
                 const score = closest.distance + distance * 1e-7;
                 if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance } as unknown as THREE.Intersection };
             }

@@ -47,6 +47,15 @@ function edgeAnchor(id = 'box'): GeometryAnchor {
     };
 }
 
+
+function faceHit(mesh: THREE.Mesh, faceIndex: number) {
+    const geometry = mesh.geometry, index = geometry.index;
+    const vertices = [0, 1, 2].map((offset) => index ? index.getX(faceIndex * 3 + offset) : faceIndex * 3 + offset);
+    const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, vertex));
+    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+    return { object: mesh, faceIndex, face: { a: vertices[0], b: vertices[1], c: vertices[2], normal }, point: points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+}
+
 test('treated boxes keep an invisible original topology proxy out of the export scene', () => {
     const { document, synchronizer } = fixture();
     assert.equal(buildScene(document).children.length, 1);
@@ -99,6 +108,27 @@ test('original edges remain pickable through the final treated surface and adjac
     }];
     const adjacent = buildEntityMesh(edited, document);
     assert.equal(validateSolidGeometry(adjacent.geometry).valid, true, 'adjacent edges must accept another treatment after a face edit');
+});
+
+test('treated faces expose the remaining region while the bevel face reselects its edge', () => {
+    const { document, synchronizer } = fixture();
+    const entity = document.entities[0];
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+    const topology = visible.userData.topology;
+    const selector = new GeometrySelector();
+    const bevel = topology.faces.find((face: any) => face.normal[0] > 0.5 && face.normal[1] > 0.5)!;
+    const bevelAnchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, bevel.triangleIds[0]), entity);
+    assert.equal(bevelAnchor.type, 'edge');
+    assert.equal(bevelAnchor.edgeTreatmentId, treatment.id);
+
+    const remaining = topology.faces.find((face: any) => face.planar && face.normal[0] > 0.99)!;
+    const faceAnchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, remaining.triangleIds[0]), entity);
+    assert.equal(faceAnchor.type, 'face');
+    assert.ok(faceAnchor.feedbackVertices?.length, 'selection feedback must use the final trimmed face');
+    assert.notDeepEqual(faceAnchor.feedbackVertices, faceAnchor.vertices);
+    const edited = { ...entity, faceOffset: { normal: faceAnchor.localNormal, distance: 2, vertices: faceAnchor.vertices, indices: faceAnchor.indices, faceIds: faceAnchor.faceIds } };
+    const result = buildEntityMesh(edited, document);
+    assert.equal(validateSolidGeometry(result.geometry).valid, true, 'trimmed face selection must retain a valid base-face edit');
 });
 
 test('signed edge gestures switch between fillet and chamfer and keep the overlay in sync', () => {

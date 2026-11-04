@@ -292,8 +292,7 @@ export class InteractionController {
 
     private hitEntity(event: PointerEvent) {
         this.setPointer(event);
-        return this.raycaster.intersectObjects(this.model.children, false).find((item) => this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point)
-            && (item.object.userData.selectionProxy || ![...(this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.edgeTreatments || []), ...(this.document?.entities.find((entry) => entry.id === item.object.userData.entityId)?.vertexTreatments || [])].some((treatment) => treatment.size > 0)));
+        return this.raycaster.intersectObjects(this.model.children, false).find((item) => !item.object.userData.selectionProxy && this.isVisible(item.object) && !this.sceneSynchronizer.isSectionPointClipped(item.point));
     }
 
     private hitSketchEntities(event: PointerEvent) {
@@ -865,7 +864,7 @@ export class InteractionController {
             selectedHits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0, intersection?.profilePoints));
             return;
         }
-        if (vertexHit) {
+        if (vertexHit && (!hit || vertexHit.distance <= hit.distance + 2)) {
             const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
             if (anchor) {
                 this.geometryAnchor = anchor;
@@ -874,7 +873,7 @@ export class InteractionController {
                 return;
             }
         }
-        if (edgeHit) {
+        if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 2)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);
@@ -882,7 +881,7 @@ export class InteractionController {
             const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray();
             this.geometryAnchor = this.createGeometryAnchor(hit);
             this.hoverFaceAnchor = null;
-            this.callbacks.onGeometrySelect(hit.object.userData.entityId, 'face', normal, this.geometryAnchor.point, additive);
+            this.callbacks.onGeometrySelect(hit.object.userData.entityId, this.geometryAnchor.type, normal, this.geometryAnchor.point, additive);
         } else if (['extrude', 'offsetFace'].includes(this.tool)) this.callbacks.onBlankCommit();
         else this.callbacks.onSelect(null, additive);
     }

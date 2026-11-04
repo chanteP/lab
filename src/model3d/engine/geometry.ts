@@ -53,11 +53,11 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
 
 function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document: ModelDocument) {
     if (![...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0)) return mesh;
-    const vertices = rebindVertexTreatments(mesh.geometry, entity.vertexTreatments || [], entity, document);
-    const withVertices = applyVertexTreatments(mesh.geometry, vertices);
-    const treatments = rebindEdgeTreatments(withVertices, entity.edgeTreatments || [], entity, document);
-    const treated = applyEdgeTreatments(withVertices, treatments);
-    if (withVertices !== mesh.geometry && treated !== withVertices) withVertices.dispose();
+    const edgeRules = rebindEdgeTreatments(mesh.geometry, entity.edgeTreatments || [], entity, document);
+    const withEdges = applyEdgeTreatments(mesh.geometry, edgeRules);
+    const vertexRules = rebindVertexTreatments(withEdges, entity.vertexTreatments || [], entity, document);
+    const treated = applyVertexTreatments(withEdges, vertexRules);
+    if (withEdges !== mesh.geometry && treated !== withEdges) withEdges.dispose();
     if (treated !== mesh.geometry) {
         mesh.geometry.dispose();
         mesh.geometry = treated;

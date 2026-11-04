@@ -53,3 +53,21 @@ test('hidden edges require explicit Select Through', () => {
     assert.equal(pickLogicalEdge({ camera, canvas, model, event, thresholdPx: 8, selectThrough: true }), null);
     assert.equal(pickLogicalEdge({ camera, canvas, model, event, thresholdPx: 8, selectThrough: true }), null, 'Select Through does not include display-disabled edges');
 });
+
+test('occluded back edges never win over a front face even with larger hot zones', () => {
+    const camera = new THREE.PerspectiveCamera(45, 800 / 600, 0.1, 1000);
+    camera.position.set(30, 25, 30);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const { model } = fixture(camera);
+    const topology = (model.children[0] as THREE.Mesh).userData.topology;
+    const back = topology.logicalEdges.find((edge: any) => {
+        const middle = new THREE.Vector3(...edge.segments[0].a).add(new THREE.Vector3(...edge.segments[0].b));
+        return middle.x + middle.y + middle.z < 0;
+    });
+    const midpoint = new THREE.Vector3(...back.segments[0].a).add(new THREE.Vector3(...back.segments[0].b)).multiplyScalar(0.5).project(camera);
+    const canvas = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as HTMLCanvasElement;
+    const event = { clientX: (midpoint.x + 1) * 400, clientY: (1 - midpoint.y) * 300 } as PointerEvent;
+    assert.equal(pickLogicalEdge({ camera, canvas, model, event, thresholdPx: 16, selectThrough: false }), null);
+    assert.ok(pickLogicalEdge({ camera, canvas, model, event, thresholdPx: 16, selectThrough: true }));
+});
