@@ -19,7 +19,6 @@ defineProps<{
 const emit = defineEmits<{
     panel: [panel: string];
     sketch: [];
-    construct: [];
     tool: [tool: string];
     isolate: [];
     history: [id: string];
@@ -29,47 +28,52 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 </script>
 
 <template>
-    <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel === 'sketch' }" aria-label="建模工具">
-        <div class="tool-group primary-tools">
-            <ViewportToolItem :description-on-hover="false" label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="构造平面" @click="emit('construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ViewportToolItem>
+    <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel }" aria-label="建模工具">
+        <div class="toolbar-section toolbar-top">
+            <div class="tool-group primary-tools">
+                <ViewportToolItem :description-on-hover="false" label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="构造平面" :active="activePanel === 'construct'" @click="emit('panel', 'construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ViewportToolItem>
+            </div>
+            <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
+                <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="缩放" :disabled="selectionKind === 'plane'" :active="activeTool === 'scale'" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
+            </div></Transition>
+            <Transition name="tool-group-slide"><div v-if="canBoolean" class="tool-group boolean-tools">
+                <ViewportToolItem :description-on-hover="false" label="并集" @click="emit('boolean', 'union')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="差集" @click="emit('boolean', 'subtract')"><NIcon><RemoveOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="交集" @click="emit('boolean', 'intersect')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
+            </div></Transition>
         </div>
-        <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
-            <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="缩放" :disabled="selectionKind === 'plane'" :active="activeTool === 'scale'" @click="emit('tool', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
-        </div></Transition>
-        <Transition name="tool-group-slide"><div v-if="canBoolean" class="tool-group boolean-tools">
-            <ViewportToolItem :description-on-hover="false" label="并集" @click="emit('boolean', 'union')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="差集" @click="emit('boolean', 'subtract')"><NIcon><RemoveOutline /></NIcon></ViewportToolItem>
-            <ViewportToolItem :description-on-hover="false" label="交集" @click="emit('boolean', 'intersect')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
-        </div></Transition>
-        <div class="toolbar-spacer"></div>
-        <div class="tool-group primary-tools">
-            <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
-            <NPopover trigger="click" placement="right-start">
-                <template #trigger><span class="history-trigger"><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></span></template>
-                <div class="history-panel">
-                    <strong>历史</strong>
-                    <button v-for="step in historySteps" :key="step.id" type="button" @click="emit('history', step.id)"><span>{{ historyNames[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button>
-                    <div v-if="!historySteps.length" class="history-empty">暂无步骤</div>
-                </div>
-            </NPopover>
+        <div class="toolbar-section toolbar-bottom">
+            <div class="tool-group primary-tools">
+                <ViewportToolItem :description-on-hover="false" label="隔离" :active="isolateActive" :disabled="!canIsolate" @click="emit('isolate')"><NIcon><EyeOutline /></NIcon></ViewportToolItem>
+                <NPopover trigger="click" placement="right-start">
+                    <template #trigger><span class="history-trigger"><ViewportToolItem :description-on-hover="false" label="历史"><NIcon><TimeOutline /></NIcon></ViewportToolItem></span></template>
+                    <div class="history-panel">
+                        <strong>历史</strong>
+                        <button v-for="step in historySteps" :key="step.id" type="button" @click="emit('history', step.id)"><span>{{ historyNames[step.kind] }}</span>{{ step.name }}<NIcon><PencilOutline /></NIcon></button>
+                        <div v-if="!historySteps.length" class="history-empty">暂无步骤</div>
+                    </div>
+                </NPopover>
+            </div>
         </div>
     </nav>
 </template>
 
 <style lang="scss" scoped>
-.vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 120px; display: flex; flex-direction: column; padding: 10px; overflow-y: auto; scrollbar-width: thin; transition: transform .24s ease, opacity .18s ease; }
+.vertical-toolbar { position: absolute; z-index: 8; top: 12px; bottom: 43px; left: 12px; width: 120px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 0; overflow: visible; pointer-events: none; transition: transform .24s ease, opacity .18s ease; }
 .vertical-toolbar.toolbar-leave { transform: translateX(calc(-100% - 18px)); opacity: 0; pointer-events: none; }
+.toolbar-section { width: 100%; padding: 10px; overflow-y: auto; pointer-events: auto; scrollbar-width: thin; }
+.toolbar-top { max-height: calc(100% - 100px); }
+.toolbar-bottom { flex: 0 0 auto; }
 .menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
 .tool-group { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
 .vertical-toolbar .primary-tools :deep(.viewport-tool-item) { height: auto; min-height: 40px; }
 .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
-.toolbar-spacer { flex: 1; min-height: 2px; }
 .history-trigger { display: block; }
 .boolean-tools { margin-top: 8px; padding-top: 8px !important; border-top: 1px solid var(--model3d-ui-e3e8e5); }
 .history-panel { width: 220px; max-height: 340px; overflow-y: auto; }

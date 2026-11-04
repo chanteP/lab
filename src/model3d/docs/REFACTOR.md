@@ -38,10 +38,10 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
 - `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42，以 orbit target 的世界半径在 200%–300% 区间淡出。
-- `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
-- `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据和实际轮廓边拾取结果。
+- `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SectionRenderer` 使用逐实体 stencil 正反面计数与平面封口生成实心断面，共享源几何但不进入选择和导出。`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
+- `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据、实际轮廓边拾取结果和所选实体/面的统计。
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
-- `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载右侧工具/实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
+- `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载左侧命令弹层与右侧实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
 
 - `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁、标注和面向相机的 Boolean mini +/-。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
 - `AppButton` 统一流程按钮的类型、尺寸、禁用态和圆角；`EntityTree` 自持内联重命名编辑态，通过事件写回 document。
@@ -64,6 +64,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-05：修复前表面自身遮挡导致的边热区偏移，边/角优先于面并新增 28px 屏幕箭头热区；修复无类型按钮后 move/end 误路由到面推拉的问题，浏览器验证内外拖拽与拉伸深度输入。
 - 2026-11-05：圆角/倒角改为有符号尺寸，内拖正数圆角、外拖负数倒角，移除右侧类型与厚度设置；边热区增至 16px，新增 18px 角点热区和角点平面/球面末端切削，补面拖动重定位回归。
 - 2026-11-04：修复圆角/倒角长度输入被累加而非绝对赋值的问题，并保留拖拽方向的正负约定，补当前值输入 5 必须得到 5 的回归。
 - 2026-11-04：圆角/倒角覆盖层在拖拽锚点丢失 treatment ID 时按原边重新解析，确保 chamfer/fillet 尺寸与几何同步；保留其他对话的侧栏与拖拽方向修改并通过合并回归。
@@ -210,3 +211,4 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - 2026-11-04：剖视入口移至底部测量按钮旁，进入草图自动退出剖视并禁用，退出草图保持非剖视。
 - 2026-11-04：修复空实体树同时渲染空提示与全高拖放区造成的滚动条；Sidebar 右缘支持拖拽/键盘调宽并持久化，最小 218px、最大为视口宽度 1/3，Canvas 同步适配。
 - 2026-11-04：修复贝塞尔拆分区域拉伸箭头重复计入深度、失效锚点二次拖拽报错和倒角数值不同步；边处理改为负向内拖增大切削，补箭头贴面、空锚点、冻结 treatment ID 与负向手势回归并完成浏览器验证。
+- 2026-11-05：贝塞尔控制链移除长度输入；左下统计支持所选实体/多选/面的三角形与包围盒尺寸；剖视新增 stencil 实心封口；工具栏上下分组释放中间画布事件，3D 命令改为左侧关闭式弹层并新增圆锥/圆环，实体树统一 cube 图标。

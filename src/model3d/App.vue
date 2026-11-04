@@ -4,10 +4,9 @@ import { useStorage, useWindowSize } from '@vueuse/core';
 import * as THREE from 'three';
 import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
-    AnalyticsOutline, CloseOutline, CubeOutline, EllipseOutline, EyeOutline, LayersOutline,
-    ShapesOutline, TrashOutline, ScanOutline,
+    CloseOutline, EyeOutline, TrashOutline, ScanOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type SketchDimension, type ViewTool, type ViewportCallbacks } from './engine/Viewport';
+import { Viewport, type SketchDimension, type ViewTool, type ViewportCallbacks, type ViewportStats } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
 import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
 import SvgIcon from './components/ui/SvgIcon.vue';
@@ -41,7 +40,7 @@ import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/conf
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
     createDocument,
-    type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type SelectionKind,
+    type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type PrimitiveKind, type SelectionKind,
 } from './types';
 
 const message = useMessage();
@@ -59,7 +58,7 @@ const shadowVisible = ref(false);
 const projectionMode = ref<'perspective' | 'orthographic'>('perspective');
 const spaceActive = ref(false);
 const showHelp = ref(false);
-const stats = ref({ vertices: 0, triangles: 0, objects: 0 });
+const stats = ref<ViewportStats>({ vertices: 0, triangles: 0, objects: 0, selection: null });
 const measureMode = ref(false);
 const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
@@ -81,6 +80,13 @@ const includeTangent = ref(false);
 
 const selectedEntities = computed(() => selectedIds.value.map((id) => document.value.entities.find((item) => item.id === id)).filter(Boolean) as ModelEntity[]);
 const selected = computed(() => selectedEntities.value.length === 1 ? selectedEntities.value[0] : null);
+const viewportStatus = computed(() => {
+    const selection = stats.value.selection;
+    if (!selection) return `${stats.value.objects} 实体 · ${stats.value.triangles.toLocaleString()} 三角形`;
+    const subject = selection.faces ? `${selection.faces} 面` : `${selection.objects} 实体`;
+    const dimensions = selection.size.map((value) => `${displayLength(value).toFixed(2)}${lengthUnit.value}`).join(' x ');
+    return `${subject} · ${selection.triangles.toLocaleString()} 三角形 · ${dimensions}`;
+});
 const sketchState = useSketchState(document);
 const {
     sketchMode, sketchType, sketchSides, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
@@ -147,7 +153,7 @@ const {
     selectEntity, updateEntity, updateLengthEntity,
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
     createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
-    createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
+    createPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
     toggleNodeVisibility,
 } = useDocumentEntities({
     document, selectedIds, selected, selectionKind, activeTool, activePanel, activePlaneId, activePlane,
@@ -258,7 +264,7 @@ function runCommand(id: string) {
     if (id === 'extrude') return message.warning('请先选择闭合 Sketch profile');
     if (['offsetFace', 'translate', 'scale'].includes(id)) return chooseTool(id as ViewTool);
     if (id === 'plane') return createPlane();
-    if (['box', 'cylinder', 'sphere'].includes(id)) return createPrimitive(id as 'box' | 'cylinder' | 'sphere');
+    if (['box', 'cylinder', 'sphere', 'cone', 'torus'].includes(id)) return createPrimitive(id as PrimitiveKind);
 }
 function toggleIsolate() {
     if (isolateActive.value) {
@@ -435,13 +441,6 @@ function preventContextMenu(event: Event) { event.preventDefault(); }
 function preventBrowserZoom(event: WheelEvent) { if (event.ctrlKey || event.metaKey) event.preventDefault(); }
 function preventGesture(event: Event) { event.preventDefault(); }
 
-function entityIcon(kind: ModelEntity['kind']) {
-    if (kind === 'boolean') return AnalyticsOutline;
-    if (kind === 'extrude') return LayersOutline;
-    if (kind === 'cylinder') return ShapesOutline;
-    if (kind === 'sphere') return EllipseOutline;
-    return CubeOutline;
-}
 function fitView() { viewport?.fit(true); }
 function toggleProjection() { projectionMode.value = viewport?.toggleProjection() || 'perspective'; }
 function closeOperationBar() {
@@ -547,7 +546,7 @@ Object.defineProperty(window, 'projectData', {
 });
 
 const handleDirectEdit: ViewportCallbacks['onDirectEdit'] = (id, normal, delta, phase, anchor) => {
-    if (['edge', 'vertex'].includes(anchor?.type || '') || ['fillet', 'chamfer'].includes(activeTool.value)) onEdgeTreatmentEdit(id, normal, delta, phase, anchor);
+    if (['edge', 'vertex'].includes(anchor?.type || '') || ['edge', 'vertex'].includes(selectionKind.value || '') || ['fillet', 'chamfer'].includes(activeTool.value)) onEdgeTreatmentEdit(id, normal, delta, phase, anchor);
     else onDirectEdit(id, normal, delta, phase, anchor);
 };
 
@@ -674,14 +673,14 @@ onBeforeUnmount(() => {
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"
-                    @panel="togglePanel" @sketch="beginSketch()" @construct="constructPlane" @tool="chooseTool" @isolate="toggleIsolate"
+                    @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate"
                     @history="editHistory" @boolean="applyBoolean" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent" :selected-face-planar="selectedFacePlanar"
                     :parameter-card-open="parameterCardOpen" :display-length="displayLength"
-                    @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @import="importProject" @create-plane="createPlane"
+                    @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @create-plane="createPlane"
                     @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')"
                     @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
@@ -707,7 +706,7 @@ onBeforeUnmount(() => {
                     :display-mode="displayMode" :show-edges="showEdges" :shadow-visible="shadowVisible" :grid-visible="gridVisible"
                     @measure="toggleMeasure" @section="toggleSection" @fit="fitView" @projection="toggleProjection" @display-mode="updateDisplayMode"
                     @show-edges="showEdges = $event" @shadow-visible="shadowVisible = $event" @grid-visible="gridVisible = $event" />
-                <div v-if="!sketchMode" class="viewport-status"><div>{{ stats.objects }} 实体 · {{ stats.triangles.toLocaleString() }} 三角面</div></div>
+                <div v-if="!sketchMode" class="viewport-status"><div>{{ viewportStatus }}</div></div>
             </main>
         </div>
 

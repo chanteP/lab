@@ -111,6 +111,12 @@ function baseGeometry(entity: ModelEntity, quality: GeometryQuality, document: M
     if (entity.kind === 'sphere') {
         return new THREE.SphereGeometry(entity.radius!, q.sphere, Math.max(16, q.sphere / 2));
     }
+    if (entity.kind === 'cone') {
+        return new THREE.CylinderGeometry(0, entity.radius!, entity.height!, q.radial, 1, false);
+    }
+    if (entity.kind === 'torus') {
+        return new THREE.TorusGeometry(entity.radius!, entity.tubeRadius!, Math.max(12, q.radial / 2), q.radial).rotateX(Math.PI / 2);
+    }
     const plane = entity.planeId ? document.planes.find((item) => item.id === entity.planeId) : null;
     const sourceEntity = entity;
     const planeNormal = plane ? new THREE.Vector3(...plane.normal).normalize() : null;

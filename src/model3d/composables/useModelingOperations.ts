@@ -13,7 +13,7 @@ import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
     cloneDocument, createEntity,
     type BooleanOperation, type ModelDocument, type ModelEntity, type OperationState,
-    type Point2, type PrimaryPanel, type SelectionKind, type Vec3,
+    type Point2, type PrimaryPanel, type PrimitiveKind, type SelectionKind, type Vec3,
 } from '../types';
 
 interface ModelingOperationsOptions {
@@ -67,7 +67,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     }
     const operationTargets = computed(() => document.value.entities.filter((item) => !['sketch', 'image', 'folder'].includes(item.kind) && item.id !== extrudeBody.value?.id).map((item) => ({ label: item.name, value: item.id })));
 
-    function createPrimitive(kind: 'box' | 'cylinder' | 'sphere') {
+    function createPrimitive(kind: PrimitiveKind) {
         pushHistory();
         const entity = createEntity(kind, uid());
         entity.name = uniqueEntityName(document.value, kind);

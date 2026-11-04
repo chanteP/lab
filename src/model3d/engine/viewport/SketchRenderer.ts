@@ -509,9 +509,8 @@ export class SketchRenderer {
         }
         if (selectedSegment >= 0 && curves[selectedSegment]) {
             const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
-            [[a, curve.c1], [b, curve.c2]].forEach(([from, to], handleIndex) => {
+            [[a, curve.c1], [b, curve.c2]].forEach(([from, to]) => {
                 this.addGuide(from, to, true, SKETCH_COLORS.guideActive);
-                if (editingSketchId) this.addDimension(midpoint(from, to), { kind: 'control', index: selectedSegment, handle: handleIndex + 1 as 1 | 2 }, Math.hypot(to[0] - from[0], to[1] - from[1]), unit, [from, to]);
             });
             [curve.c1, curve.c2].forEach((point, handleIndex) => {
                 const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.bezierHandleRadius, 12, 8), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.handle, depthTest: false, depthWrite: false }));

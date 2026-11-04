@@ -9,6 +9,7 @@ import { SketchRenderer } from './viewport/SketchRenderer';
 import { SketchAssetRenderer } from './viewport/SketchAssetRenderer';
 import { MeasurementRenderer } from './viewport/MeasurementRenderer';
 import { GuideRenderer, type GeometryAnchor } from './viewport/GuideRenderer';
+import { measureSelectionStats, type SelectionStats } from './viewport/GeometrySelector';
 import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
@@ -17,6 +18,7 @@ import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
+export type ViewportStats = { vertices: number; triangles: number; objects: number; selection: SelectionStats | null };
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
 export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
@@ -66,7 +68,7 @@ export interface ViewportCallbacks {
     onSpaceChange: (active: boolean) => void;
     onMeasureChange: (active: boolean) => void;
     onScale: (scale: { width: number; value: number; segments: number; gridSize: number }) => void;
-    onStats: (stats: { vertices: number; triangles: number; objects: number }) => void;
+    onStats: (stats: ViewportStats) => void;
     onBooleanToggle: (id: string) => void;
     onBooleanHover: (id: string | null) => void;
 }
@@ -91,8 +93,9 @@ export class Viewport {
     private sketchMode = false;
     private sketchAssetId: string | null = null;
     private lengthUnit: LengthUnit = 'mm';
+    private sceneStats: Omit<ViewportStats, 'selection'> | null = null;
 
-    constructor(private readonly container: HTMLElement, callbacks: ViewportCallbacks, private readonly options: ViewportOptions = {}) {
+    constructor(private readonly container: HTMLElement, private readonly callbacks: ViewportCallbacks, private readonly options: ViewportOptions = {}) {
         this.engine = new ViewportEngine(container);
         this.cameraController = new CameraController(this.engine, () => this.lengthUnit, callbacks.onScale);
         this.overlay = new OverlayController();
@@ -117,6 +120,7 @@ export class Viewport {
             if (!object || !id) return;
             callbacks.onTransform(id, object.position.toArray(),
                 [object.rotation.x, object.rotation.y, object.rotation.z].map(THREE.MathUtils.radToDeg) as Vec3, object.scale.toArray());
+            this.publishStats();
         });
 
         this.sceneSynchronizer = new SceneSynchronizer({
@@ -124,7 +128,10 @@ export class Viewport {
             renderer: this.engine.renderer,
             isSketchMode: () => this.sketchMode,
             getTool: () => this.tool,
-            onStats: callbacks.onStats,
+            onStats: (stats) => {
+                this.sceneStats = stats;
+                this.publishStats();
+            },
             onContentRadius: (radius) => this.cameraController.setContentRadius(radius),
             onClearAltBorder: () => this.sketchRenderer.clearAltBorder(),
             onClearSketchReferences: () => this.sketchRenderer.clearReferences(),
@@ -180,6 +187,7 @@ export class Viewport {
         this.engine.scene.add(
             this.sceneSynchronizer.model,
             this.sceneSynchronizer.sectionOutlines,
+            this.sceneSynchronizer.sectionCaps.group,
             this.sketchRenderer.faces,
             this.sketchRenderer.group,
             this.sceneSynchronizer.planes,
@@ -230,6 +238,14 @@ export class Viewport {
         return `${Number(value.toFixed(2))} ${this.lengthUnit}`;
     }
 
+    private publishStats() {
+        if (!this.sceneStats) return;
+        const bodies = this.sceneSynchronizer.model.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh
+            && !['sketch', 'image'].includes(this.sceneSynchronizer.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || ''));
+        const selection = measureSelectionStats(bodies, this.sceneSynchronizer.selected, this.sceneSynchronizer.selectionKind, this.interaction?.geometryAnchor || null);
+        this.callbacks.onStats({ ...this.sceneStats, selection });
+    }
+
     setLengthUnit(unit: LengthUnit) {
         this.lengthUnit = unit;
         if (this.measurementRenderer.points.length === 2) {
@@ -258,10 +274,16 @@ export class Viewport {
     setSketchEditing(id: string | null) { this.sceneSynchronizer.setSketchEditing(id); }
     setSketchEdgeEditing(index: number | null) { this.sceneSynchronizer.setSketchEdgeEditing(index); }
     setActivePlane(plane: SketchPlane | null) { this.sceneSynchronizer.setActivePlane(plane); }
-    setSelected(ids: string[], kind: SelectionKind = 'body') { this.sceneSynchronizer.setSelected(ids, kind); }
+    setSelected(ids: string[], kind: SelectionKind = 'body') {
+        this.sceneSynchronizer.setSelected(ids, kind);
+        this.publishStats();
+    }
     setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) { this.sketchRenderer.setSelectionState(edges, points); }
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
-    clearGeometrySelection() { this.interaction.clearGeometrySelection(); }
+    clearGeometrySelection() {
+        this.interaction.clearGeometrySelection();
+        this.publishStats();
+    }
     getGeometryAnchor() { return this.interaction.geometryAnchor; }
     resolveGeometryEdgeTreatment() {
         const anchor = this.interaction.geometryAnchor;
@@ -272,7 +294,10 @@ export class Viewport {
             anchor.vertexTreatmentId = treatment?.id;
         }
     }
-    offsetGeometryAnchor(offset: Vec3) { this.interaction.offsetGeometryAnchor(offset); }
+    offsetGeometryAnchor(offset: Vec3) {
+        this.interaction.offsetGeometryAnchor(offset);
+        this.publishStats();
+    }
     setSelectThrough(active: boolean) { this.interaction.setSelectThrough(active); }
     setIncludeTangent(active: boolean) { this.interaction.setIncludeTangent(active); }
 

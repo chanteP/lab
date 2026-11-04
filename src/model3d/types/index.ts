@@ -21,7 +21,8 @@ export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'paralle
 export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number };
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type DisplayMode = 'shaded' | 'clay' | 'wireframe' | 'xray';
-export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'sketch' | 'image' | 'extrude' | 'boolean';
+export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'sketch' | 'image' | 'extrude' | 'boolean';
+export type PrimitiveKind = 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus';
 export type BooleanOperation = 'union' | 'subtract' | 'intersect';
 export type BooleanOperandSign = 1 | -1;
 
@@ -78,6 +79,7 @@ export interface ModelEntity {
     height?: number;
     depth?: number;
     radius?: number;
+    tubeRadius?: number;
     points?: Point2[];
     parts?: SketchProfilePart[];
     controlPoints?: number[];
@@ -141,6 +143,8 @@ export const ENTITY_NAMES: Record<EntityKind, string> = {
     box: '立方体',
     cylinder: '圆柱体',
     sphere: '球体',
+    cone: '圆锥体',
+    torus: '圆环',
     sketch: '草图轮廓',
     image: '图片',
     extrude: '草图拉伸',
@@ -166,6 +170,8 @@ export function createEntity(kind: Exclude<EntityKind, 'boolean'>, id: string): 
     if (kind === 'box') return { ...base, width: 40, height: 40, depth: 40 };
     if (kind === 'cylinder') return { ...base, radius: 20, height: 40, position: [0, 20, 0] };
     if (kind === 'sphere') return { ...base, radius: 20 };
+    if (kind === 'cone') return { ...base, radius: 20, height: 40, position: [0, 20, 0] };
+    if (kind === 'torus') return { ...base, radius: 20, tubeRadius: 6, position: [0, 6, 0] };
     if (kind === 'image') return { ...base, name: ENTITY_NAMES.image, points: [], profileType: 'rectangle', position: [0, 0, 0], aspectLocked: true };
     return { ...base, name: ENTITY_NAMES.extrude, points: [], depth: 10, position: [0, 5, 0] };
 }

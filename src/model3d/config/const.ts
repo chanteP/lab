@@ -22,6 +22,7 @@ export const INTERACTION = {
     clickTolerancePx: 5,
     edgeSelectionPx: 16,
     vertexSelectionPx: 18,
+    directArrowSelectionPx: 28,
     sketchDragThresholdPx: 4,
     sectorQuarterSnapThresholdDeg: 4,
     sketchGuideSnapPx: 8,

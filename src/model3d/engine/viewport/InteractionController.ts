@@ -15,6 +15,7 @@ import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { pickLogicalEdge } from './EdgePicker';
 import { pickLogicalVertex } from './VertexPicker';
+import { pickDirectArrow } from './DirectArrowPicker';
 import { DirectDragController } from './DirectDragController';
 import { GizmoDragController } from './GizmoDragController';
 import { SketchAssetDragController } from './SketchAssetDragController';
@@ -341,18 +342,18 @@ export class InteractionController {
     }
 
     private hitDirectArrow(event: PointerEvent) {
-        this.setPointer(event);
-        const hit = this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.directArrow);
-        this.activeArrowKey = hit?.object.userData.arrowKey || null;
+        const hit = pickDirectArrow({ guides: this.guides, camera: this.camera, canvas: this.renderer.domElement, event, thresholdPx: INTERACTION.directArrowSelectionPx });
+        this.activeArrowKey = hit?.key || null;
         this.updateArrowColors();
-        return hit?.object.userData.directArrow as { id: string; normal?: Vec3 } | undefined;
+        return hit?.data;
     }
 
     private updateArrowHover(event: PointerEvent) {
+        const direct = pickDirectArrow({ guides: this.guides, camera: this.camera, canvas: this.renderer.domElement, event, thresholdPx: INTERACTION.directArrowSelectionPx });
         this.setPointer(event);
-        const hit = this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.directArrow || item.object.userData.extrudeArrow);
-        this.hoverArrowKey = hit?.object.userData.arrowKey || null;
-        this.container.classList.toggle('is-arrow-hover', !!hit);
+        const extrude = direct ? null : this.raycaster.intersectObjects(this.guides.children, true).find((item) => item.object.userData.extrudeArrow);
+        this.hoverArrowKey = direct?.key || extrude?.object.userData.arrowKey || null;
+        this.container.classList.toggle('is-arrow-hover', !!(direct || extrude));
         this.updateArrowColors();
     }
 
@@ -403,7 +404,6 @@ export class InteractionController {
             excludePointIndex: !this.sketchDrag.center && !this.sketchDrag.handle && !this.sketchDrag.sector ? this.sketchDrag.index : undefined,
         });
     }
-
     private drawingEdgeStart() {
         return !this.sketchSelectionTool && ['polygon', 'line'].includes(this.sketchProfileType) ? this.currentSketchPoints[this.currentSketchPoints.length - 1] : undefined;
     }
@@ -865,7 +865,7 @@ export class InteractionController {
             selectedHits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0, intersection?.profilePoints));
             return;
         }
-        if (vertexHit && (!hit || vertexHit.distance <= hit.distance + 0.5)) {
+        if (vertexHit) {
             const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
             if (anchor) {
                 this.geometryAnchor = anchor;
@@ -874,7 +874,7 @@ export class InteractionController {
                 return;
             }
         }
-        if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5)) {
+        if (edgeHit) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);

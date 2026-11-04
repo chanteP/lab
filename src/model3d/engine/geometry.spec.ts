@@ -62,6 +62,22 @@ test('primitive push-pull changes one continuous solid in both directions', () =
     assert.equal(shrunk.max.y, 1);
 });
 
+test('cone and torus primitives keep editable dimensions and sit on the ground plane', () => {
+    const document = createDocument();
+    const cone = buildEntityMesh(createEntity('cone', 'cone'), document);
+    const torus = buildEntityMesh(createEntity('torus', 'torus'), document);
+    cone.geometry.computeBoundingBox();
+    torus.geometry.computeBoundingBox();
+
+    assert.deepEqual(cone.geometry.boundingBox?.min.toArray(), [-20, -20, -20]);
+    assert.deepEqual(cone.geometry.boundingBox?.max.toArray(), [20, 20, 20]);
+    assert.equal(cone.position.y, 20);
+    assert.equal(cone.geometry.attributes.position.count > 0, true);
+    assert.equal(torus.position.y, 6);
+    assert(Math.abs(torus.geometry.boundingBox!.min.y + 6) < 1e-6);
+    assert(Math.abs(torus.geometry.boundingBox!.max.x - 26) < 1e-6);
+});
+
 test('extruded top and bottom faces keep the opposite face fixed', () => {
     assert.deepEqual(extrude(5).min.toArray(), [-5, 0, -5]);
     assert.deepEqual(extrude(5).max.toArray(), [5, 15, 5]);

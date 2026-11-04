@@ -3,7 +3,7 @@ import { buildMeshTopology } from '../topology/MeshTopology';
 import { domainsEqual } from '../topology/SurfaceDomains';
 import { expandTangentEdges, expandTangentFaces } from '../topology/TopologySelection';
 import type { BodyTopology, LogicalFace } from '../topology/types';
-import { createDocument, createEntity, type ModelEntity, type Point2, type Vec3 } from '../../types';
+import { createDocument, createEntity, type ModelEntity, type Point2, type SelectionKind, type Vec3 } from '../../types';
 
 export type GeometryAnchor = {
     id: string;
@@ -26,6 +26,25 @@ export type GeometryAnchor = {
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
+export type SelectionStats = { objects: number; faces: number; triangles: number; size: Vec3 };
+
+/** Measures world-axis dimensions and only the triangles belonging to the current body/face selection. */
+export function measureSelectionStats(objects: THREE.Mesh[], selectedIds: string[], kind: SelectionKind, anchor: GeometryAnchor | null): SelectionStats | null {
+    if (kind === 'face' && anchor?.type === 'face' && selectedIds.includes(anchor.id)) {
+        const box = new THREE.Box3().setFromPoints(anchor.vertices.map((point) => new THREE.Vector3(...point)));
+        return { objects: 0, faces: 1, triangles: anchor.indices.length / 3, size: box.isEmpty() ? [0, 0, 0] : box.getSize(new THREE.Vector3()).toArray() };
+    }
+    const selected = objects.filter((object) => selectedIds.includes(object.userData.entityId) && !object.userData.selectionProxy);
+    if (!selected.length) return null;
+    const box = new THREE.Box3();
+    let triangles = 0;
+    selected.forEach((object) => {
+        object.updateWorldMatrix(true, true);
+        box.expandByObject(object);
+        triangles += (object.geometry.index?.count || object.geometry.attributes.position?.count || 0) / 3;
+    });
+    return { objects: selected.length, faces: 0, triangles: Math.round(triangles), size: box.getSize(new THREE.Vector3()).toArray() };
+}
 
 /** Resolves raycast hits to logical topology. Triangle and display-segment indices never become persistent IDs. */
 export class GeometrySelector {

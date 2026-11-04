@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { GeometrySelector } from './viewport/GeometrySelector';
+import { GeometrySelector, measureSelectionStats, type GeometryAnchor } from './viewport/GeometrySelector';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { createTopologyEdgeGeometry } from './viewport/TopologyEdges';
 import { createDocument, createEntity } from '../types';
@@ -26,6 +26,37 @@ test('curved face selection reuses one connected surface for every tessellation 
     assert.equal(first, second, 'hovering another triangle must not rebuild or duplicate the curved face');
     assert(first.vertices.length > 100);
     assert.equal(first.indices.length, first.vertices.length);
+});
+
+test('selection stats measure only selected bodies and their combined world bounds', () => {
+    const a = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    const b = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 10));
+    a.userData.entityId = 'a';
+    b.userData.entityId = 'b';
+    b.position.x = 20;
+
+    const stats = measureSelectionStats([a, b], ['a', 'b'], 'mixed', null);
+
+    assert.equal(stats?.objects, 2);
+    assert.equal(stats?.faces, 0);
+    assert.equal(stats?.triangles, 24);
+    assert.deepEqual(stats?.size, [30, 20, 10]);
+    assert.equal(measureSelectionStats([a, b], [], null, null), null);
+});
+
+test('face selection stats use face triangles and bounds instead of the whole body', () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 30));
+    mesh.userData.entityId = 'box';
+    mesh.position.set(5, 10, 15);
+    mesh.updateMatrixWorld(true);
+    const anchor = new GeometrySelector().createFaceAnchor(hit(mesh, 0));
+
+    const stats = measureSelectionStats([mesh], ['box'], 'face', anchor as GeometryAnchor);
+
+    assert.equal(stats?.objects, 0);
+    assert.equal(stats?.faces, 1);
+    assert.equal(stats?.triangles, 2);
+    assert.deepEqual(stats?.size, [0, 20, 30]);
 });
 
 test('planar cap and curved side remain independent selectable faces', () => {

@@ -13,6 +13,7 @@ import type { BodyTopology } from '../topology/types';
 import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
+import { SectionRenderer } from './SectionRenderer';
 
 /** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
 export function measureSectionRadius(objects: THREE.Object3D[]) {
@@ -53,6 +54,7 @@ export class SceneSynchronizer {
     readonly model = new THREE.Group();
     readonly planes = new THREE.Group();
     readonly sectionOutlines = new THREE.Group();
+    readonly sectionCaps = new SectionRenderer();
     document: ModelDocument | null = null;
     selected: string[] = [];
     selectionKind: SelectionKind = null;
@@ -216,8 +218,12 @@ export class SceneSynchronizer {
         this.sectionPlane = active ? new THREE.Plane(new THREE.Vector3(0, -1, 0), offset) : null;
         this.sectionInversePlane = active ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -offset) : null;
         this.sectionOutlines.visible = active;
+        this.sectionCaps.group.visible = active;
         if (active) this.rebuildSectionOutlines();
-        else clearGroup(this.sectionOutlines);
+        else {
+            clearGroup(this.sectionOutlines);
+            this.sectionCaps.dispose();
+        }
         this.model.children.forEach((child) => { if (!['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) this.applyObjectDisplay(child); });
     }
 
@@ -238,6 +244,7 @@ export class SceneSynchronizer {
         this.sectionPlane.constant = -normal.dot(point);
         this.sectionInversePlane.normal.copy(normal).negate();
         this.sectionInversePlane.constant = -this.sectionInversePlane.normal.dot(point);
+        this.sectionCaps.update(this.sectionPlane);
     }
 
     isSectionPointClipped(point: THREE.Vector3) {
@@ -247,7 +254,11 @@ export class SceneSynchronizer {
     private rebuildSectionOutlines() {
         clearGroup(this.sectionOutlines);
         if (!this.sectionPlane || !this.sectionInversePlane) return;
-        this.model.children.forEach((child) => {
+        const sources = this.model.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh
+            && !child.userData.selectionProxy
+            && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || ''));
+        this.sectionCaps.rebuild(sources, this.sectionPlane);
+        sources.forEach((child) => {
             if (!(child instanceof THREE.Mesh) || !child.visible || child.userData.selectionProxy || ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) return;
             const outline = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({
                 color: VIEWPORT_COLORS.bodyEdge, transparent: true, opacity: 0.3, depthWrite: false,
@@ -430,6 +441,7 @@ export class SceneSynchronizer {
 
     dispose() {
         this.booleanPreview.dispose();
+        this.sectionCaps.dispose();
         clearGroup(this.model);
         clearGroup(this.planes);
         clearGroup(this.sectionOutlines);

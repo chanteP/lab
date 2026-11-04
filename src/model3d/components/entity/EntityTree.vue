@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { NIcon } from 'naive-ui';
-import { ChevronForwardOutline, ChevronDownOutline, CreateOutline, CubeOutline, EllipseOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline, ShapesOutline } from '@vicons/ionicons5';
-import SvgIcon from '../ui/SvgIcon.vue';
+import { ChevronForwardOutline, ChevronDownOutline, CubeOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline } from '@vicons/ionicons5';
 import type { ModelEntity } from '../../types';
 
 export interface OutlinerNode {
@@ -110,9 +109,7 @@ onBeforeUnmount(() => nameClickTimers.forEach(clearTimeout));
                 </span>
                 <button v-if="node.children.length" class="tree-disclosure" @click.stop="toggleExpanded(node.id)"><NIcon><component :is="expanded.has(node.id) ? ChevronDownOutline : ChevronForwardOutline" /></NIcon></button>
                 <span v-else class="tree-disclosure-spacer"></span>
-                <SvgIcon v-if="node.trimmed" class="object-type" name="freehand" />
-                <SvgIcon v-else-if="node.profileType === 'ellipse'" class="object-type" name="ellipse" />
-                <NIcon v-else class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : node.profileType === 'rectangle' ? GridOutline : node.profileType === 'circle' ? EllipseOutline : node.profileType === 'regular' ? ShapesOutline : node.profileType ? CreateOutline : CubeOutline" /></NIcon>
+                <NIcon class="object-type"><component :is="node.kind === 'folder' ? FolderOutline : node.kind === 'plane' ? GridOutline : CubeOutline" /></NIcon>
                 <input v-if="editingId === node.id" ref="nameInput" v-model="renameValue" class="object-name object-name-input" :aria-label="`重命名${node.name}`"
                     @click.stop @dblclick.stop @pointerdown.stop @blur="commitRename" @keydown.enter.stop.prevent="commitRename" @keydown.esc.stop.prevent="editingId = null" />
                 <span v-else class="object-name" @click.stop="onNameClick(node, $event)" @dblclick.stop.prevent="onNameDoubleClick(node)">{{ node.name }}</span>

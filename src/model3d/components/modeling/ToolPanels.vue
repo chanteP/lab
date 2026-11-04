@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { NIcon, NInput } from 'naive-ui';
-import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, FolderOpenOutline, GridOutline, MoveOutline, ShapesOutline } from '@vicons/ionicons5';
+import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, GridOutline, MoveOutline, RadioOutline, ShapesOutline, TriangleOutline } from '@vicons/ionicons5';
 import MenuCommand from '../ui/MenuCommand.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
-import type { BooleanOperation, ModelEntity, OperationState, PrimaryPanel, SelectionKind, SketchPlane } from '../../types';
+import ViewportToolItem from '../ui/ViewportToolItem.vue';
+import type { BooleanOperation, ModelEntity, OperationState, PrimaryPanel, PrimitiveKind, SelectionKind, SketchPlane } from '../../types';
 import type { ViewTool } from '../../engine/Viewport';
 
 const props = defineProps<{
@@ -25,8 +26,7 @@ const props = defineProps<{
 const emit = defineEmits<{
     closePanel: [];
     command: [id: string];
-    primitive: [kind: 'box' | 'cylinder' | 'sphere'];
-    import: [];
+    primitive: [kind: PrimitiveKind];
     createPlane: [kind: SketchPlane['kind']];
     tool: [tool: ViewTool];
     sketch: [];
@@ -47,10 +47,11 @@ const dimensionFields = computed(() => {
     if (item.kind === 'box') return [{ key: 'width' as const, label: '宽', value: item.width! }, { key: 'height' as const, label: '高', value: item.height! }, { key: 'depth' as const, label: '深', value: item.depth! }];
     if (item.kind === 'cylinder') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'height' as const, label: '高', value: item.height! }];
     if (item.kind === 'sphere') return [{ key: 'radius' as const, label: '半径', value: item.radius! }];
+    if (item.kind === 'cone') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'height' as const, label: '高', value: item.height! }];
+    if (item.kind === 'torus') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'tubeRadius' as const, label: '管径', value: item.tubeRadius! }];
     if (item.kind === 'extrude') return [{ key: 'depth' as const, label: '厚度', value: item.depth! }];
     return [];
 });
-const panelTitles: Partial<Record<PrimaryPanel, string>> = { search: '搜索', insert: '插入', construct: '构造', tools: '工具' };
 const commandResults = computed(() => {
     const commands = [
         { id: 'sketch', label: '草图', hint: '在基准面、构造平面或实体平面上绘制', keys: '草图 绘制 sketch' },
@@ -62,6 +63,8 @@ const commandResults = computed(() => {
         { id: 'box', label: '立方体', hint: '插入立方体', keys: '立方体 box' },
         { id: 'cylinder', label: '圆柱体', hint: '插入圆柱体', keys: '圆柱 cylinder' },
         { id: 'sphere', label: '球体', hint: '插入球体', keys: '球体 sphere' },
+        { id: 'cone', label: '圆锥体', hint: '插入圆锥体', keys: '圆锥 cone' },
+        { id: 'torus', label: '圆环', hint: '插入圆环', keys: '圆环 torus' },
     ];
     const query = commandSearch.value.trim().toLowerCase();
     return query ? commands.filter((item) => `${item.label} ${item.keys}`.toLowerCase().includes(query)) : commands;
@@ -74,19 +77,20 @@ function runCommand(id: string) {
 
 <template>
     <div class="tool-panels">
-        <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel">
-            <div class="tool-panel-title"><strong>{{ panelTitles[activePanel] }}</strong><button aria-label="关闭工具面板" @click="emit('closePanel')"><NIcon><CloseOutline /></NIcon></button></div>
+        <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel command-panel">
+            <div class="command-close"><ViewportToolItem label="关闭" :description-on-hover="false" @click="emit('closePanel')"><NIcon><CloseOutline /></NIcon></ViewportToolItem></div>
             <template v-if="activePanel === 'search'">
                 <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索命令" />
                 <div class="command-results"><button v-for="command in commandResults" :key="command.id" @click="runCommand(command.id)"><strong>{{ command.label }}</strong><span>{{ command.hint }}</span></button><div v-if="!commandResults.length" class="history-empty">没有匹配的命令</div></div>
             </template>
             <template v-else-if="activePanel === 'insert'">
-                <div class="panel-section-label">基础实体</div>
-                <MenuCommand title="立方体" subtitle="插入参数化立方体" @click="emit('primitive', 'box')"><NIcon><CubeOutline /></NIcon></MenuCommand>
-                <MenuCommand title="圆柱体" subtitle="插入参数化圆柱体" @click="emit('primitive', 'cylinder')"><NIcon><ShapesOutline /></NIcon></MenuCommand>
-                <MenuCommand title="球体" subtitle="插入参数化球体" @click="emit('primitive', 'sphere')"><NIcon><EllipseOutline /></NIcon></MenuCommand>
-                <div class="panel-section-label">项目</div>
-                <MenuCommand title="文件" subtitle="导入项目 JSON" @click="emit('import')"><NIcon><FolderOpenOutline /></NIcon></MenuCommand>
+                <div class="command-options">
+                    <ViewportToolItem label="立方体" :description-on-hover="false" @click="emit('primitive', 'box')"><NIcon><CubeOutline /></NIcon></ViewportToolItem>
+                    <ViewportToolItem label="圆柱体" :description-on-hover="false" @click="emit('primitive', 'cylinder')"><NIcon><ShapesOutline /></NIcon></ViewportToolItem>
+                    <ViewportToolItem label="球体" :description-on-hover="false" @click="emit('primitive', 'sphere')"><NIcon><EllipseOutline /></NIcon></ViewportToolItem>
+                    <ViewportToolItem label="圆锥体" :description-on-hover="false" @click="emit('primitive', 'cone')"><NIcon><TriangleOutline /></NIcon></ViewportToolItem>
+                    <ViewportToolItem label="圆环" :description-on-hover="false" @click="emit('primitive', 'torus')"><NIcon><RadioOutline /></NIcon></ViewportToolItem>
+                </div>
             </template>
             <template v-else-if="activePanel === 'construct'">
                 <p class="panel-note">选择实体平面后可创建贴合该面的构造平面；也可以直接添加基准面。</p>
@@ -123,8 +127,11 @@ function runCommand(id: string) {
 </template>
 
 <style lang="scss" scoped>
-.tool-panels { position: absolute; z-index: 7; top: 12px; right: 12px; width: 210px; max-height: calc(100% - 55px); overflow-y: auto; scrollbar-width: thin; }
-.tool-panel { position: relative; top: auto; left: auto; width: 100%; max-height: none; }
+.tool-panels { position: static; }
+.tool-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 210px; max-height: calc(100% - 55px); overflow-y: auto; scrollbar-width: thin; }
+.tool-panel.command-panel { right: auto; left: 12px; width: 120px; padding: 10px; }
+.command-close { margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--model3d-ui-e2e8e4); }
+.command-options { display: flex; flex-direction: column; gap: 4px; }
 .selection-properties { display: grid; gap: 9px; margin-top: 10px; padding: 10px 3px 2px; border-top: 1px solid var(--model3d-ui-e3e9e5); }
 .selection-properties label { color: var(--model3d-ui-748078); font-size: 9px; }
 .property-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }

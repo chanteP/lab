@@ -20,7 +20,7 @@ export class ViewportEngine {
 
     constructor(private readonly container: HTMLElement) {
         this.scene.background = null;
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true, powerPreference: 'high-performance' });
         this.renderer.setClearColor(VIEWPORT_COLORS.background, 1);
         this.renderer.localClippingEnabled = true;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
