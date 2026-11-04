@@ -80,7 +80,7 @@ export class GuideRenderer {
             });
             return;
         }
-        if (['select', 'offsetFace'].includes(tool) && geometryAnchor?.type === 'face' && geometryAnchor.planar && !geometryEntity || !['sketch', 'image'].includes(geometryEntity.kind) && selected.includes(geometryAnchor.id)) {
+        if (['select', 'offsetFace'].includes(tool) && geometryAnchor?.type === 'face' && geometryAnchor.planar && geometryEntity && !['sketch', 'image'].includes(geometryEntity.kind) && selected.includes(geometryAnchor.id)) {
             const entity = document.entities.find((item) => item.id === geometryAnchor.id);
             if (!entity || entity.kind === 'sphere') return;
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
