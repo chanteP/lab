@@ -8,9 +8,23 @@ const props = defineProps<{ items: ProjectedViewportOverlay[]; callbacks: Viewpo
 const wheelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 type DimensionOverlay = Extract<ProjectedViewportOverlay, { kind: 'dimension' }>;
+type LockOverlay = Extract<ProjectedViewportOverlay, { kind: 'lock' }>;
 
 function positionStyle(item: ProjectedViewportOverlay) {
     return { left: `${item.x}px`, top: `${item.y}px`, '--dimension-angle': `${item.kind === 'dimension' ? item.angle || 0 : 0}deg` };
+}
+
+function dimensionLocks(item: DimensionOverlay) {
+    return props.items.filter((lock): lock is LockOverlay => lock.kind === 'lock' && !!item.edgeKey && lock.edgeKey === item.edgeKey)
+        .sort((a, b) => a.order - b.order);
+}
+
+function lockEmbedded(item: LockOverlay) {
+    return !!item.edgeKey && props.items.some((dimension) => dimension.kind === 'dimension' && dimension.edgeKey === item.edgeKey);
+}
+
+function lockStyle(item: LockOverlay) {
+    return { color: item.color, marginLeft: item.edge ? `${item.order * 16}px` : '4px', marginTop: item.edge ? '0' : '-14px' };
 }
 
 function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
@@ -90,13 +104,24 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                     <option value="cm">cm</option>
                     <option value="m">m</option>
                 </select>
+                <button
+                    v-for="lock in dimensionLocks(item)"
+                    :key="lock.id"
+                    class="sketch-lock-badge embedded"
+                    :class="{ active: lock.active, linked: lock.linked }"
+                    :style="{ color: lock.color }"
+                    :data-rule-id="lock.rule?.id"
+                    aria-label="固定或约束"
+                    @pointerdown.stop
+                    @click.stop="callbacks.onSketchConstraintRule(lock.entityId, lock.index, lock.rule?.id || '')"
+                ><SvgIcon name="lock" /></button>
             </div>
 
-            <div v-else-if="item.kind === 'lock'" class="viewport-overlay-item" :style="positionStyle(item)">
+            <div v-else-if="item.kind === 'lock' && !lockEmbedded(item)" class="viewport-overlay-item" :style="positionStyle(item)">
                 <button
                     class="sketch-lock-badge"
                     :class="{ 'is-edge': item.edge, active: item.active, linked: item.linked }"
-                    :style="{ color: item.color, marginLeft: item.edge ? `${item.order * 16}px` : '4px', marginTop: item.edge ? '0' : '-14px' }"
+                    :style="lockStyle(item)"
                     :data-rule-id="item.rule?.id"
                     aria-label="固定或约束"
                     @pointerdown.stop
@@ -134,6 +159,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
     transform: translate(-50%, -50%);
 }
 .viewport-overlay-item.dimension-oriented { transform: translate(-50%, -50%) rotate(var(--dimension-angle)) translateY(-9px); }
+.sketch-lock-badge.embedded { width: 18px; height: 23px; flex: 0 0 18px; margin: 0; padding: 0; transform: none; border-left: 1px solid var(--model3d-ui-efd3b2); }
 .boolean-mini-button { width: 23px; height: 23px; display: grid; place-items: center; padding: 0 0 1px; color: var(--model3d-ui-fff); background: #7c3aed; border: 1px solid var(--model3d-ui-ffffff80); border-radius: 6px; box-shadow: 0 2px 7px var(--model3d-ui-1d332b2b); font-size: 17px; font-weight: 650; line-height: 1; cursor: pointer; pointer-events: auto; }
 .boolean-mini-button.negative { background: #a92f3d; }
 .boolean-mini-button:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 2px; }

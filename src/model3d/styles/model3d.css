@@ -244,7 +244,7 @@ button { color: inherit; }
 .sketch-length-input input::-webkit-inner-spin-button, .sketch-length-input input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .sketch-length-input input[type=number] { -moz-appearance: textfield; }
 .sketch-lock-badge { width: 13px; height: 13px; display: grid; place-items: center; padding: 0; color: var(--model3d-ui-54a184); background: transparent; border: 0; cursor: pointer; transform: translate(4px, -14px); pointer-events: auto; }
-.sketch-lock-badge.is-edge { transform: translate(-18px, -50%); }
+.sketch-lock-badge.is-edge { transform: none; }
 .sketch-lock-badge svg { width: 13px; height: 13px; fill: currentColor; }
 .sketch-length-input select, .sketch-length-input span { height: 23px; padding: 0 5px; border: 0; border-left: 1px solid var(--model3d-ui-efd3b2); outline: 0; background: var(--model3d-ui-fff4e5); color: var(--model3d-ui-8a5c25); font-size: 9px; line-height: 23px; }
 .sketch-length-input select { width: 29px; padding: 0 3px; appearance: none; text-align: center; }

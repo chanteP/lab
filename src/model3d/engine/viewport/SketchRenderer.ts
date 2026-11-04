@@ -9,7 +9,7 @@ import { SKETCH_STYLE } from '../../config/const';
 import type { LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, SketchEdgeConstraint, SketchPlane } from '../../types';
 import type { SketchDimension } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
-import type { OverlayController } from './OverlayController';
+import { sketchDimensionEdgeKey, type OverlayController } from './OverlayController';
 
 type SketchDragState = { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; moved: boolean } | null;
 
@@ -202,6 +202,7 @@ export class SketchRenderer {
             order,
             active,
             linked,
+            edgeKey: edge ? `${entityId}:${index}` : undefined,
             color: active ? SKETCH_COLORS.active : linked ? SKETCH_COLORS.referenceActive : SKETCH_COLORS.pointLocked,
         });
     }
@@ -411,6 +412,7 @@ export class SketchRenderer {
             kind: 'dimension',
             position: this.world(position, 0.3).toArray(),
             target,
+            edgeKey: sketchDimensionEdgeKey(this.options.getEditingSketchId(), target),
             value,
             unit,
             angle: direction ? this.dimensionAngle(...direction) : undefined,
@@ -460,8 +462,8 @@ export class SketchRenderer {
             this.group.add(line);
         }
         if (profileType === 'rectangle' && points.length === 4 && editingSketchId) {
-            this.addDimension(midpoint(points[0], points[1]), { kind: 'width' }, Math.abs(points[1][0] - points[0][0]), unit, [points[0], points[1]]);
-            this.addDimension(midpoint(points[1], points[2]), { kind: 'height' }, Math.abs(points[2][1] - points[1][1]), unit, [points[1], points[2]]);
+            this.addDimension(midpoint(points[0], points[1]), { kind: 'width', index: 0 }, Math.abs(points[1][0] - points[0][0]), unit, [points[0], points[1]]);
+            this.addDimension(midpoint(points[1], points[2]), { kind: 'height', index: 1 }, Math.abs(points[2][1] - points[1][1]), unit, [points[1], points[2]]);
             this.addMarker(midpoint(points[0], points[2]), -1, SKETCH_COLORS.pointActive, true);
         }
         if (profileType === 'line' && points.length >= 2 && editingSketchId) this.addDimension(midpoint(points[0], points[1]), { kind: 'segment', index: 0 }, Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]), unit, [points[0], points[1]]);

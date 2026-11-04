@@ -43,7 +43,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
 - `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载左侧命令弹层与右侧实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
 
-- `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁、标注和面向相机的 Boolean mini +/-。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
+- `OverlayController` 只保存普通业务数据、世界坐标和可选屏幕偏移；每帧投影后由 `ViewportOverlay.vue` 渲染草图尺寸、箭头旁 Extrude/Face Extrude 输入、单位、约束锁、标注和面向相机的 Boolean mini +/-。草图尺寸与边锁通过 `edgeKey` 配对，同边锁嵌入尺寸控件，独立边锁居中，避免重叠和缩放偏移。Mesh、Material、Scene 不进入 Vue 响应式状态，不再使用 CSS2DRenderer。
 - `AppButton` 统一流程按钮的类型、尺寸、禁用态和圆角；`EntityTree` 自持内联重命名编辑态，通过事件写回 document。
 
 销毁顺序为交互监听、TransformControls、相机辅助器、场景/各渲染器资源、渲染核心；Vue 组件卸载时统一触发，App 不再重复 dispose。
@@ -213,3 +213,4 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - 2026-11-04：修复空实体树同时渲染空提示与全高拖放区造成的滚动条；Sidebar 右缘支持拖拽/键盘调宽并持久化，最小 218px、最大为视口宽度 1/3，Canvas 同步适配。
 - 2026-11-04：修复贝塞尔拆分区域拉伸箭头重复计入深度、失效锚点二次拖拽报错和倒角数值不同步；边处理改为负向内拖增大切削，补箭头贴面、空锚点、冻结 treatment ID 与负向手势回归并完成浏览器验证。
 - 2026-11-05：贝塞尔控制链移除长度输入；左下统计支持所选实体/多选/面的三角形与包围盒尺寸；剖视新增 stencil 实心封口；工具栏上下分组释放中间画布事件，3D 命令改为左侧关闭式弹层并新增圆锥/圆环，实体树统一 cube 图标。
+- 2026-11-05：草图边锁按语义边与尺寸配对，矩形宽/高及线段锁嵌入尺寸框单位后，独立边锁回到边中点，消除锁与输入重叠及缩放后的额外偏移；新增覆盖层配对与浏览器缩放回归。

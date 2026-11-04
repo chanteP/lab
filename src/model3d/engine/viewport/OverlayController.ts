@@ -8,6 +8,7 @@ export type ViewportOverlay = {
     screenOffset?: Point2;
 } & ({
     kind: 'dimension';
+    edgeKey?: string;
     target: SketchDimension | { kind: 'directFace' } | { kind: 'edgeTreatment' } | { kind: 'extrudeDepth' };
     value: number;
     unit: LengthUnit;
@@ -15,6 +16,7 @@ export type ViewportOverlay = {
     angle?: number;
 } | {
     kind: 'lock';
+    edgeKey?: string;
     entityId: string;
     index: number;
     edge: boolean;
@@ -34,6 +36,12 @@ export type ViewportOverlay = {
 });
 
 export type ProjectedViewportOverlay = ViewportOverlay & { x: number; y: number };
+
+/** Width/height and segment dimensions share their anchor with rule badges on the same semantic edge. */
+export function sketchDimensionEdgeKey(entityId: string | null, target: SketchDimension) {
+    if (target.index === undefined || !['segment', 'width', 'height'].includes(target.kind)) return undefined;
+    return `${entityId || 'draft'}:${target.index}`;
+}
 
 /** Plain overlay view-models; Three.js objects never enter Vue state. */
 export class OverlayController {
