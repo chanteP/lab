@@ -18,11 +18,12 @@ export class DirectDragController {
 
     constructor(private readonly options: DirectDragOptions) {}
 
-    start(event: PointerEvent, id: string, normal: Vec3, worldNormal: Vec3, anchor: GeometryAnchor) {
+    start(event: PointerEvent, id: string, normal: Vec3, worldNormal: Vec3, anchor: GeometryAnchor | null) {
+        if (!anchor) return;
         const frozen = { ...anchor, vertices: anchor.vertices.map((point) => [...point] as Vec3) };
         this.drag = { id, normal, worldNormal, x: event.clientX, y: event.clientY, anchor: frozen };
         this.options.onState({ x: event.clientX, y: event.clientY, active: true });
-        this.options.onEdit(id, normal, 0, 'start', anchor);
+        this.options.onEdit(id, normal, 0, 'start', frozen);
     }
 
     private apply(delta: number) {

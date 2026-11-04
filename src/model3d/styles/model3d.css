@@ -6,7 +6,7 @@ button { color: inherit; }
 .studio-shell { --ink: var(--model3d-ui-24302d); --muted: var(--model3d-ui-7a8580); --line: var(--model3d-ui-e4e8e5); --accent: var(--model3d-ui-147d70); display: block; width: 100%; height: 100%; min-width: 760px; background: var(--model3d-ui-f5f7f5); }
 .workspace { position: fixed; inset: 0; }
 .panel { background: var(--model3d-ui-fff); }
-.left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 218px; height: 100%; display: flex; flex-direction: column; border: 0; }
+.left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: var(--model3d-sidebar-width, 218px); height: 100%; display: flex; flex-direction: column; border: 0; }
 .section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: var(--model3d-ui-707d76); font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
 .section-label > span { min-width: 20px; padding: 1px 5px; text-align: center; background: var(--model3d-ui-e9edea); border-radius: 8px; font-size: 9px; letter-spacing: 0; }
 .objects-section { display: flex; flex-direction: column; flex: 1; min-height: 160px; padding: 18px 10px 10px; }
@@ -32,7 +32,7 @@ button { color: inherit; }
 .storage-note div { display: flex; flex-direction: column; gap: 3px; }
 .storage-note strong { font-size: 10px; font-weight: 600; }
 .storage-note span { color: var(--model3d-ui-89958e); font-size: 9px; line-height: 1.5; }
-.viewport-area { position: fixed; inset: 0 0 0 218px; min-width: 0; overflow: hidden; background: var(--model3d-ui-e7ebe8); }
+.viewport-area { position: fixed; inset: 0 0 0 var(--model3d-sidebar-width, 218px); min-width: 0; overflow: hidden; background: var(--model3d-ui-e7ebe8); }
 .viewport { position: absolute; inset: 0; cursor: default; }
 .viewport canvas { display: block; width: 100%; height: 100%; outline: none; }
 .viewport.is-panning { cursor: grab; }

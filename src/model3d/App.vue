@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useStorage, useWindowSize } from '@vueuse/core';
 import * as THREE from 'three';
 import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
@@ -35,7 +36,7 @@ import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
-import { STORAGE_KEYS } from './config/const';
+import { SIDEBAR_LAYOUT, STORAGE_KEYS } from './config/const';
 import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
@@ -47,6 +48,9 @@ const message = useMessage();
 let viewport: Viewport;
 let transforming = false;
 
+const { width: windowWidth } = useWindowSize();
+const sidebarWidth = useStorage(STORAGE_KEYS.sidebarWidth, SIDEBAR_LAYOUT.minWidthPx);
+const sidebarMaxWidth = computed(() => Math.max(SIDEBAR_LAYOUT.minWidthPx, windowWidth.value * SIDEBAR_LAYOUT.maxViewportRatio));
 const document = ref<ModelDocument>(createDocument(storedLengthUnit()));
 const selectedIds = ref<string[]>([]);
 const activeTool = ref<ViewTool>('select');
@@ -504,6 +508,10 @@ watch(gridVisible, (value) => viewport?.setGridVisible(value));
 watch(shadowVisible, (value) => viewport?.setShadowsVisible(value));
 watch(showEdges, (value) => viewport?.setDisplayMode(displayMode.value, value));
 watch(displayMode, (value) => localStorage.setItem(STORAGE_KEYS.displayMode, value));
+watch([sidebarWidth, sidebarMaxWidth], ([width, maxWidth]) => {
+    const nextWidth = Number.isFinite(width) ? Math.round(Math.min(maxWidth, Math.max(SIDEBAR_LAYOUT.minWidthPx, width))) : SIDEBAR_LAYOUT.minWidthPx;
+    if (nextWidth !== width) sidebarWidth.value = nextWidth;
+}, { immediate: true });
 watch(selectThrough, (value) => viewport?.setSelectThrough(value));
 watch(includeTangent, (value) => viewport?.setIncludeTangent(value));
 watch(() => [sketchMode.value, activePlaneId.value] as const, ([active]) => {
@@ -654,8 +662,8 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
-        <div class="workspace">
-            <EntitySidebar :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :special-mode="sketchMode || symmetryActive"
+        <div class="workspace" :style="{ '--model3d-sidebar-width': `${sidebarWidth}px` }">
+            <EntitySidebar v-model:width="sidebarWidth" :max-width="sidebarMaxWidth" :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :special-mode="sketchMode || symmetryActive"
                 :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
                 @open="openProject" @create="showNewProject = true" @duplicate="duplicateProject" @import="importProject" @remove="removeProject" @folder="createFolder"
                 @select="selectFromItems" @activate="activateTreeNode" @select-range="selectRangeFromItems" @rename="renameNode" @context="openNodeContext" @drop="reparentNodes" @toggle="toggleNodeVisibility"

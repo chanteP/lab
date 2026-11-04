@@ -79,6 +79,7 @@ test('original edges remain pickable through the final treated surface and adjac
     while (owner && !owner.userData.entityId) owner = owner.parent;
     assert.equal(owner?.userData.selectionProxy, true);
     const anchor = new GeometrySelector().createEdgeAnchor(hit!);
+    assert.ok(new THREE.Vector3(...anchor.point).distanceTo(hit!.point) < 1e-6, 'arrow anchor must use the actual clicked edge position');
     assert.equal(resolveEdgeTreatment(document.entities[0], anchor)?.id, treatment.id);
 
     const topology = proxy.userData.topology;
@@ -100,31 +101,33 @@ test('original edges remain pickable through the final treated surface and adjac
     assert.equal(validateSolidGeometry(adjacent.geometry).valid, true, 'adjacent edges must accept another treatment after a face edit');
 });
 
-test('chamfer drag updates its document value and the overlay reads the same size', () => {
+test('negative chamfer drag creates a positive cut and the overlay reads the same size', () => {
     const document = ref(createDocument());
     document.value.entities.push(createEntity('box', 'box'));
     const activeTool = ref<'chamfer' | 'fillet'>('chamfer');
     const operations = useEdgeTreatmentOperations({
-        document, activeTool, viewport: () => undefined, message: { warning: () => undefined, error: () => undefined } as any,
+        document, activeTool, viewport: () => ({ getGeometryAnchor: () => anchor } as any), message: { warning: () => undefined, error: () => undefined } as any,
         pushHistory: () => undefined, popHistory: () => undefined, setTool: (tool) => { activeTool.value = tool; },
     });
     const anchor = edgeAnchor();
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 5, 'move');
+    operations.onEdgeTreatmentEdit('box', anchor.localNormal, -5, 'move');
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     const entity = document.value.entities[0];
     assert.equal(entity.edgeTreatments?.[0].type, 'chamfer');
     assert.equal(entity.edgeTreatments?.[0].size, 5);
     activeTool.value = 'fillet';
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 2, 'move');
+    operations.onEdgeTreatmentEdit('box', anchor.localNormal, -2, 'move');
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     assert.equal(entity.edgeTreatments?.[0].type, 'fillet');
     activeTool.value = 'chamfer';
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'start', anchor);
-    operations.onEdgeTreatmentEdit('box', anchor.localNormal, 5, 'move');
+    operations.onEdgeTreatmentEdit('box', anchor.localNormal, -5, 'move');
     operations.onEdgeTreatmentEdit('box', anchor.localNormal, 0, 'end');
     assert.equal(entity.edgeTreatments?.[0].type, 'chamfer');
+    operations.updateEdgeTreatmentDistance(5);
+    assert.equal(entity.edgeTreatments?.[0].size, 5, 'numeric input must replace rather than accumulate the current size');
 
     const overlay = new OverlayController();
     const guide = new GuideRenderer({
@@ -132,10 +135,11 @@ test('chamfer drag updates its document value and the overlay reads the same siz
         getSelected: () => ['box'], getTool: () => 'chamfer', getGeometryAnchor: () => anchor,
         getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
     });
+    delete anchor.edgeTreatmentId;
     guide.update(document.value);
     const camera = new THREE.OrthographicCamera();
     camera.position.z = 100;
     camera.updateMatrixWorld(true);
     const item = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement).find((item) => item.kind === 'dimension' && item.target.kind === 'edgeTreatment');
-    assert.equal(item?.value, 12);
+    assert.equal(item?.value, 5);
 });

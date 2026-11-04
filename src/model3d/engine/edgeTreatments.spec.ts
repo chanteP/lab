@@ -25,13 +25,20 @@ function volume(geometry: THREE.BufferGeometry) {
     return Math.abs(sum);
 }
 
-test('chamfer cuts only the referenced box edge and retains outer bounds', () => {
+test('chamfer cuts only the referenced box edge and retains outer bounds', async () => {
     const base = new THREE.BoxGeometry(40, 40, 40);
     const result = applyEdgeTreatments(base, [treatment]);
     result.computeBoundingBox();
     assert.ok(volume(result) < volume(base));
     assert.deepEqual(result.boundingBox!.min.toArray(), [-20, -20, -20]);
     assert.deepEqual(result.boundingBox!.max.toArray(), [20, 20, 20]);
+    const { buildMeshTopology } = await import('./topology/MeshTopology');
+    const { createDocument, createEntity } = await import('../types');
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    const topology = buildMeshTopology(result, 'box', entity, document);
+    assert.equal(topology.faces.length, 7);
+    assert.ok(topology.faces.every((face) => face.planar), 'chamfer must create a planar bevel, never a fillet surface');
     base.dispose(); result.dispose();
 });
 
@@ -62,4 +69,38 @@ test('baking a body does not apply its parametric edge treatment twice', async (
     const after = buildEntityMesh(entity, document);
     assert.ok(Math.abs(volume(before.geometry) - volume(after.geometry)) < 1e-6);
     before.geometry.dispose(); after.geometry.dispose();
+});
+
+test('edge treatments follow A/B/C face drags instead of remaining at the old edge', async () => {
+    const { buildEntityMesh } = await import('./geometry');
+    const { createDocument, createEntity } = await import('../types');
+    for (const axis of [0, 1, 2] as const) {
+        const document = createDocument();
+        const entity = createEntity('box', 'box');
+        entity.edgeTreatments = [treatment];
+        const normal: [number, number, number] = [0, 0, 0];
+        normal[axis] = 1;
+        const vertices: [number, number, number][] = axis === 0
+            ? [[20, -20, -20], [20, 20, -20], [20, 20, 20], [20, -20, 20]]
+            : axis === 1 ? [[-20, 20, -20], [20, 20, -20], [20, 20, 20], [-20, 20, 20]]
+            : [[-20, -20, 20], [20, -20, 20], [20, 20, 20], [-20, 20, 20]];
+        entity.faceOffset = { normal, distance: 10, vertices, indices: [0, 1, 2, 0, 2, 3], faceIds: [`face-${axis}`] };
+        const result = buildEntityMesh(entity, document);
+
+        const size: [number, number, number] = [40, 40, 40];
+        size[axis] += 10;
+        const center: [number, number, number] = [0, 0, 0];
+        center[axis] = 5;
+        const base = new THREE.BoxGeometry(...size);
+        base.translate(...center);
+        const movedTreatment = JSON.parse(JSON.stringify(treatment)) as EdgeTreatment;
+        if (axis === 2) movedTreatment.edge.b[axis] += 10;
+        else {
+            movedTreatment.edge.a[axis] += 10;
+            movedTreatment.edge.b[axis] += 10;
+        }
+        const expected = applyEdgeTreatments(base, [movedTreatment]);
+        assert.ok(Math.abs(volume(result.geometry) - volume(expected)) < 1e-5, `face ${axis} produced a joined old/new body`);
+        result.geometry.dispose(); expected.dispose(); base.dispose();
+    }
 });

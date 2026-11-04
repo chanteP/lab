@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { NButton, NIcon, NInput, NPopconfirm, NPopover, NSelect } from 'naive-ui';
 import {
     AddOutline, ArrowRedoOutline, ArrowUndoOutline, ChevronDownOutline, CopyOutline, CubeOutline,
@@ -7,10 +7,13 @@ import {
 } from '@vicons/ionicons5';
 import EntityTree, { type OutlinerNode } from '../entity/EntityTree.vue';
 import { EXPORT_QUALITIES } from '../../config/configs';
+import { SIDEBAR_LAYOUT } from '../../config/const';
 import type { GeometryQuality, ProjectRecord } from '../../types';
 
 const props = defineProps<{
     visible: boolean;
+    width: number;
+    maxWidth: number;
     projects: ProjectRecord[];
     projectId: string;
     projectName: string;
@@ -24,6 +27,7 @@ const props = defineProps<{
     specialMode: boolean;
 }>();
 const emit = defineEmits<{
+    'update:width': [width: number];
     open: [id: string];
     create: [];
     duplicate: [];
@@ -45,7 +49,40 @@ const emit = defineEmits<{
     export: [type: 'stl' | 'glb' | 'project'];
 }>();
 const options = computed(() => props.projects.map((item) => ({ label: item.name, value: item.id })));
+const resizingPointerId = ref<number | null>(null);
 let selectionAnchor: { id: string; parent: string | null } | null = null;
+
+function updateWidth(width: number) {
+    emit('update:width', Math.round(Math.min(props.maxWidth, Math.max(SIDEBAR_LAYOUT.minWidthPx, width))));
+}
+
+function startResize(event: PointerEvent) {
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.focus();
+    handle.setPointerCapture(event.pointerId);
+    resizingPointerId.value = event.pointerId;
+}
+
+function resize(event: PointerEvent) {
+    if (resizingPointerId.value === event.pointerId) updateWidth(event.clientX);
+}
+
+function stopResize(event: PointerEvent) {
+    if (resizingPointerId.value !== event.pointerId) return;
+    const handle = event.currentTarget as HTMLElement;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    resizingPointerId.value = null;
+}
+
+function resizeWithKeyboard(event: KeyboardEvent) {
+    const offsets: Partial<Record<string, number>> = { ArrowLeft: -8, ArrowRight: 8 };
+    if (event.key in offsets) updateWidth(props.width + offsets[event.key]!);
+    else if (event.key === 'Home') updateWidth(SIDEBAR_LAYOUT.minWidthPx);
+    else if (event.key === 'End') updateWidth(props.maxWidth);
+    else return;
+    event.preventDefault();
+}
 
 function flattenNodes(nodes: OutlinerNode[], parent: string | null = null): { id: string; parent: string | null }[] {
     return nodes.flatMap((node) => [{ id: node.id, parent }, ...flattenNodes(node.children, node.id)]);
@@ -89,7 +126,7 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
             <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span v-if="!specialMode" class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
             <div class="object-list">
                 <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
-                <EntityTree :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @activate="(id) => emit('activate', id)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
+                <EntityTree v-if="nodes.length" :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @activate="(id) => emit('activate', id)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />
             </div>
         </section>
         <div class="sidebar-export-row">
@@ -118,12 +155,19 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
                 <NPopconfirm @positive-click="emit('remove')"><template #trigger><button class="danger-hover"><NIcon><TrashOutline /></NIcon><span>删除</span></button></template>删除当前项目？此操作不可撤销。</NPopconfirm>
             </div>
         </section>
+        <div class="sidebar-resize-handle" :class="{ resizing: resizingPointerId !== null }" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical"
+            :aria-valuemin="SIDEBAR_LAYOUT.minWidthPx" :aria-valuemax="Math.round(maxWidth)" :aria-valuenow="width" tabindex="0"
+            @pointerdown="startResize" @pointermove="resize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="stopResize" @keydown="resizeWithKeyboard"></div>
     </aside>
 </template>
 
 <style lang="scss" scoped>
 .panel { background: var(--model3d-ui-fff); }
-.left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 218px; height: 100%; display: flex; flex-direction: column; padding-right: 12px; border: 0; }
+.left-panel { position: fixed; z-index: 20; inset: 0 auto 0 0; width: var(--model3d-sidebar-width, 218px); height: 100%; display: flex; flex-direction: column; padding-right: 12px; border: 0; }
+.sidebar-resize-handle { position: absolute; z-index: 2; top: 0; right: -3px; bottom: 0; width: 7px; cursor: col-resize; touch-action: none; }
+.sidebar-resize-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background .15s ease; }
+.sidebar-resize-handle:hover::after, .sidebar-resize-handle:focus-visible::after, .sidebar-resize-handle.resizing::after { background: var(--model3d-ui-7eb8aa); }
+.sidebar-resize-handle:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: -2px; }
 .sidebar-header { display: grid; gap: 9px; padding: 14px 10px 12px; border-bottom: 1px solid var(--model3d-ui-e7ebe8); }
 .sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .sidebar-brand { display: flex; align-items: center; gap: 7px; }

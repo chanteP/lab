@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { entityProfileClosed } from '../profiles';
 import { uniqueClosedProfile } from '../profileIntersection';
+import { resolveEdgeTreatment } from '../modeling/EdgeTreatments';
 import { SKETCH_COLORS } from '../../config/colors';
 import { INTERACTION } from '../../config/const';
 import type { LengthUnit, ModelDocument, Vec3 } from '../../types';
@@ -72,7 +73,8 @@ export class GuideRenderer {
         if (['select', 'fillet', 'chamfer'].includes(tool) && geometryAnchor?.type === 'edge' && geometryEntity && selected.includes(geometryAnchor.id)) {
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
             const origin = new THREE.Vector3(...geometryAnchor.point);
-            const treatment = geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId);
+            const treatment = geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || resolveEdgeTreatment(geometryEntity, geometryAnchor);
+            if (treatment) geometryAnchor.edgeTreatmentId = treatment.id;
             this.group.add(this.createThickArrow(origin, normal, 18, { directArrow: { id: geometryEntity.id, normal: geometryAnchor.localNormal } }));
             this.options.overlay.set({
                 id: 'guide-label:edge-treatment', kind: 'dimension', target: { kind: 'edgeTreatment' },
@@ -139,6 +141,9 @@ export class GuideRenderer {
         const normal = plane ? new THREE.Vector3(...plane.normal) : new THREE.Vector3(0, 1, 0);
         const direction = body.direction === -1 ? -1 : 1;
         const length = Math.max(3, body.depth || 3);
+        // Region bodies own their solid geometry rather than a separate profile object.
+        // Their bounds already contain half the one-sided depth, so recover the sketch-plane center first.
+        if (!body.profileId && body.sideMode !== 'symmetric') center.addScaledVector(normal, -direction * length / 2);
         const arrowOrigin = center.clone().add(normal.clone().multiplyScalar(direction * length));
         this.group.add(this.createThickArrow(arrowOrigin, normal.clone().multiplyScalar(direction), 18, { directArrow: { id: body.id, normal: [0, 1, 0] as Vec3 } }));
         this.options.overlay.set({

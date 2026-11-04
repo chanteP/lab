@@ -77,7 +77,8 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
             pushHistory();
             transaction.historyPushed = true;
         }
-        const size = Math.round(THREE.MathUtils.clamp(transaction.baseSize + delta, 0, transaction.limit) * 10000) / 10000;
+        // The arrow points out of the convex edge; dragging it inward (negative delta) increases the cut size.
+        const size = Math.round(THREE.MathUtils.clamp(transaction.baseSize - delta, 0, transaction.limit) * 10000) / 10000;
         const treatments = (transaction.baseEntity.edgeTreatments || []).map((treatment) => ({ ...treatment, edge: JSON.parse(JSON.stringify(treatment.edge)) })) as EdgeTreatment[];
         const next = { ...transaction.treatment, size, edge: JSON.parse(JSON.stringify(transaction.treatment.edge)) } as EdgeTreatment;
         const index = treatments.findIndex((treatment) => treatment.id === next.id);
@@ -105,7 +106,8 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         if (value === null || !anchor || anchor.type !== 'edge') return message.warning('请先选择实体边');
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, 0, 'start', anchor);
         if (!transaction) return;
-        onEdgeTreatmentEdit(anchor.id, anchor.localNormal, value, 'move');
+        // move() subtracts delta from the frozen size; use the difference to commit an absolute input value.
+        onEdgeTreatmentEdit(anchor.id, anchor.localNormal, transaction.baseSize - value, 'move');
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, 0, 'end');
     }
 

@@ -6,6 +6,13 @@ export const STORAGE_KEYS = {
     lengthUnit: 'lab:model3d:sketch:lengthUnit',
     constraintLimit: 'lab:model3d:sketch:constraintLimit',
     displayMode: 'lab:model3d:viewport:displayMode',
+    sidebarWidth: 'lab:model3d:layout:sidebarWidth',
+} as const;
+
+/** Fixed sidebar bounds; very narrow viewports keep the usable minimum width. */
+export const SIDEBAR_LAYOUT = {
+    minWidthPx: 218,
+    maxViewportRatio: 1 / 3,
 } as const;
 
 /** Timing and interaction thresholds shared by sketch tools. */

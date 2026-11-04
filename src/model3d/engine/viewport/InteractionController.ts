@@ -539,10 +539,10 @@ export class InteractionController {
         if (['select', 'offsetFace', 'extrude', 'fillet', 'chamfer'].includes(this.tool)) {
             const arrow = this.hitDirectArrow(event);
             const normal = arrow?.normal || this.geometryAnchor?.localNormal;
-            if (arrow && normal) {
+            if (arrow && normal && this.geometryAnchor) {
                 event.preventDefault(); event.stopImmediatePropagation();
-                const anchor = this.geometryAnchor ? { ...this.geometryAnchor, vertices: this.geometryAnchor.vertices.map((point) => [...point] as Vec3) } : null;
-                this.directEditor.start(event, arrow.id, normal, this.geometryAnchor?.normal || normal, anchor);
+                const anchor = { ...this.geometryAnchor, vertices: this.geometryAnchor.vertices.map((point) => [...point] as Vec3) };
+                this.directEditor.start(event, arrow.id, normal, this.geometryAnchor.normal || normal, anchor);
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
@@ -960,6 +960,7 @@ export class InteractionController {
         this.transform.detach();
         this.clearHoverFace();
         this.refreshFaceFeedback();
+        if (this.document) this.guideRenderer.update(this.document);
     }
 
     offsetGeometryAnchor(offset: Vec3) {

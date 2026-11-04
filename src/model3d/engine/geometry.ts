@@ -4,7 +4,7 @@ import { normalizeBakedGeometryNormals } from './modeling/ManifoldKernel';
 import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
 import { profileClosed, profilePoints, profileShape } from './profiles';
 import { sketchImageTexture } from './sketchImageTexture';
-import { applyEdgeTreatments } from './modeling/EdgeTreatments';
+import { applyEdgeTreatments, rebindEdgeTreatments } from './modeling/EdgeTreatments';
 import { SKETCH_COLORS } from '../config/colors';
 import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
@@ -50,9 +50,10 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
     object.updateMatrixWorld(true);
 }
 
-function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity) {
+function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document: ModelDocument) {
     if (!entity.edgeTreatments?.some((treatment) => treatment.size > 0)) return mesh;
-    const treated = applyEdgeTreatments(mesh.geometry, entity.edgeTreatments);
+    const treatments = rebindEdgeTreatments(mesh.geometry, entity.edgeTreatments, entity, document);
+    const treated = applyEdgeTreatments(mesh.geometry, treatments);
     if (treated !== mesh.geometry) {
         mesh.geometry.dispose();
         mesh.geometry = treated;
@@ -303,7 +304,7 @@ export function buildEntityMesh(
             applyEntityTransform(mesh, entity);
             mesh.castShadow = false;
             mesh.receiveShadow = true;
-            return applyMeshEdgeTreatments(mesh, entity);
+            return applyMeshEdgeTreatments(mesh, entity, document);
         }
         if (entity.operandSigns) {
             mesh = new THREE.Mesh(evaluateSignedBoolean(entity, document, quality, stack));
@@ -315,7 +316,7 @@ export function buildEntityMesh(
             applyEntityTransform(mesh, entity);
             mesh.castShadow = false;
             mesh.receiveShadow = true;
-            return applyMeshEdgeTreatments(mesh, entity);
+            return applyMeshEdgeTreatments(mesh, entity, document);
         }
         const [aId, bId] = entity.operands || [];
         const a = document.entities.find((item) => item.id === aId);
@@ -340,7 +341,7 @@ export function buildEntityMesh(
     applyEntityTransform(mesh, entity);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
-    return applyMeshEdgeTreatments(mesh, entity);
+    return applyMeshEdgeTreatments(mesh, entity, document);
 }
 
 export function buildScene(document: ModelDocument, quality: GeometryQuality = 'preview', includeSketches = true) {
