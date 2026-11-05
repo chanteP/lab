@@ -3,6 +3,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { buildScene } from './geometry';
 import type { GeometryQuality, ModelDocument } from '../types';
+import { stringifyProjectYaml } from '../utils/projectYaml';
 
 function download(data: BlobPart, filename: string, type: string) {
     const url = URL.createObjectURL(new Blob([data], { type }));
@@ -30,5 +31,5 @@ export async function exportGLB(document: ModelDocument, name: string, quality: 
 }
 
 export function exportProject(document: ModelDocument, name: string) {
-    download(JSON.stringify(document, null, 2), `${safeName(name)}.model.json`, 'application/json');
+    download(stringifyProjectYaml(document), `${safeName(name)}.model.yaml`, 'application/yaml');
 }

@@ -52,12 +52,16 @@ function onRowClick(node: OutlinerNode, event: MouseEvent) {
 function onNameClick(node: OutlinerNode, event: MouseEvent) {
     const renameSelected = props.selectedIds.length === 1 && props.selectedIds[0] === node.id && !event.metaKey && !event.ctrlKey && !event.shiftKey;
     clearTimeout(nameClickTimers.get(node.id));
-    if (renameSelected || event.detail >= 2) { beginRename(node); return; }
-    nameClickTimers.set(node.id, setTimeout(() => { if (!editingId.value) onRowClick(node, event); }, 220));
+    if (event.detail >= 2) return;
+    nameClickTimers.set(node.id, setTimeout(() => {
+        if (editingId.value) return;
+        if (renameSelected) beginRename(node);
+        else onRowClick(node, event);
+    }, 220));
 }
 function onNameDoubleClick(node: OutlinerNode) {
     clearTimeout(nameClickTimers.get(node.id));
-    beginRename(node);
+    emit('activate', node.id);
 }
 function commitRename() {
     if (!editingId.value) return;

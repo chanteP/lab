@@ -140,7 +140,7 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
                     <NButton block secondary @click="emit('export', 'stl')">STL <span>用于 3D 打印</span></NButton>
                     <NButton block secondary @click="emit('export', 'glb')">GLB <span>包含材质</span></NButton>
                     <div class="popover-divider"></div>
-                    <button class="text-action" @click="emit('export', 'project')"><NIcon><DocumentOutline /></NIcon>项目 JSON</button>
+                    <button class="text-action" @click="emit('export', 'project')"><NIcon><DocumentOutline /></NIcon>项目 YAML</button>
                 </div>
             </NPopover>
         </div>

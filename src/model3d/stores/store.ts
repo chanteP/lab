@@ -1,8 +1,11 @@
 import type { ProjectRecord } from '../types';
+import { parseProjectYaml, stringifyProjectYaml } from '../utils/projectYaml';
 
-const DB_NAME = 'lab-model3d';
+const DB_NAME = 'lab:model3d';
 const STORE_NAME = 'projects';
-const ACTIVE_KEY = 'lab-model3d-active';
+const ACTIVE_KEY = 'lab:model3d:project:activeId';
+
+type StoredProject = { id: string; yaml: string };
 
 function openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
@@ -32,12 +35,14 @@ async function run<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) 
 }
 
 export async function listProjects() {
-    const projects = await run('readonly', (store) => store.getAll() as IDBRequest<ProjectRecord[]>);
+    const stored = await run('readonly', (store) => store.getAll() as IDBRequest<StoredProject[]>);
+    const projects = stored.map((record) => parseProjectYaml<ProjectRecord>(record.yaml));
     return projects.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function putProject(project: ProjectRecord) {
-    await run('readwrite', (store) => store.put(JSON.parse(JSON.stringify(project))));
+    const stored: StoredProject = { id: project.id, yaml: stringifyProjectYaml(project) };
+    await run('readwrite', (store) => store.put(stored));
 }
 
 export async function deleteProject(id: string) {

@@ -747,7 +747,7 @@ onBeforeUnmount(() => {
                 <section><strong>检查与历史</strong><p>隔离、剖视图和显示模式 用于检查模型；测量只读数。历史记录可回改草图、拉伸、布尔运算 和已有边处理参数。</p></section>
             </div>
         </NModal>
-        <input ref="importInput" type="file" accept=".json,.model.json" hidden @change="onImportFile" />
+        <input ref="importInput" type="file" accept=".yaml,.yml,.model.yaml" hidden @change="onImportFile" />
     </div>
 </template>
 

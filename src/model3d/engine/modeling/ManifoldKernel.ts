@@ -149,26 +149,26 @@ export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, r
     }
 }
 
-/** Native kernel spheres avoid pole/seam welding artifacts when a fillet is unioned with a chamfered body. */
-export function evaluateSphereUnion(base: THREE.BufferGeometry, radius: number, center: Vec3) {
+/** Subtract one local sphere octant; its circular boundaries are tangent to the adjacent planes and end on the incident edges. */
+export function evaluateVertexRounding(base: THREE.BufferGeometry, radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+    if (radius <= 0 || adjacentNormals.length !== 3) return null;
     const { Manifold } = getManifold();
-    const baseMesh = inputMesh(base);
     let baseSolid: InstanceType<typeof Manifold> | null = null;
     let sphere: InstanceType<typeof Manifold> | null = null;
     let centered: InstanceType<typeof Manifold> | null = null;
     let result: InstanceType<typeof Manifold> | null = null;
     try {
-        baseSolid = new Manifold(baseMesh);
+        baseSolid = new Manifold(inputMesh(base));
         if (baseSolid.status() !== 'NoError') throw new Error(`目标实体无效：${baseSolid.status()}`);
         const simplifiedBase = baseSolid.simplify();
         baseSolid.delete();
         baseSolid = simplifiedBase;
         centered = Manifold.sphere(radius, 64);
-        sphere = centered.translate(...center);
+        sphere = centered.translate(...corner);
         centered.delete();
         centered = null;
-        result = baseSolid.add(sphere);
-        if (result.status() !== 'NoError') throw new Error(`圆角合并失败：${result.status()}`);
+        result = baseSolid.subtract(sphere);
+        if (result.status() !== 'NoError') throw new Error(`顶点圆滑化失败：${result.status()}`);
         if (result.isEmpty()) return new THREE.BufferGeometry();
         const simplified = result.asOriginal().simplify();
         result.delete();

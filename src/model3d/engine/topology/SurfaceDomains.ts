@@ -42,24 +42,13 @@ export function analyticTriangleDomain(
 
     for (const treatment of entity.vertexTreatments || []) {
         if (treatment.type !== 'fillet' || treatment.size <= 0) continue;
-        const center = treatment.vertex.normals.slice(0, 3).reduce((sum, value) => sum.addScaledVector(vec(value), -treatment.size), vec(treatment.vertex.point));
-        if (points.every((point) => Math.abs(point.distanceTo(center) - treatment.size) <= LENGTH_TOLERANCE)) {
+        const center = vec(treatment.vertex.point);
+        const triangleCenter = points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3);
+        const radial = triangleCenter.sub(center).normalize();
+        // Boundary triangles on an adjacent plane can also have all three vertices on the sphere; radial normals distinguish the actual patch.
+        const sphericalNormal = Math.abs(vec(triangle.normal).dot(radial)) > 0.9;
+        if (sphericalNormal && points.every((point) => Math.abs(point.distanceTo(center) - treatment.size) <= LENGTH_TOLERANCE)) {
             return { kind: 'sphere', center: center.toArray(), radius: treatment.size, analytic: true };
-        }
-    }
-    for (const treatment of entity.vertexTreatments || []) {
-        if (treatment.type !== 'fillet' || treatment.size <= 0) continue;
-        const normals = treatment.vertex.normals.slice(0, 3);
-        for (let first = 0; first < normals.length; first++) for (let second = first + 1; second < normals.length; second++) {
-            const u = vec(normals[first]).normalize(), v = vec(normals[second]).normalize();
-            const axis = u.clone().cross(v).normalize();
-            const center = vec(treatment.vertex.point).addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
-            const onFillet = points.every((point) => {
-                const delta = point.clone().sub(center);
-                const radial = delta.addScaledVector(axis, -delta.dot(axis)).length();
-                return Math.abs(radial - treatment.size) <= LENGTH_TOLERANCE;
-            });
-            if (onFillet) return { kind: 'cylinder', axis: axis.toArray(), origin: center.toArray(), radius: treatment.size, analytic: true };
         }
     }
 

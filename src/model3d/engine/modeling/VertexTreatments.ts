@@ -3,9 +3,9 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../../types';
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { buildMeshTopology } from '../topology/MeshTopology';
-import { evaluateBoolean, evaluatePlaneChamfer, evaluateSphereUnion } from './ManifoldKernel';
+import { evaluateBoolean, evaluatePlaneChamfer, evaluateVertexRounding } from './ManifoldKernel';
 
-function cornerTools(treatment: VertexTreatment) {
+function chamferTool(treatment: VertexTreatment) {
     if (treatment.size <= 0 || treatment.vertex.normals.length < 3) return null;
     const corner = new THREE.Vector3(...treatment.vertex.point);
     const normals = treatment.vertex.normals.slice(0, 3).map((normal) => new THREE.Vector3(...normal).normalize());
@@ -13,13 +13,8 @@ function cornerTools(treatment: VertexTreatment) {
     // Extend only the outer tip to create a reliable intersection without changing the stored modeling coordinates.
     const outer = corner.clone();
     normals.forEach((normal) => outer.addScaledVector(normal, Math.min(0.1, treatment.size * 0.05)));
-    const points = [outer, ...normals.map((_, index) => treatment.type === 'chamfer'
-        ? corner.clone().addScaledVector(normals[index], -treatment.size)
-        : normals.reduce((point, normal, other) => other === index ? point : point.addScaledVector(normal, -treatment.size), corner.clone()))];
-    const tetrahedron = new ConvexGeometry(points);
-    if (treatment.type === 'chamfer') return { tetrahedron, center: null };
-    const center = normals.reduce((sum, normal) => sum.addScaledVector(normal, -treatment.size), corner.clone());
-    return { tetrahedron, center };
+    const points = [outer, ...normals.map((normal) => corner.clone().addScaledVector(normal, -treatment.size))];
+    return new ConvexGeometry(points);
 }
 
 
@@ -28,28 +23,27 @@ function cornerTools(treatment: VertexTreatment) {
 export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[] = []) {
     let result = base;
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
-        const tools = cornerTools(treatment);
-        if (!tools) return;
-        const { tetrahedron, center } = tools;
+        if (treatment.type === 'fillet') {
+            const rounded = evaluateVertexRounding(result, treatment.size, treatment.vertex.point, treatment.vertex.normals.slice(0, 3));
+            if (!rounded) return;
+            if (result !== base) result.dispose();
+            result = rounded;
+            return;
+        }
+
+        const tetrahedron = chamferTool(treatment);
+        if (!tetrahedron) return;
         try {
             const corner = new THREE.Vector3(...treatment.vertex.point);
             const normals = treatment.vertex.normals.slice(0, 3).map((normal) => new THREE.Vector3(...normal).normalize());
-            const tangentPoints = treatment.vertex.normals.slice(0, 3).map((_, index) => treatment.type === 'chamfer'
-                ? corner.clone().addScaledVector(normals[index], -treatment.size)
-                : normals.reduce((point, normal, other) => other === index ? point : point.addScaledVector(normal, -treatment.size), corner.clone()));
+            const tangentPoints = normals.map((normal) => corner.clone().addScaledVector(normal, -treatment.size));
             const planeNormal = tangentPoints[1].clone().sub(tangentPoints[0]).cross(tangentPoints[2].clone().sub(tangentPoints[0])).normalize();
             if (planeNormal.dot(corner.clone().sub(tangentPoints[0])) < 0) planeNormal.negate();
             const planeOffset = planeNormal.dot(tangentPoints[0]);
             const chamfered = evaluatePlaneChamfer(result, corner.toArray(), treatment.size, planeNormal.toArray(), planeOffset);
             let next: THREE.BufferGeometry;
-            if (chamfered && center) {
-                next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
-                chamfered.dispose();
-            } else if (chamfered) {
-                next = chamfered;
-            } else {
-                next = evaluateBoolean(result, tetrahedron, 'subtract');
-            }
+            if (chamfered) next = chamfered;
+            else next = evaluateBoolean(result, tetrahedron, 'subtract');
             if (result !== base) result.dispose();
             result = next;
         } finally {

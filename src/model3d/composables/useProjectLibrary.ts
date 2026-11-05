@@ -5,6 +5,7 @@ import { exportGLB, exportProject, exportSTL } from '../engine/exporters';
 import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveProjectId } from '../stores/store';
 import { uid } from '../utils/id';
 import { storedLengthUnit } from './useUnits';
+import { parseProjectYaml } from '../utils/projectYaml';
 import {
     cloneDocument, createDocument, isDocument, normalizeDocument,
     type GeometryQuality, type LengthUnit, type ModelDocument, type ProjectRecord, type SketchPlane,
@@ -151,9 +152,9 @@ export function useProjectLibrary(options: ProjectLibraryOptions) {
         input.value = '';
         if (!file) return;
         try {
-            const data = JSON.parse(await file.text());
+            const data = parseProjectYaml<ModelDocument>(await file.text());
             if (!isDocument(data)) throw new Error('不是有效的 Builder 3D 项目文件');
-            const next = createProject(file.name.replace(/\.model\.json$|\.json$/g, '') || '导入项目');
+            const next = createProject(file.name.replace(/\.model\.yaml$|\.ya?ml$/g, '') || '导入项目');
             next.document = normalizeDocument(cloneDocument(data));
             await putProject(next);
             await reloadProjects();

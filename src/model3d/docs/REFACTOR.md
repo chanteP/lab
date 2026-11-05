@@ -23,7 +23,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ### App 业务模块
 
-- `useProjectLibrary` 负责项目记录、自动保存和导入导出；`useDocumentEntities` 负责实体、文件夹、平面和实体树操作。
+- `useProjectLibrary` 负责项目记录、自动保存和导入导出；`utils/projectYaml.ts` 统一紧凑 YAML 编解码，IndexedDB 保存完整 ProjectRecord 对应的 YAML 文本，规则见 `docs/PROJECT_YAML.md`；`useDocumentEntities` 负责实体、文件夹、平面和实体树操作。
 - `useModelingOperations` 持有拉伸/布尔操作草稿，处理直接编辑与历史回改。
 - `composables/sketch/useSketchState` 持有草图草稿、选择与派生状态；`useSketchSession` 负责草图生命周期、持久化和尺寸操作；`useSketchEditing` 负责点边选择、拖拽、裁剪和控制柄。
 - `engine/sketchSemanticSplit` 将贝塞尔编辑后的矩形/正多边形按语义周长边拆成独立 line，保留曲线并移除形状级约束；`useSketchEditing` 只在实际控制柄拖拽后于选择收尾时执行。
@@ -37,7 +37,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
-- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，`gridScale` 计算格距与约 150px 整数段比例尺；主线透明度 0.45、细线 0.42，以 orbit target 的世界半径在 200%–300% 区间淡出。
+- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，原点 X/Z 轴分别读取 `AXIS_COLORS.x` / `AXIS_COLORS.z`；`gridScale` 计算格距与约 150px 整数段比例尺，网格以 orbit target 的世界半径在 200%–300% 区间淡出。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SectionRenderer` 使用逐实体 stencil 正反面计数与平面封口生成实心断面，共享源几何但不进入选择和导出。`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据、实际轮廓边拾取结果和所选实体/面的统计。
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
@@ -58,11 +58,12 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
 - `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
 - `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
-- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，圆角仅在当前角局部并回 64 段 Manifold 原生球体，不处理入射整边，其他角点保持不变。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础面代理；最终拓扑统一负责面/边/角显示和拾取，基础代理只服务于剩余面偏移。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，Vertex Rounding 独立从原顶点球心减去 64 段 Manifold 球体，形成与平面相切、在入射边 radius 处终止的局部球面，不处理入射整边，其他角点保持不变。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础面代理；最终拓扑统一负责面/边/角显示和拾取，基础代理只服务于剩余面偏移。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 
 ## Changelog
+- 2026-11-05：Vertex Rounding 改为原顶点球面减法，移除 Chamfer 平面带与圆柱假设；网格 X/Z 原点轴接入共享色；项目导入导出及 IndexedDB 切换为紧凑 YAML；实体树已选名称单击重命名、直接双击执行默认激活，新增几何和格式回归。
 - 2026-11-05：统一角修正最终拓扑选择规则，生成面提供独立 active 与法向粗箭头并支持复原；实现仅当前角的局部圆角并修复尖点残留、粗箭头输入去重和构造平面显示偏移，右上面板精简并加入二级面板动效。
 
 - 2026-11-05：统一 2 单位遮挡容差，背面边不再抢过正面；A/B 面选择反馈使用处理后的剩余面域，倒角面映射回原边，邻接边处理顺序固定在角点之前。

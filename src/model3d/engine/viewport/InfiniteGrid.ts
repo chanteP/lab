@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VIEWPORT_COLORS } from '../../config/colors';
+import { AXIS_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 
 /** World-space adaptive grid with 10x major lines and camera/viewport fading. */
 export class InfiniteGrid {
@@ -18,6 +18,8 @@ export class InfiniteGrid {
                 uFadeRadius: { value: 100 },
                 uMinorColor: { value: new THREE.Color(VIEWPORT_COLORS.gridMinor) },
                 uMajorColor: { value: new THREE.Color(VIEWPORT_COLORS.gridMajor) },
+                uXAxisColor: { value: new THREE.Color(AXIS_COLORS.x) },
+                uZAxisColor: { value: new THREE.Color(AXIS_COLORS.z) },
             },
             vertexShader: `
                 uniform float uGridSize;
@@ -36,6 +38,8 @@ export class InfiniteGrid {
                 uniform float uFadeRadius;
                 uniform vec3 uMinorColor;
                 uniform vec3 uMajorColor;
+                uniform vec3 uXAxisColor;
+                uniform vec3 uZAxisColor;
                 varying vec3 vWorldPosition;
                 varying vec2 vGridPosition;
 
@@ -48,11 +52,17 @@ export class InfiniteGrid {
                 void main() {
                     float minor = gridLine(vGridPosition, uGridSize, 1.0);
                     float major = gridLine(vGridPosition, uGridSize * 10.0, 1.25);
+                    float xAxis = 1.0 - min(abs(vGridPosition.y) / (fwidth(vGridPosition.y) * 1.5), 1.0);
+                    float zAxis = 1.0 - min(abs(vGridPosition.x) / (fwidth(vGridPosition.x) * 1.5), 1.0);
                     float radiusFade = 1.0 - smoothstep(uFadeRadius * 2.0, uFadeRadius * 3.0, distance(vWorldPosition, uFadeCenter));
                     // Major lines remain subtle so axis colors and model geometry stay visually dominant.
                     float alpha = max(minor * 0.42, major * 0.32) * radiusFade;
+                    vec3 color = mix(uMinorColor, uMajorColor, major);
+                    color = mix(color, uXAxisColor, xAxis);
+                    color = mix(color, uZAxisColor, zAxis);
+                    alpha = max(alpha, max(xAxis, zAxis) * 0.9 * radiusFade);
                     if (alpha < 0.003) discard;
-                    gl_FragColor = vec4(mix(uMinorColor, uMajorColor, major), alpha);
+                    gl_FragColor = vec4(color, alpha);
                 }
             `,
         });

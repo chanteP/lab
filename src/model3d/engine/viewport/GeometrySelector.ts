@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildMeshTopology } from '../topology/MeshTopology';
 import { domainsEqual } from '../topology/SurfaceDomains';
 import { expandTangentEdges, expandTangentFaces } from '../topology/TopologySelection';
 import type { BodyTopology, LogicalFace } from '../topology/types';
-import { createDocument, createEntity, type ModelEntity, type Point2, type SelectionKind, type Vec3, type VertexTreatment } from '../../types';
+import { createDocument, createEntity, type ModelEntity, type Point2, type SelectionKind, type Vec3 } from '../../types';
 
 export type GeometryAnchor = {
     id: string;
@@ -126,21 +125,6 @@ export class GeometrySelector {
             finalTopology: true,
             generatedTreatment: true,
         };
-        const curvedFeedback = (treatment: VertexTreatment) => {
-            if (treatment.type !== 'fillet') return null;
-            const corner = new THREE.Vector3(...treatment.vertex.point);
-            const normals = treatment.vertex.normals.slice(0, 3).map((value) => new THREE.Vector3(...value).normalize());
-            const center = normals.reduce((sum, value) => sum.addScaledVector(value, -treatment.size), corner.clone());
-            const geometries: THREE.BufferGeometry[] = [new THREE.SphereGeometry(treatment.size, 32, 20).translate(...center.toArray())];
-            // Analytic guides avoid CSG long triangles; they are selection feedback, not modeling geometry.
-            const geometry = mergeGeometries(geometries, false);
-            geometry.applyMatrix4(mesh.matrixWorld);
-            const vertices = Array.from({ length: geometry.attributes.position.count }, (_, index) => new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, index).toArray() as Vec3);
-            const indices = geometry.index ? Array.from(geometry.index.array) : vertices.map((_, index) => index);
-            geometries.forEach((item) => item.dispose());
-            return { vertices, indices };
-        };
-
         // Generated corner surfaces own their hot zone and normal; the source corner only supplies the edit ID.
         for (const treatment of entity.vertexTreatments || []) {
             const adjacent = treatment.type === 'fillet' && !finalSurface.planar ? false : treatment.vertex.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
@@ -148,29 +132,11 @@ export class GeometrySelector {
             const domain = finalSurface.face.domain;
             let ownsSurface = treatment.type === 'chamfer' && localPoint.distanceTo(corner) <= treatment.size * 2.5 + 0.25;
             if (treatment.type === 'fillet' && domain.kind === 'sphere') {
-                const center = treatment.vertex.normals.slice(0, 3).reduce((sum, value) => sum.addScaledVector(new THREE.Vector3(...value), -treatment.size), corner.clone());
-                ownsSurface = Math.abs(domain.radius - treatment.size) < 1e-3 && new THREE.Vector3(...domain.center).distanceTo(center) < 1e-3;
-            } else if (treatment.type === 'fillet' && domain.kind === 'cylinder') {
-                ownsSurface = Math.abs(domain.radius - treatment.size) < 1e-3 && treatment.vertex.normals.slice(0, 3).some((first, index, normals) => normals.slice(index + 1).some((second) => {
-                    const u = new THREE.Vector3(...first).normalize(), v = new THREE.Vector3(...second).normalize();
-                    const axis = u.clone().cross(v).normalize();
-                    const center = corner.clone().addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
-                    return Math.abs(axis.dot(new THREE.Vector3(...domain.axis))) > 0.999 && new THREE.Vector3(...domain.origin).distanceTo(center) < 1e-3;
-                }));
+                ownsSurface = Math.abs(domain.radius - treatment.size) < 1e-3 && new THREE.Vector3(...domain.center).distanceTo(corner) < 1e-3;
             }
-            if (!ownsSurface && treatment.type === 'fillet') {
-                const center = treatment.vertex.normals.slice(0, 3).reduce((sum, value) => sum.addScaledVector(new THREE.Vector3(...value), -treatment.size), corner.clone());
-                ownsSurface = Math.abs(localPoint.distanceTo(center) - treatment.size) < 0.01 || treatment.vertex.normals.slice(0, 3).some((first, index, normals) => normals.slice(index + 1).some((second) => {
-                    const u = new THREE.Vector3(...first).normalize(), v = new THREE.Vector3(...second).normalize();
-                    const axis = u.clone().cross(v).normalize();
-                    const origin = corner.clone().addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
-                    const delta = localPoint.clone().sub(origin);
-                    const radial = delta.addScaledVector(axis, -delta.dot(axis)).length();
-                    return Math.abs(radial - treatment.size) < 0.01;
-                }));
-            }
+            if (!ownsSurface && treatment.type === 'fillet' && !finalSurface.planar) ownsSurface = Math.abs(localPoint.distanceTo(corner) - treatment.size) < 0.01;
             if (adjacent || !ownsSurface) continue;
-            const generated = curvedFeedback(treatment) || { vertices: finalSurface.vertices, indices: finalSurface.indices };
+            const generated = { vertices: finalSurface.vertices, indices: finalSurface.indices };
             return {
                 id: entity.id, key: `${entity.id}:vertex:${treatment.id}`, normal: normal.clone().transformDirection(mesh.matrixWorld).toArray(),
                 localNormal: [...anchorNormal], point: point.toArray(), type: 'vertex', planar: false,

@@ -72,6 +72,26 @@ test('all cube corners remove sharp remnants and expose the external spherical s
     }
 });
 
+test('vertex rounding replaces the corner with one tangent spherical patch without chamfer bands', () => {
+    const radius = 3;
+    const base = new THREE.BoxGeometry(40, 40, 40);
+    const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size: radius }]);
+    const topology = buildMeshTopology(result, 'box', createEntity('box', 'box'), createDocument());
+
+    assert.equal(validateSolidGeometry(result).valid, true);
+    assert.equal(topology.faces.filter((face) => face.planar).length, 6);
+    assert.equal(topology.faces.filter((face) => !face.planar).length, 1);
+    const expectedRemoved = Math.PI * radius ** 3 / 6;
+    assert.ok(Math.abs((volume(base) - volume(result)) - expectedRemoved) < expectedRemoved * 0.02);
+
+    const positions = result.attributes.position;
+    const indices = result.index ? Array.from(result.index.array) : [];
+    for (const point of [[20, 20, 17], [20, 17, 20], [17, 20, 20]] as [number, number, number][]) {
+        assert.ok(indices.some((index) => new THREE.Vector3().fromBufferAttribute(positions, index).distanceTo(new THREE.Vector3(...point)) < 1e-4));
+    }
+    base.dispose(); result.dispose();
+});
+
 test('a corner fillet creates a curved surface and follows a later face drag', () => {
     const document = createDocument();
     const entity = createEntity('box', 'box');
@@ -144,4 +164,25 @@ test('corner processing runs after adjacent edge processing', async () => {
     const edgeFirst = applyVertexTreatments((await import('./modeling/EdgeTreatments')).applyEdgeTreatments(base, entity.edgeTreatments), entity.vertexTreatments);
     assert.ok(Math.abs(volume(result.geometry) - volume(edgeFirst)) < 1e-5);
     result.geometry.dispose(); base.dispose(); edgeFirst.dispose();
+});
+
+test('vertex rounding retains an existing incident edge chamfer outside the spherical region', async () => {
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    entity.edgeTreatments = [{
+        id: 'edge', type: 'chamfer', size: 2,
+        edge: { a: [20, 20, -20], b: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0]] },
+    }];
+    entity.vertexTreatments = [{ ...treatment, type: 'fillet' }];
+    const result = buildEntityMesh(entity, document);
+    const topology = buildMeshTopology(result.geometry, entity.id, entity, document);
+    const curved = topology.faces.filter((face) => !face.planar);
+
+    assert.equal(validateSolidGeometry(result.geometry).valid, true);
+    assert.ok(curved.length >= 1);
+    assert.ok(curved.some((face) => face.domain.kind === 'sphere'));
+    assert.ok(curved.every((face) => face.domain.kind !== 'cylinder'), 'an existing edge chamfer may split but must not extend the vertex sphere into a cylinder');
+    const edgeOnly = (await import('./modeling/EdgeTreatments')).applyEdgeTreatments(new THREE.BoxGeometry(40, 40, 40), entity.edgeTreatments);
+    assert.ok(volume(result.geometry) < volume(edgeOnly));
+    result.geometry.dispose(); edgeOnly.dispose();
 });
