@@ -420,7 +420,7 @@ export class SceneSynchronizer {
             if (material.emissive) {
                 if (!material.userData.baseColor && material.color) material.userData.baseColor = material.color.getHex();
                 if (material.color) material.color.set(bodyActive ? VIEWPORT_COLORS.selectedBody : this.displayMode === 'clay' ? VIEWPORT_COLORS.clayBody : material.userData.baseColor);
-                const role = active && !bodyActive && !['face', 'edge'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
+                const role = active && !bodyActive && !['face', 'edge', 'vertex'].includes(this.selectionKind || '') ? VIEWPORT_COLORS.selectedEmissive : VIEWPORT_COLORS.noEmissive;
                 material.emissive.set(role);
                 material.emissiveIntensity = role === VIEWPORT_COLORS.noEmissive ? 0 : 0.35;
                 mesh.userData.bodySelected = bodyActive && role === VIEWPORT_COLORS.noEmissive;

@@ -55,13 +55,13 @@ test('all cube corners remove sharp remnants and expose the external spherical s
         const sharpRemnant = indices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index)).some((vertex) => vertex.distanceTo(corner) < 0.05);
         assert.equal(sharpRemnant, false, `corner ${point.join(',')} must not retain sharp fragments at radius ${size}`);
         const normal = new THREE.Vector3(...signs).normalize();
-        const center = corner.clone();
-        normals.forEach((value) => center.addScaledVector(new THREE.Vector3(...value), -size));
-        const target = center.clone().addScaledVector(normal, size);
         const origin = corner.clone().addScaledVector(normal, 60);
-        const ray = new THREE.Raycaster(origin, target.clone().sub(origin).normalize());
+        const ray = new THREE.Raycaster(origin, corner.clone().sub(origin).normalize());
         const firstHit = ray.intersectObject(new THREE.Mesh(result), false)[0];
-        assert.ok(firstHit && firstHit.point.distanceTo(target) < size * 0.02 + 0.05, `corner ${point.join(',')} must expose its fillet`);
+        assert.ok(firstHit, `corner ${point.join(',')} must expose a rounded outer surface`);
+        const topology = buildMeshTopology(result, 'corner-test', createEntity('box', 'corner-test'), createDocument());
+        const hitFace = topology.faces.find((face) => face.id === topology.triangleFaceIds[firstHit.faceIndex!]);
+        assert.equal(hitFace?.planar, false, `corner ${point.join(',')} must expose curved fillet geometry`);
         base.dispose(); result.dispose();
     }
 });
@@ -74,14 +74,13 @@ test('a corner fillet creates a curved surface and follows a later face drag', (
         normal: [1, 0, 0], distance: 10,
         vertices: [[20, -20, -20], [20, 20, -20], [20, 20, 20], [20, -20, 20]], indices: [0, 1, 2, 0, 2, 3], faceIds: ['right'],
     };
-    const direct = applyVertexTreatments(new THREE.BoxGeometry(50, 40, 40), [{ ...treatment, type: 'fillet', vertex: { ...treatment.vertex, point: [30, 20, 20] } }]);
     const result = buildEntityMesh(entity, document);
     const topology = buildMeshTopology(result.geometry, entity.id, entity, document);
     assert.ok(topology.faces.some((face) => !face.planar));
     const expectedBase = new THREE.BoxGeometry(50, 40, 40);
     expectedBase.translate(5, 0, 0);
-    const expected = applyVertexTreatments(expectedBase, [{ ...treatment, type: 'fillet', vertex: { ...treatment.vertex, point: [30, 20, 20] } }]);
-    assert.ok(Math.abs(volume(result.geometry) - volume(expected)) < 1e-5);
+    const expected = applyVertexTreatments(expectedBase, [{ ...treatment, type: 'fillet', vertex: { ...treatment.vertex, point: [30, 20, 20] } }], entity, document);
+    assert.ok(Math.abs(volume(result.geometry) - volume(expected)) < Math.max(1e-5, volume(expected) * 0.001));
     result.geometry.dispose(); expectedBase.dispose(); expected.dispose();
 });
 

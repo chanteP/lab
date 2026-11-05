@@ -47,6 +47,22 @@ export function analyticTriangleDomain(
             return { kind: 'sphere', center: center.toArray(), radius: treatment.size, analytic: true };
         }
     }
+    for (const treatment of entity.vertexTreatments || []) {
+        if (treatment.type !== 'fillet' || treatment.size <= 0) continue;
+        const normals = treatment.vertex.normals.slice(0, 3);
+        for (let first = 0; first < normals.length; first++) for (let second = first + 1; second < normals.length; second++) {
+            const u = vec(normals[first]).normalize(), v = vec(normals[second]).normalize();
+            const axis = u.clone().cross(v).normalize();
+            const center = vec(treatment.vertex.point).addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
+            const onFillet = points.every((point) => {
+                const delta = point.clone().sub(center);
+                const radial = delta.addScaledVector(axis, -delta.dot(axis)).length();
+                return Math.abs(radial - treatment.size) <= LENGTH_TOLERANCE;
+            });
+            if (onFillet) return { kind: 'cylinder', axis: axis.toArray(), origin: center.toArray(), radius: treatment.size, analytic: true };
+        }
+    }
+
     for (const treatment of entity.edgeTreatments || []) {
         if (treatment.type !== 'fillet' || treatment.size <= 0 || treatment.edge.normals.length < 2) continue;
         const a = vec(treatment.edge.a), b = vec(treatment.edge.b);
