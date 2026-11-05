@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
-import { createDocument, createEntity, type EdgeTreatment, type ModelDocument, type ModelEntity, type Vec3, type VertexTreatment } from '../../types';
+import type { ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../../types';
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { buildMeshTopology } from '../topology/MeshTopology';
 import { evaluateBoolean, evaluatePlaneChamfer, evaluateSphereUnion } from './ManifoldKernel';
-import { applyEdgeTreatments } from './EdgeTreatments';
 
 function cornerTools(treatment: VertexTreatment) {
     if (treatment.size <= 0 || treatment.vertex.normals.length < 3) return null;
@@ -23,31 +22,10 @@ function cornerTools(treatment: VertexTreatment) {
     return { tetrahedron, center };
 }
 
-function incidentFilletEdges(base: THREE.BufferGeometry, treatment: VertexTreatment, sourceEntity?: ModelEntity, sourceDocument?: ModelDocument): EdgeTreatment[] | null {
-    const entity = sourceEntity || createEntity('box', 'corner');
-    const document = sourceDocument || createDocument();
-    const topology = buildMeshTopology(base, entity.id, entity, document);
-    const corner = new THREE.Vector3(...treatment.vertex.point);
-    const edges = topology.logicalEdges.filter((edge) => edge.faceIds.length === 2 && edge.points.length >= 2 && edge.points.some((point) => new THREE.Vector3(...point).distanceTo(corner) < 1e-4));
-    if (edges.length !== 3) return null;
-    const result = edges.map((edge, index) => {
-        const cornerPoint = edge.points.find((point) => new THREE.Vector3(...point).distanceTo(corner) < 1e-4)!;
-        const otherPoint = edge.points.find((point) => point !== cornerPoint)!;
-        const normals = edge.faceIds.map((id) => topology.faces.find((face) => face.id === id)?.normal).filter(Boolean) as Vec3[];
-        if (normals.length !== 2) return null;
-        return {
-            id: `${treatment.id}:edge:${index}`, type: 'fillet' as const, size: treatment.size,
-            edge: { a: [...otherPoint] as Vec3, b: [...cornerPoint] as Vec3, normals },
-        };
-    });
-    let typed = result.every(Boolean) ? result as EdgeTreatment[] : null;
-    if (!typed) return null;
-    return typed.sort((a, b) => [...a.edge.a, ...a.edge.b].join(',').localeCompare([...b.edge.a, ...b.edge.b].join(',')));
-}
 
 
 /** Vertex treatments are replayed after all base face and edge edits. */
-export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[] = [], sourceEntity?: ModelEntity, sourceDocument?: ModelDocument) {
+export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[] = []) {
     let result = base;
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
         const tools = cornerTools(treatment);
@@ -64,24 +42,9 @@ export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: Ve
             const planeOffset = planeNormal.dot(tangentPoints[0]);
             const chamfered = evaluatePlaneChamfer(result, corner.toArray(), treatment.size, planeNormal.toArray(), planeOffset);
             let next: THREE.BufferGeometry;
-            if (center) {
-                const incident = incidentFilletEdges(result, treatment, sourceEntity, sourceDocument);
-                if (incident) {
-                    // Rolling-ball fillet: cylindrical blends on all incident edges plus the spherical corner patch.
-                    const roundedEdges = applyEdgeTreatments(result, incident);
-                    next = evaluateSphereUnion(roundedEdges, treatment.size, center.toArray());
-                    roundedEdges.dispose();
-                } else {
-                    const chamfered = evaluatePlaneChamfer(result, corner.toArray(), treatment.size, planeNormal.toArray(), planeOffset);
-                    if (chamfered) {
-                        next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
-                        chamfered.dispose();
-                    } else {
-                        const fallback = evaluateBoolean(result, tetrahedron, 'subtract');
-                        next = evaluateSphereUnion(fallback, treatment.size, center.toArray());
-                        fallback.dispose();
-                    }
-                }
+            if (chamfered && center) {
+                next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
+                chamfered.dispose();
             } else if (chamfered) {
                 next = chamfered;
             } else {

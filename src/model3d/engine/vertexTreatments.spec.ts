@@ -52,6 +52,12 @@ test('all cube corners remove sharp remnants and expose the external spherical s
         assert.equal(validateSolidGeometry(result).valid, true, `corner ${point.join(',')} must remain a closed solid`);
         const position = result.attributes.position;
         const indices = result.index ? Array.from(result.index.array) : Array.from({ length: position.count }, (_, index) => index);
+        for (const other of [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]]) {
+            if (other.every((sign, axis) => sign === signs[axis])) continue;
+            const untouched = new THREE.Vector3(other[0] * 20, other[1] * 20, other[2] * 20);
+            const preserved = indices.some((index) => new THREE.Vector3().fromBufferAttribute(position, index).distanceTo(untouched) < 1e-4);
+            assert.equal(preserved, true, `untreated corner ${other.join(',')} must remain sharp and unchanged`);
+        }
         const sharpRemnant = indices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index)).some((vertex) => vertex.distanceTo(corner) < 0.05);
         assert.equal(sharpRemnant, false, `corner ${point.join(',')} must not retain sharp fragments at radius ${size}`);
         const normal = new THREE.Vector3(...signs).normalize();

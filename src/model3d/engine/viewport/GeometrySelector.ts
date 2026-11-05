@@ -132,27 +132,6 @@ export class GeometrySelector {
             const normals = treatment.vertex.normals.slice(0, 3).map((value) => new THREE.Vector3(...value).normalize());
             const center = normals.reduce((sum, value) => sum.addScaledVector(value, -treatment.size), corner.clone());
             const geometries: THREE.BufferGeometry[] = [new THREE.SphereGeometry(treatment.size, 32, 20).translate(...center.toArray())];
-            normals.forEach((u, first) => normals.slice(first + 1).forEach((v) => {
-                const axis = u.clone().cross(v).normalize();
-                const offset = corner.clone().addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
-                const edge = baseTopology.logicalEdges.find((candidate) => candidate.points.length >= 2 && candidate.points.some((point) => new THREE.Vector3(...point).distanceTo(corner) < 1e-4)
-                    && candidate.faceIds.some((id) => {
-                        const face = baseTopology.faces.find((item) => item.id === id);
-                        return face && Math.abs(new THREE.Vector3(...face.normal).dot(u)) > 0.999;
-                    }) && candidate.faceIds.some((id) => {
-                        const face = baseTopology.faces.find((item) => item.id === id);
-                        return face && Math.abs(new THREE.Vector3(...face.normal).dot(v)) > 0.999;
-                    }));
-                const cornerPoint = edge?.points.find((point) => new THREE.Vector3(...point).distanceTo(corner) < 1e-4);
-                const otherPoint = edge?.points.find((point) => point !== cornerPoint);
-                const direction = cornerPoint && otherPoint ? new THREE.Vector3(...cornerPoint).sub(new THREE.Vector3(...otherPoint)).normalize() : axis;
-                const length = cornerPoint && otherPoint ? new THREE.Vector3(...cornerPoint).distanceTo(new THREE.Vector3(...otherPoint)) : treatment.size * 2;
-                const cylinder = new THREE.CylinderGeometry(treatment.size, treatment.size, length, 24, 1, true);
-                const midpoint = offset.clone().addScaledVector(direction, -length / 2);
-                const matrix = new THREE.Matrix4().compose(midpoint, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction), new THREE.Vector3(1, 1, 1));
-                cylinder.applyMatrix4(matrix);
-                geometries.push(cylinder);
-            }));
             // Analytic guides avoid CSG long triangles; they are selection feedback, not modeling geometry.
             const geometry = mergeGeometries(geometries, false);
             geometry.applyMatrix4(mesh.matrixWorld);
