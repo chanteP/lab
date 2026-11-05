@@ -5,6 +5,7 @@ import { applyVertexTreatments } from './modeling/VertexTreatments';
 import { initializeManifold } from './modeling/ManifoldKernel';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { buildEntityMesh } from './geometry';
+import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { createDocument, createEntity, type VertexTreatment } from '../types';
 
 await initializeManifold();
@@ -39,22 +40,28 @@ test('a corner chamfer creates one planar triangular face', () => {
     base.dispose(); result.dispose();
 });
 
-test('a corner fillet removes the sharp corner and exposes the external spherical surface at multiple radii', () => {
-    for (const size of [3, 8]) {
+test('all cube corners remove sharp remnants and expose the external spherical surface', () => {
+    const cases = [3, 8].flatMap((size) => [1, -1].flatMap((x) => [1, -1].flatMap((y) => [1, -1].map((z) => ({ size, signs: [x, y, z] })))));
+    for (const { size, signs } of cases) {
+        const point = signs.map((sign) => sign * 20) as [number, number, number];
+        const normals = signs.map((sign, axis) => [0, 0, 0].map((value, index) => index === axis ? sign : value)) as [number, number, number][];
+        const corner = new THREE.Vector3(...point);
         const base = new THREE.BoxGeometry(40, 40, 40);
-        const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size }]);
+        const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size, vertex: { point, normals } }]);
         assert.ok(volume(result) < volume(base) - 1, 'fillet must remove material instead of only retessellating the box');
+        assert.equal(validateSolidGeometry(result).valid, true, `corner ${point.join(',')} must remain a closed solid`);
         const position = result.attributes.position;
         const indices = result.index ? Array.from(result.index.array) : Array.from({ length: position.count }, (_, index) => index);
-        const sharpCornerRemains = indices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index))
-            .some((point) => point.distanceTo(new THREE.Vector3(20, 20, 20)) < 1e-5);
-        assert.equal(sharpCornerRemains, false, 'the original sharp vertex must not survive the fillet');
-        const center = 20 - size;
-        const target = new THREE.Vector3(center, center, center).add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(size));
-        const origin = new THREE.Vector3(80, 80, 80);
+        const sharpRemnant = indices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index)).some((vertex) => vertex.distanceTo(corner) < 0.05);
+        assert.equal(sharpRemnant, false, `corner ${point.join(',')} must not retain sharp fragments at radius ${size}`);
+        const normal = new THREE.Vector3(...signs).normalize();
+        const center = corner.clone();
+        normals.forEach((value) => center.addScaledVector(new THREE.Vector3(...value), -size));
+        const target = center.clone().addScaledVector(normal, size);
+        const origin = corner.clone().addScaledVector(normal, 60);
         const ray = new THREE.Raycaster(origin, target.clone().sub(origin).normalize());
         const firstHit = ray.intersectObject(new THREE.Mesh(result), false)[0];
-        assert.ok(firstHit && firstHit.point.distanceTo(target) < size * 0.02 + 0.05, 'the external fillet must not be occluded by a remaining original face');
+        assert.ok(firstHit && firstHit.point.distanceTo(target) < size * 0.02 + 0.05, `corner ${point.join(',')} must expose its fillet`);
         base.dispose(); result.dispose();
     }
 });

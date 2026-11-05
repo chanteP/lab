@@ -40,6 +40,28 @@ export function analyticTriangleDomain(
         return { kind: 'sphere', center: [0, 0, 0], radius, analytic: true };
     }
 
+    for (const treatment of entity.vertexTreatments || []) {
+        if (treatment.type !== 'fillet' || treatment.size <= 0) continue;
+        const center = treatment.vertex.normals.slice(0, 3).reduce((sum, value) => sum.addScaledVector(vec(value), -treatment.size), vec(treatment.vertex.point));
+        if (points.every((point) => Math.abs(point.distanceTo(center) - treatment.size) <= LENGTH_TOLERANCE)) {
+            return { kind: 'sphere', center: center.toArray(), radius: treatment.size, analytic: true };
+        }
+    }
+    for (const treatment of entity.edgeTreatments || []) {
+        if (treatment.type !== 'fillet' || treatment.size <= 0 || treatment.edge.normals.length < 2) continue;
+        const a = vec(treatment.edge.a), b = vec(treatment.edge.b);
+        const axis = b.clone().sub(a).normalize();
+        let u = vec(treatment.edge.normals[0]).normalize(), v = vec(treatment.edge.normals[1]).normalize();
+        if (u.clone().cross(v).dot(axis) < 0) [u, v] = [v, u];
+        const center = a.clone().addScaledVector(u, -treatment.size).addScaledVector(v, -treatment.size);
+        const onFillet = points.every((point) => {
+            const delta = point.clone().sub(center);
+            const radial = delta.addScaledVector(axis, -delta.dot(axis)).length();
+            return Math.abs(radial - treatment.size) <= LENGTH_TOLERANCE;
+        });
+        if (onFillet) return { kind: 'cylinder', axis: axis.toArray(), origin: center.toArray(), radius: treatment.size, analytic: true };
+    }
+
     const profile = entity.profileId ? document.entities.find((item) => item.id === entity.profileId) : entity;
     const plane = profile?.planeId ? document.planes.find((item) => item.id === profile.planeId) : null;
     const ellipse = Object.values(profile?.analyticCurves || {}).find((curve) => curve.kind === 'ellipse');

@@ -228,7 +228,7 @@ export class GuideRenderer {
             geometry.setIndex(feedbackIndices);
             const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
                 color, transparent: true, opacity: active ? 0.48 : 0.3, side: THREE.DoubleSide,
-                depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+                depthTest: false, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
                 clippingPlanes: this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [],
             }));
             face.userData.activeSelection = active;

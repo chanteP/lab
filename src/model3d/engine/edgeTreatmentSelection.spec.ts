@@ -238,6 +238,10 @@ test('generated corner chamfer and fillet faces own their active surface and tre
             ? topology.faces.find((face: any) => !face.planar)
             : topology.faces.find((face: any) => face.normal.every((value: number) => value > 0.4));
         assert.ok(generated, `${type} must create a generated corner face`);
+        if (type === 'fillet') {
+            assert.ok(generated.triangleIds.length < visible.geometry.index.count / 6, 'the spherical patch must not absorb adjacent planar faces');
+            assert.ok(topology.faces.filter((face: any) => face.planar).length >= 3, 'the three adjacent planes must remain independent');
+        }
         const selector = new GeometrySelector();
         const anchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, generated.triangleIds[0]), document.entities[0]);
         assert.equal(anchor.type, 'vertex');

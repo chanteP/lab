@@ -3,7 +3,7 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../../types';
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { buildMeshTopology } from '../topology/MeshTopology';
-import { evaluateBoolean, evaluateSphereUnion } from './ManifoldKernel';
+import { evaluateBoolean, evaluatePlaneChamfer, evaluateSphereUnion } from './ManifoldKernel';
 
 function cornerTools(treatment: VertexTreatment) {
     if (treatment.size <= 0 || treatment.vertex.normals.length < 3) return null;
@@ -12,7 +12,7 @@ function cornerTools(treatment: VertexTreatment) {
     // Coplanar cutters can be classified as internal cavities, leaving the original outer faces in front of the result.
     // Extend only the outer tip to create a reliable intersection without changing the stored modeling coordinates.
     const outer = corner.clone();
-    normals.forEach((normal) => outer.addScaledVector(normal, Math.min(0.01, treatment.size * 0.01)));
+    normals.forEach((normal) => outer.addScaledVector(normal, Math.min(0.1, treatment.size * 0.05)));
     const points = [outer, ...normals.map((_, index) => treatment.type === 'chamfer'
         ? corner.clone().addScaledVector(normals[index], -treatment.size)
         : normals.reduce((point, normal, other) => other === index ? point : point.addScaledVector(normal, -treatment.size), corner.clone()))];
@@ -30,9 +30,23 @@ export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: Ve
         if (!tools) return;
         const { tetrahedron, center } = tools;
         try {
+            const corner = new THREE.Vector3(...treatment.vertex.point);
+            const normals = treatment.vertex.normals.slice(0, 3).map((normal) => new THREE.Vector3(...normal).normalize());
+            const tangentPoints = treatment.vertex.normals.slice(0, 3).map((_, index) => treatment.type === 'chamfer'
+                ? corner.clone().addScaledVector(normals[index], -treatment.size)
+                : normals.reduce((point, normal, other) => other === index ? point : point.addScaledVector(normal, -treatment.size), corner.clone()));
+            const planeNormal = tangentPoints[1].clone().sub(tangentPoints[0]).cross(tangentPoints[2].clone().sub(tangentPoints[0])).normalize();
+            if (planeNormal.dot(corner.clone().sub(tangentPoints[0])) < 0) planeNormal.negate();
+            const planeOffset = planeNormal.dot(tangentPoints[0]);
+            const chamfered = evaluatePlaneChamfer(result, corner.toArray(), treatment.size, planeNormal.toArray(), planeOffset);
             let next: THREE.BufferGeometry;
-            if (center) {
-                // Union the full native sphere with the chamfered body; partial caps create coplanar, unstable joins.
+            if (chamfered && center) {
+                next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
+                chamfered.dispose();
+            } else if (chamfered) {
+                next = chamfered;
+            } else if (center) {
+                // Non-convex fallback: union a full native sphere with the chamfered body.
                 const chamfered = evaluateBoolean(result, tetrahedron, 'subtract');
                 next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
                 chamfered.dispose();

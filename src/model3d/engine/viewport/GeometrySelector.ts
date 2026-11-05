@@ -118,7 +118,7 @@ export class GeometrySelector {
         const anchorPoint = finalSurface.planar ? finalSurface.point : triangle?.center || finalSurface.point;
         const point = new THREE.Vector3(...anchorPoint).applyMatrix4(mesh.matrixWorld);
         const normal = new THREE.Vector3(...anchorNormal).normalize();
-        const localPoint = new THREE.Vector3(...finalSurface.point);
+        const localPoint = new THREE.Vector3(...anchorPoint);
         const feedback = {
             feedbackVertices: finalSurface.vertices,
             feedbackIndices: finalSurface.indices,

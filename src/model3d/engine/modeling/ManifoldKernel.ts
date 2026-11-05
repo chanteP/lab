@@ -115,6 +115,40 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
     }
 }
 
+/** Exact local chamfer using the kernel's half-space trim instead of a coplanar tetrahedron subtraction. */
+export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, radius: number, planeNormal: Vec3, planeOffset: number) {
+    const { Manifold } = getManifold();
+    const normal = new THREE.Vector3(...planeNormal).normalize();
+    const sourceCorner = new THREE.Vector3(...corner);
+    const position = base.attributes.position;
+    // Plane trimming is global; use it only when the removed half-space is local to this treatment.
+    for (let index = 0; index < position.count; index++) {
+        const point = new THREE.Vector3().fromBufferAttribute(position, index);
+        if (normal.dot(point) > planeOffset + 1e-6 && point.distanceTo(sourceCorner) > radius * 3 + 0.25) return null;
+    }
+    let baseSolid: InstanceType<typeof Manifold> | null = null;
+    let result: InstanceType<typeof Manifold> | null = null;
+    try {
+        baseSolid = new Manifold(inputMesh(base));
+        const simplifiedBase = baseSolid.simplify();
+        baseSolid.delete();
+        baseSolid = simplifiedBase;
+        const inward = normal.clone().negate();
+        result = baseSolid.trimByPlane(inward.toArray(), -planeOffset);
+        if (result.status() !== 'NoError' || result.isEmpty()) return null;
+        const simplified = result.asOriginal().simplify();
+        result.delete();
+        result = simplified;
+        const shaded = result.calculateNormals(0, 60);
+        result.delete();
+        result = shaded;
+        return outputGeometry(result.getMesh(0));
+    } finally {
+        result?.delete();
+        baseSolid?.delete();
+    }
+}
+
 /** Native kernel spheres avoid pole/seam welding artifacts when a fillet is unioned with a chamfered body. */
 export function evaluateSphereUnion(base: THREE.BufferGeometry, radius: number, center: Vec3) {
     const { Manifold } = getManifold();
@@ -129,7 +163,7 @@ export function evaluateSphereUnion(base: THREE.BufferGeometry, radius: number, 
         const simplifiedBase = baseSolid.simplify();
         baseSolid.delete();
         baseSolid = simplifiedBase;
-        centered = Manifold.sphere(radius, 32);
+        centered = Manifold.sphere(radius, 64);
         sphere = centered.translate(...center);
         centered.delete();
         centered = null;
