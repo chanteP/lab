@@ -3,39 +3,51 @@ import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../../types';
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { buildMeshTopology } from '../topology/MeshTopology';
-import { evaluateBoolean } from './ManifoldKernel';
+import { evaluateBoolean, evaluateSphereUnion } from './ManifoldKernel';
 
-function cornerCutter(treatment: VertexTreatment) {
+function cornerTools(treatment: VertexTreatment) {
     if (treatment.size <= 0 || treatment.vertex.normals.length < 3) return null;
     const corner = new THREE.Vector3(...treatment.vertex.point);
     const normals = treatment.vertex.normals.slice(0, 3).map((normal) => new THREE.Vector3(...normal).normalize());
-    const points = [corner, ...normals.map((_, index) => treatment.type === 'chamfer'
+    // Coplanar cutters can be classified as internal cavities, leaving the original outer faces in front of the result.
+    // Extend only the outer tip to create a reliable intersection without changing the stored modeling coordinates.
+    const outer = corner.clone();
+    normals.forEach((normal) => outer.addScaledVector(normal, Math.min(0.01, treatment.size * 0.01)));
+    const points = [outer, ...normals.map((_, index) => treatment.type === 'chamfer'
         ? corner.clone().addScaledVector(normals[index], -treatment.size)
         : normals.reduce((point, normal, other) => other === index ? point : point.addScaledVector(normal, -treatment.size), corner.clone()))];
     const tetrahedron = new ConvexGeometry(points);
-    if (treatment.type === 'chamfer') return tetrahedron;
+    if (treatment.type === 'chamfer') return { tetrahedron, center: null };
     const center = normals.reduce((sum, normal) => sum.addScaledVector(normal, -treatment.size), corner.clone());
-    const sphere = new THREE.SphereGeometry(treatment.size, 32, 20);
-    sphere.translate(...center.toArray());
-    const result = evaluateBoolean(tetrahedron, sphere, 'subtract');
-    tetrahedron.dispose(); sphere.dispose();
-    return result;
+    return { tetrahedron, center };
 }
 
 /** Vertex treatments are replayed after all base face and edge edits. */
 export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[] = []) {
     let result = base;
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
-        const tool = cornerCutter(treatment);
-        if (!tool) return;
+        const tools = cornerTools(treatment);
+        if (!tools) return;
+        const { tetrahedron, center } = tools;
         try {
-            const next = evaluateBoolean(result, tool, 'subtract');
+            let next: THREE.BufferGeometry;
+            if (center) {
+                // Union the full native sphere with the chamfered body; partial caps create coplanar, unstable joins.
+                const chamfered = evaluateBoolean(result, tetrahedron, 'subtract');
+                next = evaluateSphereUnion(chamfered, treatment.size, center.toArray());
+                chamfered.dispose();
+            } else {
+                next = evaluateBoolean(result, tetrahedron, 'subtract');
+            }
             if (result !== base) result.dispose();
             result = next;
-        } finally { tool.dispose(); }
+        } finally {
+            tetrahedron.dispose();
+        }
     });
     return result;
 }
+
 
 export function rebindVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[], entity: ModelEntity, document: ModelDocument) {
     if (!treatments.length) return treatments;
@@ -66,5 +78,5 @@ export function resolveVertexTreatment(entity: ModelEntity, anchor: GeometryAnch
 
 export function vertexTreatmentFromAnchor(anchor: GeometryAnchor, id: string): VertexTreatment | null {
     if (!anchor.localVertex || anchor.localVertex.normals.length < 3) return null;
-    return { id, type: 'fillet', size: 0, vertex: { point: [...anchor.localVertex.point], normals: anchor.localVertex.normals.slice(0, 3).map((normal) => [...normal] as Vec3[]) } };
+    return { id, type: 'fillet', size: 0, vertex: { point: [...anchor.localVertex.point], normals: anchor.localVertex.normals.slice(0, 3).map((normal) => [...normal] as Vec3) } };
 }

@@ -28,7 +28,7 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
     const firstOcclusion = occlusions[0];
     let best: { score: number; intersection: THREE.Intersection } | null = null;
     model.children.forEach((body) => {
-        if (!body.visible || (body.userData.edgeTreated && !body.userData.selectionProxy)) return;
+        if (!body.visible || body.userData.selectionProxy) return;
         body.children.forEach((child) => {
             if (!(child instanceof THREE.LineSegments) || !child.userData.displayEdge || !child.visible) return;
             const positions = child.geometry.attributes.position;

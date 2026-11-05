@@ -129,10 +129,22 @@ const {
     startSketch: (editProfile) => sketchSession.startSketch(editProfile),
 });
 const {
-    onEdgeTreatmentEdit, updateEdgeTreatmentDistance, finishEdgeTreatment, cancelEdgeTreatment,
+    onEdgeTreatmentEdit, updateEdgeTreatmentDistance, getSelectedEdgeTreatment, resetEdgeTreatment, finishEdgeTreatment, cancelEdgeTreatment,
 } = useEdgeTreatmentOperations({
     document, activeTool, viewport: () => viewport, message, pushHistory, popHistory, setTool,
 });
+const canRestoreTreatment = computed(() => {
+    selectionKind.value;
+    selectedIds.value;
+    document.value.entities;
+    return (getSelectedEdgeTreatment()?.size || 0) > 0;
+});
+function restoreSelectedTreatment() {
+    if (!resetEdgeTreatment()) return;
+    selectionKind.value = 'body';
+    viewport?.clearGeometrySelection();
+}
+
 const uiState = computed(() => sketchMode.value ? 'Sketch' : historyEditId.value ? 'HistoryEdit' : operation.value ? 'ToolActive' : selectedIds.value.length ? 'SelectionAdaptive' : 'Default');
 const historySteps = computed(() => document.value.entities.flatMap((item) => {
     const steps = ['sketch', 'extrude', 'boolean'].includes(item.kind) ? [{ id: item.id, name: item.name, kind: item.kind as string }] : [];
@@ -679,9 +691,9 @@ onBeforeUnmount(() => {
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent" :selected-face-planar="selectedFacePlanar"
-                    :parameter-card-open="parameterCardOpen" :display-length="displayLength"
+                    :parameter-card-open="parameterCardOpen" :can-restore-treatment="canRestoreTreatment" :display-length="displayLength"
                     @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @create-plane="createPlane"
-                    @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')"
+                    @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @restore-treatment="restoreSelectedTreatment" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')"
                     @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"

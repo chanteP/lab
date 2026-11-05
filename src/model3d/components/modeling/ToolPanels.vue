@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { NIcon, NInput } from 'naive-ui';
-import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, GridOutline, MoveOutline, RadioOutline, ShapesOutline, TriangleOutline } from '@vicons/ionicons5';
+import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, GridOutline, MoveOutline, RadioOutline, RefreshOutline, ShapesOutline, TriangleOutline } from '@vicons/ionicons5';
 import MenuCommand from '../ui/MenuCommand.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
@@ -21,6 +21,7 @@ const props = defineProps<{
     includeTangent: boolean;
     selectedFacePlanar: boolean;
     parameterCardOpen: boolean;
+    canRestoreTreatment: boolean;
     displayLength: (value: number) => number;
 }>();
 const emit = defineEmits<{
@@ -32,6 +33,7 @@ const emit = defineEmits<{
     sketch: [];
     boolean: [type: BooleanOperation];
     clearSelection: [];
+    restoreTreatment: [];
     extrudeHint: [];
     'update:selectThrough': [value: boolean];
     'update:includeTangent': [value: boolean];
@@ -49,7 +51,7 @@ const dimensionFields = computed(() => {
     if (item.kind === 'sphere') return [{ key: 'radius' as const, label: '半径', value: item.radius! }];
     if (item.kind === 'cone') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'height' as const, label: '高', value: item.height! }];
     if (item.kind === 'torus') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'tubeRadius' as const, label: '管径', value: item.tubeRadius! }];
-    if (item.kind === 'extrude') return [{ key: 'depth' as const, label: '厚度', value: item.depth! }];
+    if (item.kind === 'extrude' && props.selectionKind !== 'face') return [{ key: 'depth' as const, label: '厚度', value: item.depth! }];
     return [];
 });
 const commandResults = computed(() => {
@@ -77,7 +79,8 @@ function runCommand(id: string) {
 
 <template>
     <div class="tool-panels">
-        <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" class="tool-panel command-panel">
+        <Transition name="tool-panel-slide">
+        <aside v-if="activePanel && activePanel !== 'sketch' && !sketchMode" :key="activePanel" class="tool-panel command-panel">
             <div class="command-close"><ViewportToolItem label="关闭" :description-on-hover="false" @click="emit('closePanel')"><NIcon><CloseOutline /></NIcon></ViewportToolItem></div>
             <template v-if="activePanel === 'search'">
                 <NInput v-model:value="commandSearch" autofocus size="small" placeholder="搜索命令" />
@@ -105,13 +108,14 @@ function runCommand(id: string) {
                 <div class="inline-command-row"><button :disabled="!canBoolean" @click="emit('boolean', 'union')">并集</button><button :disabled="!canBoolean" @click="emit('boolean', 'subtract')">差集</button><button :disabled="!canBoolean" @click="emit('boolean', 'intersect')">交集</button></div>
             </template>
         </aside>
+        </Transition>
 
         <aside v-if="!activePanel && parameterCardOpen && selectedEntities.length === 1 && !sketchMode && !operation" class="tool-panel adaptive-panel">
             <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'vertex' ? '角点' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button aria-label="取消选择" @click="emit('clearSelection')"><NIcon><CloseOutline /></NIcon></button></div>
             <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
             <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button></template>
-            <template v-else-if="selectionKind === 'edge' || selectionKind === 'vertex'"><p class="panel-note">往内拖动为圆角（正数），往外拖动为倒角（负数）。</p></template>
-            <template v-else-if="selectionKind === 'face'"><button class="menu-command" :class="{ active: activeTool === 'offsetFace' }" @click="emit('tool', 'offsetFace')"><NIcon><MoveOutline /></NIcon><span><strong>推拉面</strong><small>{{ selectedFacePlanar ? '拖动模型平面或输入距离' : '曲面暂不支持推拉' }}</small></span></button><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
+            <template v-else-if="selectionKind === 'edge' || selectionKind === 'vertex'"><p class="panel-note">往内拖动为圆角（正数），往外拖动为倒角（负数）。</p><button v-if="canRestoreTreatment" class="menu-command" @click="emit('restoreTreatment')"><NIcon><RefreshOutline /></NIcon><span><strong>复原倒角/圆角</strong><small>将当前角修正数值归零</small></span></button></template>
+            <template v-else-if="selectionKind === 'face'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
             <div v-if="['face', 'edge', 'vertex'].includes(selectionKind || '')" class="inline-command-row vertical">
                 <button :class="{ active: includeTangent }" @click="emit('update:includeTangent', !includeTangent)">相切扩选</button>
                 <button :class="{ active: selectThrough }" @click="emit('update:selectThrough', !selectThrough)">穿透选择</button>
@@ -128,7 +132,7 @@ function runCommand(id: string) {
 
 <style lang="scss" scoped>
 .tool-panels { position: static; }
-.tool-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 210px; max-height: calc(100% - 55px); overflow-y: auto; scrollbar-width: thin; }
+.tool-panel { position: absolute; z-index: 7; top: 12px; right: 12px; left: auto; width: 210px; max-height: calc(100% - 55px); overflow-y: auto; scrollbar-width: thin; }
 .tool-panel.command-panel { right: auto; left: 12px; width: 120px; padding: 10px; }
 .command-close { margin-bottom: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--model3d-ui-e2e8e4); }
 .command-options { display: flex; flex-direction: column; gap: 4px; }
@@ -140,3 +144,7 @@ function runCommand(id: string) {
 .property-color { display: flex; align-items: center; justify-content: space-between; }
 .property-color input { width: 42px; height: 25px; padding: 2px; background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; cursor: pointer; }
 </style>
+
+.tool-panel-slide-enter-active, .tool-panel-slide-leave-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1); transform-origin: left top; }
+.tool-panel-slide-enter-from { opacity: 0; transform: translateX(-12px) scale(.97); }
+.tool-panel-slide-leave-to { opacity: 0; transform: translateX(-8px) scale(.98); }

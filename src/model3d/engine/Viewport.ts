@@ -183,6 +183,7 @@ export class Viewport {
             getSectionPlane: () => this.sceneSynchronizer.sectionPlane,
             isSketchMode: () => this.sketchMode,
             getLengthUnit: () => this.lengthUnit,
+            getDocument: () => this.sceneSynchronizer.document,
         });
         this.engine.scene.add(
             this.sceneSynchronizer.model,
@@ -290,6 +291,7 @@ export class Viewport {
         const entity = this.sceneSynchronizer.document?.entities.find((item) => item.id === anchor?.id);
         if (anchor?.type === 'edge' && entity) resolveEdgeTreatmentAnchor(anchor, entity, this.sceneSynchronizer.model.children.find((item) => item.userData.entityId === entity.id));
         else if (anchor?.type === 'vertex' && entity) {
+            if (anchor.generatedTreatment || anchor.finalTopology) return;
             const treatment = resolveVertexTreatment(entity, anchor);
             anchor.vertexTreatmentId = treatment?.id;
         }

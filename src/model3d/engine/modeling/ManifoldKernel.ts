@@ -3,7 +3,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import type { ManifoldToplevel } from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm';
-import type { BooleanOperation } from '../../types';
+import type { BooleanOperation, Vec3 } from '../../types';
 import { geometryMergeVectors } from '../topology/RenderVertices';
 
 let modulePromise: Promise<ManifoldToplevel> | null = null;
@@ -112,6 +112,42 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
         result?.delete();
         baseSolid?.delete();
         toolSolid?.delete();
+    }
+}
+
+/** Native kernel spheres avoid pole/seam welding artifacts when a fillet is unioned with a chamfered body. */
+export function evaluateSphereUnion(base: THREE.BufferGeometry, radius: number, center: Vec3) {
+    const { Manifold } = getManifold();
+    const baseMesh = inputMesh(base);
+    let baseSolid: InstanceType<typeof Manifold> | null = null;
+    let sphere: InstanceType<typeof Manifold> | null = null;
+    let centered: InstanceType<typeof Manifold> | null = null;
+    let result: InstanceType<typeof Manifold> | null = null;
+    try {
+        baseSolid = new Manifold(baseMesh);
+        if (baseSolid.status() !== 'NoError') throw new Error(`目标实体无效：${baseSolid.status()}`);
+        const simplifiedBase = baseSolid.simplify();
+        baseSolid.delete();
+        baseSolid = simplifiedBase;
+        centered = Manifold.sphere(radius, 32);
+        sphere = centered.translate(...center);
+        centered.delete();
+        centered = null;
+        result = baseSolid.add(sphere);
+        if (result.status() !== 'NoError') throw new Error(`圆角合并失败：${result.status()}`);
+        if (result.isEmpty()) return new THREE.BufferGeometry();
+        const simplified = result.asOriginal().simplify();
+        result.delete();
+        result = simplified;
+        const shaded = result.calculateNormals(0, 60);
+        result.delete();
+        result = shaded;
+        return outputGeometry(result.getMesh(0));
+    } finally {
+        result?.delete();
+        centered?.delete();
+        sphere?.delete();
+        baseSolid?.delete();
     }
 }
 

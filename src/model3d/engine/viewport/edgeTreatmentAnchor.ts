@@ -3,8 +3,10 @@ import type { ModelEntity } from '../../types';
 import { resolveEdgeTreatment } from '../modeling/EdgeTreatments';
 import type { GeometryAnchor } from './GeometrySelector';
 
-/** Restores the original 45-degree normal when a generated edge is picked again. */
+/** Resolves legacy source anchors; generated surfaces retain their own face normal and feedback. */
 export function resolveEdgeTreatmentAnchor(anchor: GeometryAnchor, entity: ModelEntity, object?: THREE.Object3D) {
+    if (anchor.generatedTreatment) return;
+    if (anchor.finalTopology) { anchor.edgeTreatmentId = undefined; return; }
     const treatment = resolveEdgeTreatment(entity, anchor);
     anchor.edgeTreatmentId = treatment?.id;
     if (!treatment) return;

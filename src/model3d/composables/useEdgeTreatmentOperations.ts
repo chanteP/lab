@@ -52,9 +52,11 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         const item = document.value.entities.find((entity) => entity.id === id);
         const kind = anchor?.type === 'vertex' ? 'vertex' : anchor?.type === 'edge' ? 'edge' : null;
         if (!item || !anchor || !kind) return message.warning('请先选择实体边或角点');
-        if (kind === 'edge' && !straightAnchor(anchor)) return message.warning('当前仅支持直线边圆角和倒角');
+        if (kind === 'edge' && !anchor.generatedTreatment && !straightAnchor(anchor)) return message.warning('当前仅支持直线边圆角和倒角');
         if (kind === 'vertex' && (anchor.localVertex?.normals.length || 0) < 3) return message.warning('该角点缺少至少三个相邻面');
-        const existing = kind === 'edge' ? resolveEdgeTreatment(item, anchor) : resolveVertexTreatment(item, anchor);
+        const existing = anchor.generatedTreatment || !anchor.finalTopology
+            ? kind === 'edge' ? resolveEdgeTreatment(item, anchor) : resolveVertexTreatment(item, anchor)
+            : null;
         const treatment = existing || (kind === 'edge' ? treatmentFromAnchor(anchor, 'fillet', uid()) : vertexTreatmentFromAnchor(anchor, uid()));
         if (!treatment) return message.warning('无法识别相邻面');
         const mesh = buildEntityMesh(item, document.value);
@@ -113,6 +115,25 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         transaction = null;
     }
 
+    function getSelectedEdgeTreatment(): Treatment | null {
+        const anchor = viewport()?.getGeometryAnchor();
+        const item = document.value.entities.find((entity) => entity.id === anchor?.id);
+        if (!item || !anchor) return null;
+        if (anchor.finalTopology && !anchor.generatedTreatment) return null;
+        if (anchor.type === 'edge') return resolveEdgeTreatment(item, anchor);
+        if (anchor.type === 'vertex') return resolveVertexTreatment(item, anchor);
+        return null;
+    }
+
+    function resetEdgeTreatment() {
+        const treatment = getSelectedEdgeTreatment();
+        if (!treatment || treatment.size <= 0) return false;
+        transaction = null;
+        pushHistory();
+        treatment.size = 0;
+        return true;
+    }
+
     function updateEdgeTreatmentDistance(value: number | null) {
         const anchor = viewport()?.getGeometryAnchor();
         if (value === null || !anchor || !['edge', 'vertex'].includes(anchor.type)) return message.warning('请先选择实体边或角点');
@@ -125,6 +146,8 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
     return {
         onEdgeTreatmentEdit,
         updateEdgeTreatmentDistance,
+        getSelectedEdgeTreatment,
+        resetEdgeTreatment,
         finishEdgeTreatment: () => { transaction = null; },
         cancelEdgeTreatment: () => {
             if (transaction) onEdgeTreatmentEdit(transaction.entityId, [0, 1, 0], 0, 'cancel');

@@ -25,6 +25,7 @@ interface GuideRendererOptions {
     getSectionPlane: () => THREE.Plane | null;
     isSketchMode: () => boolean;
     getLengthUnit: () => LengthUnit;
+    getDocument?: () => ModelDocument | null;
 }
 
 /** Direct-edit/extrude arrows and the face or edge feedback associated with them. */
@@ -75,13 +76,15 @@ export class GuideRenderer {
             const normal = new THREE.Vector3(...geometryAnchor.normal).normalize();
             const origin = new THREE.Vector3(...geometryAnchor.point);
             const treatment = geometryAnchor.type === 'vertex'
-                ? geometryEntity.vertexTreatments?.find((item) => item.id === geometryAnchor.vertexTreatmentId) || resolveVertexTreatment(geometryEntity, geometryAnchor)
-                : geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || resolveEdgeTreatment(geometryEntity, geometryAnchor);
+                ? geometryEntity.vertexTreatments?.find((item) => item.id === geometryAnchor.vertexTreatmentId) || (!geometryAnchor.finalTopology ? resolveVertexTreatment(geometryEntity, geometryAnchor) : null)
+                : geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || (!geometryAnchor.finalTopology ? resolveEdgeTreatment(geometryEntity, geometryAnchor) : null);
             if (treatment && geometryAnchor.type === 'vertex') geometryAnchor.vertexTreatmentId = treatment.id;
             else if (treatment) geometryAnchor.edgeTreatmentId = treatment.id;
+            // Once the source edge/corner is removed, only the generated final surface may display an edit affordance.
+            if (treatment?.size && !geometryAnchor.finalTopology) return;
             this.group.add(this.createThickArrow(origin, normal, 18, { directArrow: { id: geometryEntity.id, normal: geometryAnchor.localNormal } }));
             this.options.overlay.set({
-                id: 'guide-label:edge-treatment', kind: 'dimension', target: { kind: 'edgeTreatment' },
+                id: `guide-label:edge-treatment:${geometryAnchor.key}`, kind: 'dimension', target: { kind: 'edgeTreatment' },
                 position: origin.clone().add(normal.clone().multiplyScalar(12)).toArray(), screenOffset: [76, 0],
                 value: treatment ? treatment.type === 'fillet' ? treatment.size : -treatment.size : 0, unit: this.options.getLengthUnit(), signed: true,
             });
@@ -96,7 +99,7 @@ export class GuideRenderer {
             const length = 18;
             this.group.add(this.createThickArrow(origin, normal, length, { directArrow: { id: entity.id } }));
             this.options.overlay.set({
-                id: 'guide-label:direct', kind: 'dimension', target: { kind: 'directFace' },
+                id: `guide-label:direct:${geometryAnchor.key}`, kind: 'dimension', target: { kind: 'directFace' },
                 position: origin.clone().add(normal.clone().multiplyScalar(length * 0.65)).toArray(), screenOffset: [76, 0],
                 value, unit: this.options.getLengthUnit(), signed: true,
             });
@@ -170,23 +173,40 @@ export class GuideRenderer {
         });
     }
 
-    updateAnimation(camera: THREE.Camera, time: number) {
+    private worldPerPixel(camera: THREE.Camera, origin: THREE.Vector3) {
         const height = this.options.renderer.domElement.clientHeight || 1;
+        return camera instanceof THREE.PerspectiveCamera
+            ? 2 * camera.position.distanceTo(origin) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height
+            : (camera as THREE.OrthographicCamera).top ? ((camera as THREE.OrthographicCamera).top - (camera as THREE.OrthographicCamera).bottom) / height : 0.1;
+    }
+
+    updateAnimation(camera: THREE.Camera, time: number) {
         const breath = Math.sin(time * 2.4);
         this.group.children.forEach((arrow) => {
             const origin = arrow.getWorldPosition(new THREE.Vector3());
-            const worldPerPixel = camera instanceof THREE.PerspectiveCamera
-                ? 2 * camera.position.distanceTo(origin) * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / height
-                : (camera as THREE.OrthographicCamera).top ? ((camera as THREE.OrthographicCamera).top - (camera as THREE.OrthographicCamera).bottom) / height : 0.1;
-            arrow.scale.setScalar(worldPerPixel * INTERACTION.arrowScreenLengthPx / 6);
+            arrow.scale.setScalar(this.worldPerPixel(camera, origin) * INTERACTION.arrowScreenLengthPx / 6);
             arrow.traverse((object) => {
                 if (object instanceof THREE.Mesh) (object.material as THREE.MeshStandardMaterial).opacity = 0.76 + breath * 0.14;
             });
         });
         this.faceFeedback.children.forEach((object) => {
-            if (!(object instanceof THREE.Mesh) || !object.userData.activeSelection) return;
-            (object.material as THREE.Material).opacity = 0.42 + breath * 0.12;
+            if (!(object instanceof THREE.Mesh)) return;
+            if (object.userData.vertexMarker) {
+                const active = !!object.userData.activeSelection;
+                object.scale.setScalar(this.worldPerPixel(camera, object.getWorldPosition(new THREE.Vector3())) * (active ? 5 : 4));
+                (object.material as THREE.Material).opacity = (active ? 0.9 : 0.68) + breath * 0.08;
+            } else if (object.userData.activeSelection) {
+                (object.material as THREE.Material).opacity = 0.42 + breath * 0.12;
+            }
         });
+    }
+
+    private sourceTreatmentActive(anchor: GeometryAnchor) {
+        if (anchor.finalTopology) return false;
+        const entity = this.options.getDocument?.()?.entities.find((item) => item.id === anchor.id);
+        if (!entity) return false;
+        const treatment = anchor.type === 'vertex' ? resolveVertexTreatment(entity, anchor) : anchor.type === 'edge' ? resolveEdgeTreatment(entity, anchor) : null;
+        return (treatment?.size || 0) > 0;
     }
 
     refreshFaceFeedback() {
@@ -194,15 +214,37 @@ export class GuideRenderer {
         if (this.options.isSketchMode()) return;
         const selected = this.options.getGeometryAnchor();
         const hovered = this.options.getHoverFaceAnchor();
-        if (selected && this.options.getSelected().includes(selected.id)) this.renderAnchor(selected, true);
-        if (hovered && hovered.key !== selected?.key) this.renderAnchor(hovered, false);
+        if (selected && this.options.getSelected().includes(selected.id) && !this.sourceTreatmentActive(selected)) this.renderAnchor(selected, true);
+        if (hovered && hovered.key !== selected?.key && !this.sourceTreatmentActive(hovered)) this.renderAnchor(hovered, false);
     }
 
     private renderAnchor(anchor: GeometryAnchor, active: boolean) {
         const color = active ? SKETCH_COLORS.activeDark : SKETCH_COLORS.active;
         const feedbackVertices = anchor.feedbackVertices || anchor.vertices;
         const feedbackIndices = anchor.feedbackIndices || anchor.indices;
-        if (anchor.type === 'edge' && feedbackVertices.length >= 2) {
+        if (anchor.generatedTreatment && feedbackVertices.length >= 3) {
+            // Generated treatments highlight their own final surface, not the removed source edge/corner.
+            const geometry = new THREE.BufferGeometry().setFromPoints(feedbackVertices.map((point) => new THREE.Vector3(...point)));
+            geometry.setIndex(feedbackIndices);
+            const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: active ? 0.48 : 0.3, side: THREE.DoubleSide,
+                depthTest: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+                clippingPlanes: this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [],
+            }));
+            face.userData.activeSelection = active;
+            face.renderOrder = 13;
+            this.faceFeedback.add(face);
+        } else if (anchor.type === 'vertex') {
+            const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: active ? 0.9 : 0.68, depthTest: false, depthWrite: false,
+                clippingPlanes: this.options.getSectionPlane() ? [this.options.getSectionPlane()!] : [],
+            }));
+            marker.position.set(...anchor.point);
+            marker.userData.vertexMarker = true;
+            marker.userData.activeSelection = active;
+            marker.renderOrder = 15;
+            this.faceFeedback.add(marker);
+        } else if (anchor.type === 'edge' && feedbackVertices.length >= 2) {
             const canvas = this.options.renderer.domElement;
             const edge = createFatLine(feedbackVertices.map((point) => new THREE.Vector3(...point)), canvas.clientWidth, canvas.clientHeight);
             const material = edge.material as LineMaterial;

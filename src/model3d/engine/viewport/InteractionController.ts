@@ -661,6 +661,9 @@ export class InteractionController {
             const hit = this.hitEntity(event);
             const edgeHit = this.hitEntityEdge(event);
             const sketchId = hit && ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '') ? hit.object.userData.entityId : null;
+            const vertexHit = sketchId ? null : this.hitEntityVertex(event);
+            const vertexAnchor = vertexHit ? this.geometrySelector.createVertexAnchor(vertexHit) : null;
+            const faceAnchor = hit && !sketchId ? this.createGeometryAnchor(hit) : null;
             const sketchHits = sketchId ? this.hitSketchEntities(event) : [];
             const intersection = this.sketchIntersectionAnchor(sketchHits);
             this.setSketchHovers(intersection ? [] : sketchHits.map((item) => item.object.userData.entityId));
@@ -670,13 +673,19 @@ export class InteractionController {
                 this.refreshFaceFeedback();
                 return;
             }
-            if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
+            if (faceAnchor?.generatedTreatment) {
+                this.hoverGeometry = null;
+                this.hoverFaceAnchor = faceAnchor;
+            } else if (vertexAnchor) {
+                this.hoverGeometry = null;
+                this.hoverFaceAnchor = vertexAnchor;
+            } else if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             } else if (hit) {
                 const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
                 this.hoverGeometry = { id: hit.object.userData.entityId, normal, point: hit.point.toArray() };
-                this.hoverFaceAnchor = sketchId ? null : this.createGeometryAnchor(hit);
+                this.hoverFaceAnchor = sketchId ? null : faceAnchor;
             } else { this.hoverGeometry = null; this.hoverFaceAnchor = null; }
             this.refreshFaceFeedback();
         }
@@ -863,6 +872,15 @@ export class InteractionController {
             const selectedHits = intersection ? [hits[0]] : hits;
             selectedHits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0, intersection?.profilePoints));
             return;
+        }
+        if (hit) {
+            const anchor = this.createGeometryAnchor(hit);
+            if (anchor.generatedTreatment) {
+                this.geometryAnchor = anchor;
+                this.hoverFaceAnchor = null;
+                this.callbacks.onGeometrySelect(anchor.id, anchor.type, anchor.normal, anchor.point, additive);
+                return;
+            }
         }
         if (vertexHit && (!hit || vertexHit.distance <= hit.distance + 2)) {
             const anchor = this.geometrySelector.createVertexAnchor(vertexHit);

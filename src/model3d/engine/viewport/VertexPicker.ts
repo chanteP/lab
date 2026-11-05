@@ -9,7 +9,7 @@ interface VertexPickOptions {
     selectThrough: boolean;
 }
 
-/** CSS-pixel topological vertex picking against the untreated selection proxy. */
+/** CSS-pixel topological vertex picking against the visible final topology. */
 export function pickLogicalVertex({ camera, canvas, model, event, thresholdPx, selectThrough }: VertexPickOptions) {
     const rect = canvas.getBoundingClientRect();
     const pointer = new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top);
@@ -20,7 +20,7 @@ export function pickLogicalVertex({ camera, canvas, model, event, thresholdPx, s
     const firstOcclusion = selectThrough ? null : raycaster.intersectObjects(meshes, false)[0];
     let best: { score: number; intersection: THREE.Intersection & { vertexId: string } } | null = null;
     model.children.forEach((body) => {
-        if (!body.visible || (body.userData.edgeTreated && !body.userData.selectionProxy)) return;
+        if (!body.visible || body.userData.selectionProxy) return;
         const topology = body.userData.topology;
         if (!topology) return;
         body.updateWorldMatrix(true, false);

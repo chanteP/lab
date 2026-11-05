@@ -1,13 +1,29 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue';
+import { onBeforeUnmount, onMounted, watch } from 'vue';
 import type { ProjectedViewportOverlay } from '../../engine/viewport/OverlayController';
 import type { ViewportCallbacks } from '../../engine/Viewport';
 import { integerStep } from '../../utils/number';
+import SvgIcon from '../ui/SvgIcon.vue';
+import { claimDimensionCommit, resetDimensionCommit } from './dimensionCommit';
 
 const props = defineProps<{ items: ProjectedViewportOverlay[]; callbacks: ViewportCallbacks }>();
 const wheelTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const dimensionDrafts = new Map<string, string>();
 
 type DimensionOverlay = Extract<ProjectedViewportOverlay, { kind: 'dimension' }>;
+
+function dimensionValue(item: DimensionOverlay) {
+    return dimensionDrafts.get(item.id) ?? item.value.toFixed(2);
+}
+
+function onDimensionInput(item: DimensionOverlay, input: HTMLInputElement) {
+    dimensionDrafts.set(item.id, input.value);
+    resetDimensionCommit(input);
+}
+
+function clearCanvasDrafts(event: PointerEvent) {
+    if ((event.target as HTMLElement)?.tagName === 'CANVAS') dimensionDrafts.clear();
+}
 type LockOverlay = Extract<ProjectedViewportOverlay, { kind: 'lock' }>;
 
 function positionStyle(item: ProjectedViewportOverlay) {
@@ -31,21 +47,28 @@ function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
     const timer = wheelTimers.get(item.id);
     if (timer) clearTimeout(timer);
     wheelTimers.delete(item.id);
-    const next = Number(input.value);
+    const raw = input.value;
+    const next = Number(raw);
     if (Number.isFinite(next) && (item.signed || next > 0)) {
+        // Keep the accepted draft visible; the claim suppresses the blur immediately following Enter.
+        dimensionDrafts.set(item.id, raw);
+        if (!claimDimensionCommit(input, raw)) return;
         window.setTimeout(() => {
             if (item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment') props.callbacks.onDirectDistance(next);
             else if (item.target.kind === 'extrudeDepth') props.callbacks.onExtrudeDistance(next);
             else props.callbacks.onSketchDimension(item.target, next);
         }, 0);
-        // A direct-face value is relative to the current gesture; reset it so Enter followed by blur cannot apply it twice.
-        if (item.target.kind === 'directFace') input.value = '0.00';
-    } else input.value = item.value.toFixed(2);
+    } else {
+        resetDimensionCommit(input);
+        dimensionDrafts.delete(item.id);
+        input.value = item.value.toFixed(2);
+    }
 }
 
 function onDimensionWheel(item: DimensionOverlay, event: WheelEvent) {
     const input = event.currentTarget as HTMLInputElement;
     input.value = String(integerStep(Number(input.value), event.deltaY < 0 ? 1 : -1));
+    resetDimensionCommit(input);
     const previous = wheelTimers.get(item.id);
     if (previous) clearTimeout(previous);
     wheelTimers.set(item.id, window.setTimeout(() => commitDimension(item, input), 90));
@@ -63,6 +86,7 @@ function onDimensionKey(item: DimensionOverlay, event: KeyboardEvent) {
     event.preventDefault();
     event.stopImmediatePropagation();
     input.value = String(integerStep(Number(input.value), event.key === 'ArrowUp' ? 1 : -1));
+    resetDimensionCommit(input);
     commitDimension(item, input);
 }
 
@@ -70,7 +94,16 @@ function changeUnit(unit: 'mm' | 'cm' | 'm') {
     window.setTimeout(() => props.callbacks.onLengthUnitChange(unit), 0);
 }
 
-onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
+watch(() => props.items, (items) => {
+    const ids = new Set(items.map((item) => item.id));
+    dimensionDrafts.forEach((_, id) => { if (!ids.has(id)) dimensionDrafts.delete(id); });
+});
+onMounted(() => window.addEventListener('pointerdown', clearCanvasDrafts));
+onBeforeUnmount(() => {
+    wheelTimers.forEach(clearTimeout);
+    window.removeEventListener('pointerdown', clearCanvasDrafts);
+    dimensionDrafts.clear();
+});
 </script>
 
 <template>
@@ -86,8 +119,9 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
                 <input
                     type="number"
                     step="1"
-                    :value="item.value.toFixed(2)"
+                    :value="dimensionValue(item)"
                     :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment' ? item.target.kind === 'edgeTreatment' ? '圆角或倒角距离' : '推拉距离' : item.target.kind === 'extrudeDepth' ? '拉伸距离' : '尺寸'"
+                    @input="onDimensionInput(item, $event.currentTarget as HTMLInputElement)"
                     @blur="commitDimension(item, $event.currentTarget as HTMLInputElement)"
                     @wheel.prevent.stop="onDimensionWheel(item, $event)"
                     @keydown="onDimensionKey(item, $event)"
@@ -144,7 +178,7 @@ onBeforeUnmount(() => wheelTimers.forEach(clearTimeout));
             >{{ item.sign === 1 ? '+' : '−' }}</button>
 
             <div
-                v-else
+                v-else-if="item.kind === 'label'"
                 class="viewport-overlay-item measure-value"
                 :class="item.className"
                 :style="positionStyle(item)"

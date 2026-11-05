@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { ref } from 'vue';
-import { createDocument, createEntity, type EdgeTreatment, type ModelDocument, type Vec3 } from '../types';
+import { createDocument, createEntity, type EdgeTreatment, type ModelDocument, type Vec3, type VertexTreatment } from '../types';
 import { buildEntityMesh, buildScene } from './geometry';
 import { initializeManifold } from './modeling/ManifoldKernel';
 import { resolveEdgeTreatment } from './modeling/EdgeTreatments';
+import { resolveVertexTreatment } from './modeling/VertexTreatments';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
 import { OverlayController } from './viewport/OverlayController';
 import { pickLogicalEdge } from './viewport/EdgePicker';
@@ -21,10 +22,11 @@ const treatment: EdgeTreatment = {
     edge: { a: [20, 20, -20], b: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0]] },
 };
 
-function fixture(): { document: ModelDocument; synchronizer: SceneSynchronizer } {
+function fixture(treatments?: { edge?: EdgeTreatment[]; vertex?: VertexTreatment[] }): { document: ModelDocument; synchronizer: SceneSynchronizer } {
     const document = createDocument();
     const box = createEntity('box', 'box');
-    box.edgeTreatments = [treatment];
+    box.edgeTreatments = treatments?.edge || [treatment];
+    box.vertexTreatments = treatments?.vertex;
     document.entities.push(box);
     const synchronizer = new SceneSynchronizer({
         transform: { detach: () => undefined } as any,
@@ -70,32 +72,47 @@ test('treated boxes keep an invisible original topology proxy out of the export 
     });
 });
 
-test('original edges remain pickable through the final treated surface and adjacent faces still extrude', () => {
+test('removed source edges lose their hot zones while trimmed final edges stay pickable and adjacent faces still extrude', () => {
     const { document, synchronizer } = fixture();
     const proxy = synchronizer.model.children.find((child) => child.userData.selectionProxy)!;
-    const edge = proxy.children.find((child) => child.userData.displayEdge)!;
-    const segmentIndex = edge.userData.segmentEdgeIds.findIndex((id: string) => proxy.userData.topology.logicalEdges.find((item: any) => item.id === id)?.points.some((point: Vec3) => point[0] === 20 && point[1] === 20));
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
     const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 500);
     camera.position.set(80, 80, 80); camera.lookAt(0, 20, 0); camera.updateMatrixWorld(true);
-    const point = new THREE.Vector3(20, 40, 0).project(camera);
-    const hit = pickLogicalEdge({
-        camera, canvas: { clientWidth: 800, clientHeight: 600, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as HTMLCanvasElement,
-        model: synchronizer.model, event: { clientX: (point.x + 1) * 400, clientY: (1 - point.y) * 300 } as PointerEvent,
-        thresholdPx: 8, selectThrough: false,
+    const canvas = { clientWidth: 800, clientHeight: 600, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as HTMLCanvasElement;
+    const sourcePoint = new THREE.Vector3(20, 40, 0).project(camera);
+    const sourceHit = pickLogicalEdge({
+        camera, canvas, model: synchronizer.model,
+        event: { clientX: (sourcePoint.x + 1) * 400, clientY: (1 - sourcePoint.y) * 300 } as PointerEvent,
+        thresholdPx: 2, selectThrough: false,
     });
-    assert.ok(hit, 'original edge must remain pickable');
+    assert.equal(sourceHit, null, 'the removed source edge must not retain an invisible proxy hot zone');
+
+    const finalEdge = visible.userData.topology.logicalEdges.find((edge: any) => edge.points.length >= 2);
+    const a = new THREE.Vector3(...finalEdge.points[0]), b = new THREE.Vector3(...finalEdge.points[finalEdge.points.length - 1]);
+    const finalPoint = a.lerp(b, 0.5).applyMatrix4(visible.matrixWorld).project(camera);
+    const hit = pickLogicalEdge({
+        camera, canvas, model: synchronizer.model,
+        event: { clientX: (finalPoint.x + 1) * 400, clientY: (1 - finalPoint.y) * 300 } as PointerEvent,
+        thresholdPx: 8, selectThrough: true,
+    });
+    assert.ok(hit, 'the trimmed final edge must remain pickable');
     let owner: THREE.Object3D | null = hit!.object;
     while (owner && !owner.userData.entityId) owner = owner.parent;
-    assert.equal(owner?.userData.selectionProxy, true);
+    assert.equal(owner, visible);
     const anchor = new GeometrySelector().createEdgeAnchor(hit!);
+    assert.equal(anchor.finalTopology, true);
     assert.ok(new THREE.Vector3(...anchor.point).distanceTo(hit!.point) < 1e-6, 'arrow anchor must use the actual clicked edge position');
-    assert.equal(resolveEdgeTreatment(document.entities[0], anchor)?.id, treatment.id);
+    const finalEdgeOperations = useEdgeTreatmentOperations({
+        document: ref(document), activeTool: ref('select') as any, viewport: () => ({ getGeometryAnchor: () => anchor } as any),
+        message: { warning: () => undefined, error: () => undefined } as any, pushHistory: () => undefined, popHistory: () => undefined, setTool: () => undefined,
+    });
+    assert.equal(finalEdgeOperations.getSelectedEdgeTreatment(), null, 'a final adjacent edge must not inherit a nearby treatment');
 
     const topology = proxy.userData.topology;
     const face = topology.faces.find((item: any) => item.planar && item.normal[0] > 0.99)!;
     const vertices: Vec3[] = [], indices: number[] = [];
     face.triangleIds.forEach((id: number) => topology.triangles[id].renderVertices.forEach((renderVertex: number) => {
-        vertices.push(new THREE.Vector3().fromBufferAttribute(proxy.geometry.attributes.position, renderVertex).toArray());
+        vertices.push(new THREE.Vector3().fromBufferAttribute((proxy as THREE.Mesh).geometry.attributes.position, renderVertex).toArray());
         indices.push(indices.length);
     }));
     const edited = { ...document.entities[0], faceOffset: { normal: face.normal, distance: 2, vertices, indices, faceIds: [face.id] } };
@@ -110,7 +127,7 @@ test('original edges remain pickable through the final treated surface and adjac
     assert.equal(validateSolidGeometry(adjacent.geometry).valid, true, 'adjacent edges must accept another treatment after a face edit');
 });
 
-test('treated faces expose the remaining region while the bevel face reselects its edge', () => {
+test('treated faces expose trimmed regions while the generated face owns its treatment anchor', () => {
     const { document, synchronizer } = fixture();
     const entity = document.entities[0];
     const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
@@ -120,6 +137,9 @@ test('treated faces expose the remaining region while the bevel face reselects i
     const bevelAnchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, bevel.triangleIds[0]), entity);
     assert.equal(bevelAnchor.type, 'edge');
     assert.equal(bevelAnchor.edgeTreatmentId, treatment.id);
+    assert.equal(bevelAnchor.generatedTreatment, true);
+    assert.deepEqual(bevelAnchor.localNormal, bevel.normal);
+    assert.ok(bevelAnchor.feedbackVertices?.length);
 
     const remaining = topology.faces.find((face: any) => face.planar && face.normal[0] > 0.99)!;
     const faceAnchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, remaining.triangleIds[0]), entity);
@@ -129,6 +149,29 @@ test('treated faces expose the remaining region while the bevel face reselects i
     const edited = { ...entity, faceOffset: { normal: faceAnchor.localNormal, distance: 2, vertices: faceAnchor.vertices, indices: faceAnchor.indices, faceIds: faceAnchor.faceIds } };
     const result = buildEntityMesh(edited, document);
     assert.equal(validateSolidGeometry(result.geometry).valid, true, 'trimmed face selection must retain a valid base-face edit');
+
+    const operations = useEdgeTreatmentOperations({
+        document: ref(document), activeTool: ref('select') as any, viewport: () => ({ getGeometryAnchor: () => bevelAnchor } as any),
+        message: { warning: () => undefined, error: () => undefined } as any, pushHistory: () => undefined, popHistory: () => undefined, setTool: () => undefined,
+    });
+    operations.onEdgeTreatmentEdit(entity.id, bevelAnchor.localNormal, 0, 'start', bevelAnchor);
+    operations.onEdgeTreatmentEdit(entity.id, bevelAnchor.localNormal, 1, 'move');
+    operations.onEdgeTreatmentEdit(entity.id, bevelAnchor.localNormal, 0, 'end');
+    assert.equal(entity.edgeTreatments?.length, 1);
+    assert.equal(entity.edgeTreatments?.[0].size, 4, 'the generated face arrow must keep editing the same treatment');
+});
+
+test('a fillet patch is recognized by its curved domain even when its first triangle is tangent to a base face', () => {
+    const round = { ...treatment, type: 'fillet' as const };
+    const { document, synchronizer } = fixture({ edge: [round] });
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+    const curved = visible.userData.topology.faces.find((face: any) => !face.planar);
+    assert.ok(curved);
+    const anchor = new GeometrySelector().createFaceAnchor(faceHit(visible as THREE.Mesh, curved.triangleIds[0]), document.entities[0]);
+    assert.equal(anchor.type, 'edge');
+    assert.equal(anchor.generatedTreatment, true);
+    assert.equal(anchor.edgeTreatmentId, round.id);
+    assert.deepEqual(anchor.localNormal, visible.userData.topology.triangles[curved.triangleIds[0]].normal);
 });
 
 test('signed edge gestures switch between fillet and chamfer and keep the overlay in sync', () => {
@@ -170,6 +213,48 @@ test('signed edge gestures switch between fillet and chamfer and keep the overla
     camera.position.z = 100;
     camera.updateMatrixWorld(true);
     const item = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement).find((item) => item.kind === 'dimension' && item.target.kind === 'edgeTreatment');
-    assert.equal(item?.value, -3);
-    assert.equal(item?.signed, true);
+    assert.equal(item, undefined, 'a removed source edge must not retain an arrow after treatment');
+    assert.equal(operations.getSelectedEdgeTreatment()?.id, entity.edgeTreatments?.[0].id);
+    assert.equal(operations.resetEdgeTreatment(), true);
+    assert.equal(entity.edgeTreatments?.[0].size, 0);
+    assert.equal(operations.resetEdgeTreatment(), false);
+    guide.update(document.value);
+    const restored = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement).find((item) => item.kind === 'dimension' && item.target.kind === 'edgeTreatment');
+    const restoredValue = restored?.kind === 'dimension' ? restored.value : null;
+    assert.ok(Math.abs(restoredValue || 0) < 1e-9);
+});
+
+
+test('generated corner chamfer and fillet faces own their active surface and treatment anchor', () => {
+    for (const type of ['chamfer', 'fillet'] as const) {
+        const corner: VertexTreatment = {
+            id: `corner-${type}`, type, size: 3,
+            vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+        };
+        const { document, synchronizer } = fixture({ edge: [], vertex: [corner] });
+        const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+        const topology = visible.userData.topology;
+        const generated = type === 'fillet'
+            ? topology.faces.find((face: any) => !face.planar)
+            : topology.faces.find((face: any) => face.normal.every((value: number) => value > 0.4));
+        assert.ok(generated, `${type} must create a generated corner face`);
+        const selector = new GeometrySelector();
+        const anchor = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, generated.triangleIds[0]), document.entities[0]);
+        assert.equal(anchor.type, 'vertex');
+        assert.equal(anchor.vertexTreatmentId, corner.id);
+        assert.equal(resolveVertexTreatment(document.entities[0], anchor)?.id, corner.id);
+        assert.deepEqual(anchor.localVertex?.point, corner.vertex.point);
+        assert.equal(anchor.generatedTreatment, true);
+        assert.deepEqual(anchor.localNormal, generated.normal);
+
+        const guide = new GuideRenderer({
+            overlay: new OverlayController(), model: synchronizer.model, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+            getSelected: () => ['box'], getTool: () => 'select', getGeometryAnchor: () => anchor,
+            getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
+        });
+        guide.update(document);
+        assert.ok(guide.faceFeedback.children.some((child) => child instanceof THREE.Mesh && !child.userData.vertexMarker && child.userData.activeSelection));
+        assert.equal(guide.faceFeedback.children.some((child) => child.userData.vertexMarker), false);
+        guide.dispose();
+    }
 });

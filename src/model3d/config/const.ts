@@ -30,6 +30,8 @@ export const INTERACTION = {
     arrowScreenLengthPx: 64,
     // Reconnected intersection endpoints may differ slightly from the sampled host edge.
     sketchIntersectionTolerance: 0.02,
+    // Render-only negative-normal offset avoids coplanar flicker with the XZ grid; modeling coordinates stay unchanged.
+    planeHelperOffset: 0.03,
 } as const;
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */

@@ -3,7 +3,8 @@ import type { TransformControls } from 'three/addons/controls/TransformControls.
 import { buildEntityMesh, buildScene } from '../geometry';
 import { borderSegments } from '../sketchBorders';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import type { DisplayMode, ModelDocument, SelectionKind, SketchPlane } from '../../types';
+import { INTERACTION } from '../../config/const';
+import type { DisplayMode, ModelDocument, SelectionKind, SketchPlane, Vec3 } from '../../types';
 import type { ViewTool } from '../Viewport';
 import { clearGroup, createDisplayEdgeGeometry, createFatLine } from './renderUtils';
 import { buildMeshTopology } from '../topology/MeshTopology';
@@ -14,6 +15,11 @@ import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
 import { SectionRenderer } from './SectionRenderer';
+
+/** Render-only helper position; the document plane origin remains the modeling surface. */
+export function planeHelperPosition(plane: SketchPlane): Vec3 {
+    return new THREE.Vector3(...plane.origin).addScaledVector(new THREE.Vector3(...plane.normal).normalize(), -INTERACTION.planeHelperOffset).toArray();
+}
 
 /** Smallest origin-centered sphere enclosing the supplied meshes guarantees view-independent section limits. */
 export function measureSectionRadius(objects: THREE.Object3D[]) {
@@ -74,6 +80,7 @@ export class SceneSynchronizer {
 
     constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
+    /** Base topology is retained for face-offset mapping only; edge/vertex pickers use the final mesh. */
     private addEdgeTreatmentProxy(child: THREE.Mesh, entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
         const base = { ...entity, edgeTreatments: undefined, vertexTreatments: undefined };
         const proxy = buildEntityMesh(base, document);
@@ -361,6 +368,7 @@ export class SceneSynchronizer {
         ]), new THREE.LineBasicMaterial({ color: SKETCH_COLORS.planeBlue, transparent: true, opacity: 0.5 }));
         group.add(mesh, border);
         group.applyMatrix4(this.planeMatrix(plane));
+        group.position.fromArray(planeHelperPosition(plane));
         this.planes.add(group);
     }
 

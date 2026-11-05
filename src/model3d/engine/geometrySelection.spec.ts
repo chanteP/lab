@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { GeometrySelector, measureSelectionStats, type GeometryAnchor } from './viewport/GeometrySelector';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { createTopologyEdgeGeometry } from './viewport/TopologyEdges';
+import { planeHelperPosition } from './viewport/SceneSynchronizer';
+import { INTERACTION } from '../config/const';
 import { createDocument, createEntity } from '../types';
 
 function hit(mesh: THREE.Mesh, faceIndex: number) {
@@ -156,4 +158,11 @@ test('a stale triangle-face mapping falls back to the hit triangle instead of th
     mesh.userData.topology = topology;
     const selector = new GeometrySelector();
     assert.doesNotThrow(() => selector.createFaceAnchor(hit(mesh, 0), entity));
+});
+
+
+test('construction plane helpers offset only their display position in the negative normal direction', () => {
+    const plane = { id: 'p', name: 'P', kind: 'XZ' as const, origin: [1, 2, 3] as [number, number, number], normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number], visible: true };
+    assert.deepEqual(planeHelperPosition(plane), [1, 2, 3 - INTERACTION.planeHelperOffset]);
+    assert.deepEqual(plane.origin, [1, 2, 3], 'the modeling plane coordinates must not be changed');
 });

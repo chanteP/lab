@@ -34,7 +34,29 @@ test('a corner chamfer creates one planar triangular face', () => {
     assert.ok(volume(result) < volume(base));
     assert.equal(topology.faces.length, 7);
     assert.ok(topology.faces.every((face) => face.planar));
+    const indices = result.index ? Array.from(result.index.array) : [];
+    assert.equal(indices.some((index) => new THREE.Vector3().fromBufferAttribute(result.attributes.position, index).distanceTo(new THREE.Vector3(20, 20, 20)) < 1e-5), false);
     base.dispose(); result.dispose();
+});
+
+test('a corner fillet removes the sharp corner and exposes the external spherical surface at multiple radii', () => {
+    for (const size of [3, 8]) {
+        const base = new THREE.BoxGeometry(40, 40, 40);
+        const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size }]);
+        assert.ok(volume(result) < volume(base) - 1, 'fillet must remove material instead of only retessellating the box');
+        const position = result.attributes.position;
+        const indices = result.index ? Array.from(result.index.array) : Array.from({ length: position.count }, (_, index) => index);
+        const sharpCornerRemains = indices.map((index) => new THREE.Vector3().fromBufferAttribute(position, index))
+            .some((point) => point.distanceTo(new THREE.Vector3(20, 20, 20)) < 1e-5);
+        assert.equal(sharpCornerRemains, false, 'the original sharp vertex must not survive the fillet');
+        const center = 20 - size;
+        const target = new THREE.Vector3(center, center, center).add(new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(size));
+        const origin = new THREE.Vector3(80, 80, 80);
+        const ray = new THREE.Raycaster(origin, target.clone().sub(origin).normalize());
+        const firstHit = ray.intersectObject(new THREE.Mesh(result), false)[0];
+        assert.ok(firstHit && firstHit.point.distanceTo(target) < size * 0.02 + 0.05, 'the external fillet must not be occluded by a remaining original face');
+        base.dispose(); result.dispose();
+    }
 });
 
 test('a corner fillet creates a curved surface and follows a later face drag', () => {

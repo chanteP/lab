@@ -13,3 +13,13 @@ test('radial, angular and direct-edit dimensions never capture sketch edge locks
     assert.equal(sketchDimensionEdgeKey('line', { kind: 'angle', index: 0 }), undefined);
     assert.equal(sketchDimensionEdgeKey('line', { kind: 'control', index: 0, handle: 1 }), undefined);
 });
+
+
+test('a committed dimension value is not applied again by the following blur', async () => {
+    const { claimDimensionCommit, resetDimensionCommit } = await import('../components/viewport/dimensionCommit');
+    const input = {} as HTMLInputElement;
+    assert.equal(claimDimensionCommit(input, '5'), true);
+    assert.equal(claimDimensionCommit(input, '5'), false);
+    resetDimensionCommit(input);
+    assert.equal(claimDimensionCommit(input, '5'), true);
+});
