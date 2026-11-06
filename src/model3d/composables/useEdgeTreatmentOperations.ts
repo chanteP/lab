@@ -28,6 +28,7 @@ type Transaction = {
     treatment: Treatment;
     baseValue: number;
     limit: number;
+    chamferLimit: number;
     historyPushed: boolean;
 };
 
@@ -63,13 +64,14 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         mesh.geometry.computeBoundingBox();
         const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3());
         const limit = Math.max(0.1, Math.min(size.x, size.y, size.z) / 2);
+        const chamferLimit = kind === 'edge' ? Math.max(0.1, Math.min(size.x, size.y, size.z)) : limit;
         mesh.geometry.dispose();
         (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
         if (kind === 'edge') anchor.edgeTreatmentId = treatment.id;
         else anchor.vertexTreatmentId = treatment.id;
         transaction = {
             kind, entityId: id, baseEntity: cloneEntity(item), treatment: JSON.parse(JSON.stringify(treatment)),
-            baseValue: existing ? signedValue(existing) : 0, limit, historyPushed: false,
+            baseValue: existing ? signedValue(existing) : 0, limit, chamferLimit, historyPushed: false,
         };
     }
 
@@ -81,7 +83,7 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
             pushHistory();
             transaction.historyPushed = true;
         }
-        const value = Math.round(THREE.MathUtils.clamp(transaction.baseValue - delta, -transaction.limit, transaction.limit) * 10000) / 10000;
+        const value = Math.round(THREE.MathUtils.clamp(transaction.baseValue - delta, -transaction.chamferLimit, transaction.limit) * 10000) / 10000;
         const next = { ...JSON.parse(JSON.stringify(transaction.treatment)), type: value < 0 ? 'chamfer' : 'fillet', size: Math.abs(value) } as Treatment;
         if (transaction.kind === 'edge') {
             const treatments = (transaction.baseEntity.edgeTreatments || []).map((item) => JSON.parse(JSON.stringify(item))) as EdgeTreatment[];

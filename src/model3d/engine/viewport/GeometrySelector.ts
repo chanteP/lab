@@ -129,7 +129,7 @@ export class GeometrySelector {
         const mesh = model.children.find((child): child is THREE.Mesh => child instanceof THREE.Mesh
             && child.userData.entityId === anchor.id && !!child.userData.selectionProxy === !!anchor.sourceProxy);
         if (!mesh) return null;
-        if (anchor.type !== 'face' || entity.kind === 'sketch') {
+        if ((anchor.type !== 'face' && !anchor.generatedTreatment) || entity.kind === 'sketch') {
             anchor.sourceObject = mesh;
             refreshAnchorTransform(anchor);
             return anchor;
@@ -138,12 +138,14 @@ export class GeometrySelector {
         const topology = this.topology(mesh);
         let face: LogicalFace | undefined;
         if (anchor.generatedTreatment && anchor.vertexTreatmentId) {
-            const treatment = entity.vertexTreatments?.find((item) => item.id === anchor.vertexTreatmentId);
+            const treatments = (mesh.userData.resolvedVertexTreatments || entity.vertexTreatments || []) as typeof entity.vertexTreatments;
+            const treatment = treatments?.find((item) => item.id === anchor.vertexTreatmentId);
             const corner = treatment ? new THREE.Vector3(...treatment.vertex.point) : null;
             if (treatment && corner) face = topology.faces.find((candidate) => !candidate.planar && candidate.triangleIds.every((id) =>
                 new THREE.Vector3(...topology.triangles[id].center).distanceTo(corner) <= treatment.size * 1.75));
         } else if (anchor.generatedTreatment && anchor.edgeTreatmentId) {
-            const treatment = entity.edgeTreatments?.find((item) => item.id === anchor.edgeTreatmentId);
+            const treatments = (mesh.userData.resolvedEdgeTreatments || entity.edgeTreatments || []) as typeof entity.edgeTreatments;
+            const treatment = treatments?.find((item) => item.id === anchor.edgeTreatmentId);
             if (treatment) {
                 const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);
                 const direction = b.clone().sub(a), lengthSquared = direction.lengthSq();
@@ -209,7 +211,7 @@ export class GeometrySelector {
             generatedTreatment: true,
         };
         // Generated corner surfaces own their hot zone and normal; the source corner only supplies the edit ID.
-        for (const treatment of entity.vertexTreatments || []) {
+        for (const treatment of mesh.userData.resolvedVertexTreatments || entity.vertexTreatments || []) {
             const adjacent = treatment.type === 'fillet' && !finalSurface.planar ? false : treatment.vertex.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
             const corner = new THREE.Vector3(...treatment.vertex.point);
             let ownsSurface = treatment.type === 'chamfer' && localPoint.distanceTo(corner) <= treatment.size * 2.5 + 0.25;
@@ -232,7 +234,7 @@ export class GeometrySelector {
         }
 
         // Generated edge surfaces follow the same rule: face feedback and a face-normal arrow, never source-edge feedback.
-        for (const treatment of entity.edgeTreatments || []) {
+        for (const treatment of mesh.userData.resolvedEdgeTreatments || entity.edgeTreatments || []) {
             const adjacent = treatment.type === 'fillet' && !finalSurface.planar ? false : treatment.edge.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
             if (adjacent) continue;
             const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);

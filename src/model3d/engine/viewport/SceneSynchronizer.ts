@@ -142,7 +142,12 @@ export class SceneSynchronizer {
             if (child instanceof THREE.Mesh && !!entity && !['sketch', 'image'].includes(entity.kind)) {
                 const treated = [...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0);
                 child.userData.edgeTreated = treated;
-                const nextTopology = buildMeshTopology(child.geometry, entity.id, entity, document);
+                const topologyEntity = {
+                    ...entity,
+                    edgeTreatments: child.userData.resolvedEdgeTreatments || entity.edgeTreatments,
+                    vertexTreatments: child.userData.resolvedVertexTreatments || entity.vertexTreatments,
+                };
+                const nextTopology = buildMeshTopology(child.geometry, entity.id, topologyEntity, document);
                 const topology = treated ? nextTopology : reconcileTopology(previousTopology.get(entity.id), nextTopology, entity.faceEdit);
                 child.userData.topology = topology;
                 const display = createTopologyEdgeGeometry(topology);

@@ -264,6 +264,73 @@ test('generated corner chamfer and fillet faces own their active surface and tre
     }
 });
 
+test('generated chamfer and rounding anchors rebind after treatment size changes', () => {
+    for (const type of ['chamfer', 'fillet'] as const) {
+        const corner: VertexTreatment = {
+            id: `live-corner-${type}`, type, size: 3,
+            vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+        };
+        const { document, synchronizer } = fixture(type === 'chamfer' ? { edge: [treatment], vertex: [] } : { edge: [], vertex: [corner] });
+        const entity = document.entities[0];
+        const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+        const selector = new GeometrySelector();
+        const topology = visible.userData.topology;
+        const generated = type === 'chamfer'
+            ? topology.faces.find((face: any) => face.normal[0] > 0.4 && face.normal[1] > 0.4)
+            : topology.faces.find((face: any) => !face.planar);
+        const initial = selector.createFaceAnchor(faceHit(visible as THREE.Mesh, generated.triangleIds[0]), entity);
+        assert.equal(initial.generatedTreatment, true);
+
+        if (type === 'chamfer') entity.edgeTreatments![0].size = 6;
+        else entity.vertexTreatments![0].size = 6;
+        synchronizer.sync(document);
+        const rebound = selector.rebindAnchor(initial, synchronizer.model, document);
+
+        assert.ok(rebound, `${type} generated anchor must survive geometry rebuilds`);
+        assert.equal(rebound.generatedTreatment, true);
+        assert.equal(type === 'chamfer' ? rebound.edgeTreatmentId : rebound.vertexTreatmentId, type === 'chamfer' ? treatment.id : corner.id);
+        assert.notDeepEqual(rebound.point, initial.point);
+    }
+});
+
+test('rounding generated surface remains selectable after its adjacent face was extruded', () => {
+    const corner: VertexTreatment = {
+        id: 'moved-corner', type: 'fillet', size: 3,
+        vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+    };
+    const { document, synchronizer } = fixture({ edge: [], vertex: [corner] });
+    const entity = document.entities[0];
+    entity.faceOffset = {
+        normal: [1, 0, 0], distance: 10,
+        vertices: [[20, -20, -20], [20, 20, -20], [20, 20, 20], [20, -20, 20]], indices: [0, 1, 2, 0, 2, 3], faceIds: ['right'],
+    };
+    synchronizer.sync(document);
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+    const generated = visible.userData.topology.faces.find((face: any) => !face.planar);
+    assert.ok(generated);
+    const anchor = new GeometrySelector().createFaceAnchor(faceHit(visible as THREE.Mesh, generated.triangleIds[0]), entity);
+
+    assert.equal(anchor.type, 'vertex');
+    assert.equal(anchor.generatedTreatment, true);
+    assert.equal(anchor.vertexTreatmentId, corner.id);
+    assert.deepEqual(anchor.localVertex?.point, [30, 20, 20]);
+});
+
+test('edge chamfer limit spans the full section while fillet keeps the safe radius limit', () => {
+    const { document } = fixture();
+    const anchor = edgeAnchor();
+    const operations = useEdgeTreatmentOperations({
+        document: ref(document), activeTool: ref('select') as any, viewport: () => ({ getGeometryAnchor: () => anchor } as any),
+        message: { warning: () => undefined, error: () => undefined } as any, pushHistory: () => undefined, popHistory: () => undefined, setTool: () => undefined,
+    });
+    operations.updateEdgeTreatmentDistance(-40);
+    assert.equal(document.entities[0].edgeTreatments?.[0].type, 'chamfer');
+    assert.equal(document.entities[0].edgeTreatments?.[0].size, 40);
+    operations.updateEdgeTreatmentDistance(40);
+    assert.equal(document.entities[0].edgeTreatments?.[0].type, 'fillet');
+    assert.equal(document.entities[0].edgeTreatments?.[0].size, 20);
+});
+
 test('rounded source corner and incident edges retain scoped proxy picking and editing', () => {
     const corner: VertexTreatment = {
         id: 'rounded-corner', type: 'fillet', size: 8,

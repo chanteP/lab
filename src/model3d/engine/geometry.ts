@@ -56,6 +56,8 @@ function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document
     const edgeRules = rebindEdgeTreatments(mesh.geometry, entity.edgeTreatments || [], entity, document);
     const withEdges = applyEdgeTreatments(mesh.geometry, edgeRules);
     const vertexRules = rebindVertexTreatments(withEdges, entity.vertexTreatments || [], entity, document);
+    mesh.userData.resolvedEdgeTreatments = edgeRules;
+    mesh.userData.resolvedVertexTreatments = vertexRules;
     const treated = applyVertexTreatments(withEdges, vertexRules);
     if (withEdges !== mesh.geometry && treated !== withEdges) withEdges.dispose();
     if (treated !== mesh.geometry) {

@@ -5,6 +5,7 @@ import { applyEdgeTreatments, resolveEdgeTreatment } from './modeling/EdgeTreatm
 import { initializeManifold } from './modeling/ManifoldKernel';
 import type { EdgeTreatment, ModelEntity } from '../types';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
+import { validateSolidGeometry } from './modeling/GeometryValidator';
 
 await initializeManifold();
 
@@ -49,6 +50,15 @@ test('fillet produces a curved edge with more render vertices than chamfer', () 
     assert.ok(fillet.attributes.position.count > chamfer.attributes.position.count);
     assert.ok(volume(fillet) < volume(base));
     base.dispose(); chamfer.dispose(); fillet.dispose();
+});
+
+test('a full-width edge chamfer produces a closed right triangular prism', () => {
+    const base = new THREE.BoxGeometry(40, 40, 40);
+    const result = applyEdgeTreatments(base, [{ ...treatment, size: 40 }]);
+    assert.equal(validateSolidGeometry(result).valid, true);
+    assert.ok(Math.abs(volume(result) - 32000) < 1e-4);
+    assert.deepEqual(result.boundingBox!.max.toArray(), [20, 20, 20]);
+    base.dispose(); result.dispose();
 });
 
 test('a generated parallel edge resolves to its original treatment', () => {

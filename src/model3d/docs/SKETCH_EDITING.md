@@ -254,6 +254,7 @@
 
 ## Changelog
 
+- 2026-11-06：同步实体 generated treatment 的 active 重绑与 resolved 坐标规则，草图 active 面行为不变。
 - 2026-11-06：3D 草图改为独立面选择并明确 `selectionKind=face`；active 面按最新轮廓重建，Transform/推拉同步规则与三维统一。
 - 2026-11-06：同步三维圆角原角点和入射边的限定代理选择规则，不改变草图交互契约。
 - 2026-11-06：同步三维 Vertex Rounding 外凸曲面、法线及 `0.87r` 中心比例修正，不改变草图交互契约。
