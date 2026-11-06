@@ -80,8 +80,8 @@ export class GuideRenderer {
                 : geometryEntity.edgeTreatments?.find((item) => item.id === geometryAnchor.edgeTreatmentId) || (!geometryAnchor.finalTopology ? resolveEdgeTreatment(geometryEntity, geometryAnchor) : null);
             if (treatment && geometryAnchor.type === 'vertex') geometryAnchor.vertexTreatmentId = treatment.id;
             else if (treatment) geometryAnchor.edgeTreatmentId = treatment.id;
-            // Once the source edge/corner is removed, only the generated final surface may display an edit affordance.
-            if (treatment?.size && !geometryAnchor.finalTopology) return;
+            // Edge-treatment sources stay removed; a rounded source corner remains an explicit proxy edit handle.
+            if (treatment?.size && !geometryAnchor.finalTopology && !geometryAnchor.sourceVertexProxy) return;
             this.group.add(this.createThickArrow(origin, normal, 18, { directArrow: { id: geometryEntity.id, normal: geometryAnchor.localNormal } }));
             this.options.overlay.set({
                 id: `guide-label:edge-treatment:${geometryAnchor.key}`, kind: 'dimension', target: { kind: 'edgeTreatment' },

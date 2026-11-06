@@ -20,11 +20,12 @@ export function pickLogicalVertex({ camera, canvas, model, event, thresholdPx, s
     const firstOcclusion = selectThrough ? null : raycaster.intersectObjects(meshes, false)[0];
     let best: { score: number; intersection: THREE.Intersection & { vertexId: string } } | null = null;
     model.children.forEach((body) => {
-        if (!body.visible || body.userData.selectionProxy) return;
+        if (!body.visible || (body.userData.selectionProxy && !body.userData.vertexRoundingProxy)) return;
         const topology = body.userData.topology;
         if (!topology) return;
         body.updateWorldMatrix(true, false);
         topology.vertices.forEach((vertex: any) => {
+            if (body.userData.selectionProxy && !body.userData.sourceVertexIds?.includes(vertex.id)) return;
             const world = new THREE.Vector3(...vertex.point).applyMatrix4(body.matrixWorld);
             const projected = world.clone().project(camera);
             if (projected.z < -1 || projected.z > 1) return;
@@ -32,7 +33,8 @@ export function pickLogicalVertex({ camera, canvas, model, event, thresholdPx, s
             const pixelDistance = Math.hypot(pointer.x - x, pointer.y - y);
             if (pixelDistance > thresholdPx) return;
             const distance = raycaster.ray.origin.distanceTo(world);
-            if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - 2) return;
+            const occludedByOtherBody = firstOcclusion && (!body.userData.selectionProxy || firstOcclusion.object.userData.entityId !== body.userData.entityId);
+            if (occludedByOtherBody && firstOcclusion.distance < distance - 2) return;
             const score = pixelDistance + distance * 1e-7;
             const intersection = { object: body, point: world, distance, vertexId: vertex.id } as THREE.Intersection & { vertexId: string };
             if (!best || score < best.score) best = { score, intersection };

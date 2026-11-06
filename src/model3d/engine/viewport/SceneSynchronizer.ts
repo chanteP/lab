@@ -80,13 +80,31 @@ export class SceneSynchronizer {
 
     constructor(private readonly options: SceneSynchronizerOptions) { this.booleanPreview = new BooleanPreviewController(options.overlay); }
 
-    /** Base topology is retained for face-offset mapping only; edge/vertex pickers use the final mesh. */
+    /** Base topology supports face edits and the original corner/incident-edge anchors replaced by vertex rounding. */
     private addEdgeTreatmentProxy(child: THREE.Mesh, entity: ModelDocument['entities'][number], document: ModelDocument, previous: BodyTopology | undefined) {
         const base = { ...entity, edgeTreatments: undefined, vertexTreatments: undefined };
         const proxy = buildEntityMesh(base, document);
         proxy.userData.selectionProxy = true;
         const topology = reconcileTopology(previous, buildMeshTopology(proxy.geometry, entity.id, base, document), entity.faceEdit);
         proxy.userData.topology = topology;
+        const roundedVertices = (entity.vertexTreatments || []).filter((treatment) => treatment.size > 0);
+        proxy.userData.vertexRoundingProxy = roundedVertices.length > 0;
+        proxy.userData.sourceVertexIds = topology.vertices.filter((vertex) => roundedVertices.some((treatment) =>
+            new THREE.Vector3(...vertex.point).distanceTo(new THREE.Vector3(...treatment.vertex.point)) < 0.05)).map((vertex) => vertex.id);
+        proxy.userData.sourceEdgeIds = topology.logicalEdges.filter((edge) => {
+            const incident = roundedVertices.some((treatment) => edge.points.some((point) =>
+                new THREE.Vector3(...point).distanceTo(new THREE.Vector3(...treatment.vertex.point)) < 0.05));
+            if (!incident) return false;
+            return !(entity.edgeTreatments || []).some((treatment) => {
+                if (treatment.size <= 0 || edge.points.length < 2) return false;
+                const a = edge.points[0], b = edge.points[edge.points.length - 1];
+                const direct = new THREE.Vector3(...a).distanceTo(new THREE.Vector3(...treatment.edge.a)) < 0.05
+                    && new THREE.Vector3(...b).distanceTo(new THREE.Vector3(...treatment.edge.b)) < 0.05;
+                const reverse = new THREE.Vector3(...a).distanceTo(new THREE.Vector3(...treatment.edge.b)) < 0.05
+                    && new THREE.Vector3(...b).distanceTo(new THREE.Vector3(...treatment.edge.a)) < 0.05;
+                return direct || reverse;
+            });
+        }).map((edge) => edge.id);
         const display = createTopologyEdgeGeometry(topology);
         const edges = new THREE.LineSegments(display.geometry, new THREE.LineBasicMaterial());
         edges.userData.displayEdge = true;

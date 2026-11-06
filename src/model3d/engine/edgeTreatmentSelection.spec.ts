@@ -10,6 +10,7 @@ import { resolveVertexTreatment } from './modeling/VertexTreatments';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
 import { OverlayController } from './viewport/OverlayController';
 import { pickLogicalEdge } from './viewport/EdgePicker';
+import { pickLogicalVertex } from './viewport/VertexPicker';
 import { GeometrySelector, type GeometryAnchor } from './viewport/GeometrySelector';
 import { useEdgeTreatmentOperations } from '../composables/useEdgeTreatmentOperations';
 import { GuideRenderer } from './viewport/GuideRenderer';
@@ -261,4 +262,56 @@ test('generated corner chamfer and fillet faces own their active surface and tre
         assert.equal(guide.faceFeedback.children.some((child) => child.userData.vertexMarker), false);
         guide.dispose();
     }
+});
+
+test('rounded source corner and incident edges retain scoped proxy picking and editing', () => {
+    const corner: VertexTreatment = {
+        id: 'rounded-corner', type: 'fillet', size: 8,
+        vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+    };
+    const { document, synchronizer } = fixture({ edge: [], vertex: [corner] });
+    const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 500);
+    camera.position.set(80, 80, 80); camera.lookAt(0, 20, 0); camera.updateMatrixWorld(true);
+    const canvas = { clientWidth: 800, clientHeight: 600, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) } as HTMLCanvasElement;
+    const eventAt = (point: THREE.Vector3) => {
+        const projected = point.project(camera);
+        return { clientX: (projected.x + 1) * 400, clientY: (1 - projected.y) * 300 } as PointerEvent;
+    };
+
+    const vertexHit = pickLogicalVertex({ camera, canvas, model: synchronizer.model, event: eventAt(new THREE.Vector3(20, 40, 20)), thresholdPx: 8, selectThrough: false });
+    assert.ok(vertexHit, 'the replaced source corner must remain pickable even at radius 8');
+    assert.equal((vertexHit.object as THREE.Mesh).userData.selectionProxy, true);
+    const selector = new GeometrySelector();
+    const vertexAnchor = selector.createVertexAnchor(vertexHit)!;
+    assert.equal(vertexAnchor.sourceVertexProxy, true);
+    assert.equal(vertexAnchor.finalTopology, false);
+    assert.equal(resolveVertexTreatment(document.entities[0], vertexAnchor)?.id, corner.id);
+
+    const guide = new GuideRenderer({
+        overlay: new OverlayController(), model: synchronizer.model, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+        getSelected: () => ['box'], getTool: () => 'select', getGeometryAnchor: () => vertexAnchor,
+        getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
+    });
+    guide.update(document);
+    assert.ok(guide.group.children.length > 0, 'the source corner proxy must retain its edit arrow');
+    guide.dispose();
+
+    const edgeHit = pickLogicalEdge({ camera, canvas, model: synchronizer.model, event: eventAt(new THREE.Vector3(20, 40, 0)), thresholdPx: 8, selectThrough: false });
+    assert.ok(edgeHit, 'an incident source edge must remain pickable');
+    let owner: THREE.Object3D | null = edgeHit.object;
+    while (owner && !owner.userData.entityId) owner = owner.parent;
+    assert.equal(owner?.userData.selectionProxy, true, 'the full source edge wins over its trimmed final segment');
+    const edgeAnchor = selector.createEdgeAnchor(edgeHit);
+    assert.deepEqual(edgeAnchor.localEdge?.a, [20, 20, -20]);
+    assert.deepEqual(edgeAnchor.localEdge?.b, [20, 20, 20]);
+
+    const operations = useEdgeTreatmentOperations({
+        document: ref(document), activeTool: ref('select') as any, viewport: () => ({ getGeometryAnchor: () => edgeAnchor } as any),
+        message: { warning: () => undefined, error: () => undefined } as any, pushHistory: () => undefined, popHistory: () => undefined, setTool: () => undefined,
+    });
+    operations.onEdgeTreatmentEdit('box', edgeAnchor.localNormal, 0, 'start', edgeAnchor);
+    operations.onEdgeTreatmentEdit('box', edgeAnchor.localNormal, -2, 'move');
+    operations.onEdgeTreatmentEdit('box', edgeAnchor.localNormal, 0, 'end');
+    assert.equal(document.entities[0].edgeTreatments?.[0].type, 'fillet');
+    assert.equal(document.entities[0].edgeTreatments?.[0].size, 2);
 });

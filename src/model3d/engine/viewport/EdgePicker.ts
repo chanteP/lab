@@ -28,12 +28,14 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
     const firstOcclusion = occlusions[0];
     let best: { score: number; intersection: THREE.Intersection } | null = null;
     model.children.forEach((body) => {
-        if (!body.visible || body.userData.selectionProxy) return;
+        if (!body.visible || (body.userData.selectionProxy && !body.userData.vertexRoundingProxy)) return;
         body.children.forEach((child) => {
             if (!(child instanceof THREE.LineSegments) || !child.userData.displayEdge || !child.visible) return;
             const positions = child.geometry.attributes.position;
             child.updateWorldMatrix(true, false);
             for (let segment = 0; segment + 1 < positions.count; segment += 2) {
+                const edgeId = child.userData.segmentEdgeIds?.[Math.floor(segment / 2)];
+                if (body.userData.selectionProxy && !body.userData.sourceEdgeIds?.includes(edgeId)) continue;
                 const aWorld = new THREE.Vector3().fromBufferAttribute(positions, segment).applyMatrix4(child.matrixWorld);
                 const bWorld = new THREE.Vector3().fromBufferAttribute(positions, segment + 1).applyMatrix4(child.matrixWorld);
                 const aProjected = aWorld.clone().project(camera), bProjected = bWorld.clone().project(camera);
@@ -44,8 +46,9 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
                 if (closest.distance > thresholdPx) continue;
                 const point = aWorld.clone().lerp(bWorld, closest.t);
                 const distance = raycaster.ray.origin.distanceTo(point);
-                if (!body.userData.selectionProxy && firstOcclusion && firstOcclusion.distance < distance - 2) continue;
-                const score = closest.distance + distance * 1e-7;
+                const occludedByOtherBody = firstOcclusion && (!body.userData.selectionProxy || firstOcclusion.object.userData.entityId !== body.userData.entityId);
+                if (occludedByOtherBody && firstOcclusion.distance < distance - 2) continue;
+                const score = closest.distance + distance * 1e-7 - (body.userData.vertexRoundingProxy ? 0.05 : 0);
                 if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance } as unknown as THREE.Intersection };
             }
         });

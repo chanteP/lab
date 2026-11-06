@@ -22,6 +22,12 @@ import { SketchAssetDragController } from './SketchAssetDragController';
 import { SketchGuideController, type SketchGuideOptions } from './SketchGuideController';
 import type { InteractionOptions } from './InteractionOptions';
 
+function isVertexRoundingProxyHit(hit: THREE.Intersection | null) {
+    let owner: THREE.Object3D | null = hit?.object || null;
+    while (owner && !owner.userData.entityId) owner = owner.parent;
+    return !!owner?.userData.vertexRoundingProxy;
+}
+
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
 export class InteractionController {
     geometryAnchor: GeometryAnchor | null = null;
@@ -664,6 +670,7 @@ export class InteractionController {
             const vertexHit = sketchId ? null : this.hitEntityVertex(event);
             const vertexAnchor = vertexHit ? this.geometrySelector.createVertexAnchor(vertexHit) : null;
             const faceAnchor = hit && !sketchId ? this.createGeometryAnchor(hit) : null;
+            const sourceEdgeHit = isVertexRoundingProxyHit(edgeHit);
             const sketchHits = sketchId ? this.hitSketchEntities(event) : [];
             const intersection = this.sketchIntersectionAnchor(sketchHits);
             this.setSketchHovers(intersection ? [] : sketchHits.map((item) => item.object.userData.entityId));
@@ -673,13 +680,13 @@ export class InteractionController {
                 this.refreshFaceFeedback();
                 return;
             }
-            if (faceAnchor?.generatedTreatment) {
+            if (faceAnchor?.generatedTreatment && !sourceEdgeHit) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = faceAnchor;
             } else if (vertexAnchor) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = vertexAnchor;
-            } else if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
+            } else if (edgeHit && (sourceEdgeHit || !hit || edgeHit.distance <= hit.distance + 0.5) && !sketchId) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             } else if (hit) {
@@ -875,14 +882,14 @@ export class InteractionController {
         }
         if (hit) {
             const anchor = this.createGeometryAnchor(hit);
-            if (anchor.generatedTreatment) {
+            if (anchor.generatedTreatment && !isVertexRoundingProxyHit(edgeHit)) {
                 this.geometryAnchor = anchor;
                 this.hoverFaceAnchor = null;
                 this.callbacks.onGeometrySelect(anchor.id, anchor.type, anchor.normal, anchor.point, additive);
                 return;
             }
         }
-        if (vertexHit && (!hit || vertexHit.distance <= hit.distance + 2)) {
+        if (vertexHit && (vertexHit.object.userData.vertexRoundingProxy || !hit || vertexHit.distance <= hit.distance + 2)) {
             const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
             if (anchor) {
                 this.geometryAnchor = anchor;
@@ -891,7 +898,7 @@ export class InteractionController {
                 return;
             }
         }
-        if (edgeHit && (!hit || edgeHit.distance <= hit.distance + 2)) {
+        if (edgeHit && (isVertexRoundingProxyHit(edgeHit) || !hit || edgeHit.distance <= hit.distance + 2)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);

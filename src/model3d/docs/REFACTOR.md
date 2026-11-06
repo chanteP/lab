@@ -58,11 +58,12 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
 - `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
 - `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
-- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，`VertexRoundingGeometry.ts` 用连续四次三角 Bézier 曲面构造外凸角部切削体，与平面相切并在入射边 radius 处终止，不形成凹槽或圆柱，其他角点保持不变。渲染法线在三个棱边终止奇点按原平面拆分，merge vectors 继续维护拓扑对应。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础面代理；最终拓扑统一负责面/边/角显示和拾取，基础代理只服务于剩余面偏移。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，`VertexRoundingGeometry.ts` 用连续四次三角 Bézier 曲面构造外凸角部切削体，与平面相切并在入射边 radius 处终止，不形成凹槽或圆柱，其他角点保持不变。渲染法线在三个棱边终止奇点按原平面拆分，merge vectors 继续维护拓扑对应。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础代理；代理除剩余面偏移外，仅为 Vertex Rounding 开放原顶点和未处理入射边的选择/编辑，边处理源边继续排除。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 
 ## Changelog
+- 2026-11-06：恢复圆角后的原角点与入射边选择，基础代理按 treatment 限定可拾取几何并调整角/边/生成面优先级；保留原角编辑箭头及入射边连续处理能力，137 项回归和浏览器点击验证通过。
 - 2026-11-06：修正 Vertex Rounding 方向，由原顶点球体凹槽改为连续外凸 Bézier 圆角；统一曲面选择域并修复棱边终止点的平面法线；中心比例经对称剖面采样定为 `0.87r`，消除 `0.86r` 的 6 个内凹区间并保留有效切削体积，浏览器实测半径 3/8。
 - 2026-11-05：Vertex Rounding 改为原顶点球面减法，移除 Chamfer 平面带与圆柱假设；网格 X/Z 原点轴接入共享色；项目导入导出及 IndexedDB 切换为紧凑 YAML；实体树已选名称单击重命名、直接双击执行默认激活，新增几何和格式回归。
 - 2026-11-05：统一角修正最终拓扑选择规则，生成面提供独立 active 与法向粗箭头并支持复原；实现仅当前角的局部圆角并修复尖点残留、粗箭头输入去重和构造平面显示偏移，右上面板精简并加入二级面板动效。

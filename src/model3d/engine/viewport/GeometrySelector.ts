@@ -29,6 +29,8 @@ export type GeometryAnchor = {
     finalTopology?: boolean;
     /** A generated chamfer/fillet surface edits its treatment through its own face feedback. */
     generatedTreatment?: boolean;
+    /** Original corner retained only as a rounding selection/edit anchor after the visible vertex was replaced. */
+    sourceVertexProxy?: boolean;
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
@@ -228,6 +230,7 @@ export class GeometrySelector {
             point: point.toArray(), type: 'vertex', planar: false, vertices: [point.toArray()], indices: [0],
             vertexId: vertex.id, localVertex: { point: [...vertex.point], normals }, revision: topology.revision,
             finalTopology: !!mesh.userData.edgeTreated,
+            sourceVertexProxy: !!mesh.userData.vertexRoundingProxy,
         };
     }
 
