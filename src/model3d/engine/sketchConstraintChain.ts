@@ -1,4 +1,5 @@
 import { constraintRules, straightConstraintSegment } from './sketchConstraints';
+import { solveDocumentConstraints } from './sketchConstraintSolver';
 import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchElementRef, TrimmedSelection } from '../types';
 
 /** Continuous sketch-constraint propagation without Vue or viewport dependencies. */
@@ -166,34 +167,5 @@ export function changedConstraintPointCount(source: ModelDocument, target: Model
     return count;
 }
 export function runConstraintChain(document: ModelDocument, rootId: string | null, softAnchors: SketchElementRef[], preferEndpointA: boolean, limit: number, trimmedSelection: TrimmedSelection | null): 'ok' | 'limit' | 'conflict' {
-    const queue = rootId ? [rootId] : document.entities.filter((entity) => entity.edgeConstraints).map((entity) => entity.id);
-    const visited = new Set<string>();
-    while (queue.length) {
-        if (visited.size >= limit) return 'limit';
-        const entityId = queue.shift()!;
-        if (visited.has(entityId)) continue;
-        const entity = document.entities.find((item) => item.id === entityId);
-        if (!entity) continue;
-        visited.add(entityId);
-        if (!enforceEntityConstraints(document, entity, softAnchors, preferEndpointA, trimmedSelection)) return 'conflict';
-
-        const related = new Set<string>();
-        Object.values(entity.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
-            if (rule.reference) related.add(rule.reference.entityId);
-        }));
-        document.entities.forEach((candidate) => Object.values(candidate.edgeConstraints || {}).forEach((value) => constraintRules(value).forEach((rule) => {
-            if (rule.reference?.entityId === entityId) related.add(candidate.id);
-        })));
-        related.forEach((id) => { if (!visited.has(id)) queue.push(id); });
-    }
-    for (const entityId of visited) {
-        const entity = document.entities.find((item) => item.id === entityId);
-        if (!entity) continue;
-        for (const [key, constraints] of Object.entries(entity.edgeConstraints || {})) {
-            if (constraintRules(constraints).some((rule) => constraintResidual(document, entity, Number(key), rule) > SKETCH_CONSTRAINT_TOLERANCE)) {
-                return 'conflict';
-            }
-        }
-    }
-    return 'ok';
+    return solveDocumentConstraints(document, rootId, softAnchors, limit);
 }

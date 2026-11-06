@@ -316,6 +316,31 @@ test('rounding generated surface remains selectable after its adjacent face was 
     assert.deepEqual(anchor.localVertex?.point, [30, 20, 20]);
 });
 
+test('raycast selection owns the rounded surface instead of its three adjacent planes', () => {
+    const corner: VertexTreatment = {
+        id: 'ray-corner', type: 'fillet', size: 8,
+        vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+    };
+    const { document, synchronizer } = fixture({ edge: [], vertex: [corner] });
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+    const generated = visible.userData.topology.faces.find((face: any) => !face.planar);
+    const target = new THREE.Vector3(...generated.point).applyMatrix4(visible.matrixWorld);
+    const origin = new THREE.Vector3(80, 80, 80);
+    const ray = new THREE.Raycaster(origin, target.clone().sub(origin).normalize());
+    const hit = ray.intersectObject(visible, false)[0];
+    assert.ok(hit);
+    const anchor = new GeometrySelector().createFaceAnchor(hit, document.entities[0]);
+    assert.equal(anchor.type, 'vertex');
+    assert.equal(anchor.vertexTreatmentId, corner.id);
+
+    const nearCorner = new THREE.Vector3(19.5, 40, 19.5);
+    const adjacentRay = new THREE.Raycaster(origin, nearCorner.clone().sub(origin).normalize());
+    const planeHit = adjacentRay.intersectObject(visible, false)[0];
+    const priorityAnchor = new GeometrySelector().createFaceAnchor(planeHit, document.entities[0]);
+    assert.equal(priorityAnchor.type, 'vertex', 'the rounding region takes priority over an adjacent plane triangle');
+    assert.equal(priorityAnchor.vertexTreatmentId, corner.id);
+});
+
 test('edge chamfer limit spans the full section while fillet keeps the safe radius limit', () => {
     const { document } = fixture();
     const anchor = edgeAnchor();

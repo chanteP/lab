@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const outdir = resolve(root, '.temp/test/model3d');
-const entries = ['sketchCurves', 'sketchBorders', 'entityTopology', 'entityNames', 'faceExtrusion', 'directEditTransaction', 'edgePicker', 'featureReferences', 'repeatedFaceExtrusion', 'signedBoolean', 'sketchHover', 'unionFixtureRegression', 'displayMode', 'sketchAdvanced', 'geometry', 'geometrySelection', 'measurement', 'section', 'profileIntersection', 'gridScale', 'gizmoOrbit', 'transformColors', 'trimmedEllipseExtrusion', 'booleanRegions', 'sketchAssets', 'edgeTreatments', 'guideRenderer', 'sketchSemanticSplit', 'bezierRectangleExtrusion', 'edgeTreatmentSelection', 'sketchRegionPreview', 'sketchSelection', 'vertexTreatments', 'projectYaml', 'directArrowPicker', 'overlay'];
+const entries = ['sketchCurves', 'sketchBorders', 'entityTopology', 'entityNames', 'faceExtrusion', 'directEditTransaction', 'edgePicker', 'featureReferences', 'repeatedFaceExtrusion', 'signedBoolean', 'sketchHover', 'unionFixtureRegression', 'displayMode', 'sketchAdvanced', 'geometry', 'geometrySelection', 'measurement', 'section', 'profileIntersection', 'gridScale', 'gizmoOrbit', 'transformColors', 'trimmedEllipseExtrusion', 'booleanRegions', 'sketchAssets', 'edgeTreatments', 'guideRenderer', 'sketchSemanticSplit', 'bezierRectangleExtrusion', 'edgeTreatmentSelection', 'sketchRegionPreview', 'sketchSelection', 'sketchConstraintSolver', 'sketchGuides', 'vertexTreatments', 'projectYaml', 'directArrowPicker', 'overlay'];
 await build({
     entryPoints: entries.map((name) => resolve(root, `src/model3d/engine/${name}.spec.ts`)),
     bundle: true,

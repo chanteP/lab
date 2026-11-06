@@ -212,14 +212,14 @@ export class GeometrySelector {
         };
         // Generated corner surfaces own their hot zone and normal; the source corner only supplies the edit ID.
         for (const treatment of mesh.userData.resolvedVertexTreatments || entity.vertexTreatments || []) {
-            const adjacent = treatment.type === 'fillet' && !finalSurface.planar ? false : treatment.vertex.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
+            const adjacent = treatment.type === 'chamfer' && treatment.vertex.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
             const corner = new THREE.Vector3(...treatment.vertex.point);
             let ownsSurface = treatment.type === 'chamfer' && localPoint.distanceTo(corner) <= treatment.size * 2.5 + 0.25;
-            if (treatment.type === 'fillet' && !finalSurface.planar) {
-                ownsSurface = finalSurface.face.triangleIds.every((id) => {
+            if (treatment.type === 'fillet') {
+                ownsSurface = localPoint.distanceTo(corner) <= treatment.size * 1.75 && (finalSurface.planar || finalSurface.face.triangleIds.every((id) => {
                     const triangle = this.topology(mesh).triangles[id];
                     return new THREE.Vector3(...triangle.center).distanceTo(corner) <= treatment.size * 1.75;
-                });
+                }));
             }
             if (adjacent || !ownsSurface) continue;
             const generated = { vertices: finalSurface.vertices, indices: finalSurface.indices };

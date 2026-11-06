@@ -49,7 +49,7 @@ export function pickLogicalEdge({ camera, canvas, model, event, thresholdPx, sel
                 const occludedByOtherBody = firstOcclusion && (!body.userData.selectionProxy || firstOcclusion.object.userData.entityId !== body.userData.entityId);
                 if (occludedByOtherBody && firstOcclusion.distance < distance - 2) continue;
                 const score = closest.distance + distance * 1e-7 - (body.userData.vertexRoundingProxy ? 0.05 : 0);
-                if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance } as unknown as THREE.Intersection };
+                if (!best || score < best.score) best = { score, intersection: { object: child, index: segment, point, distance, pixelDistance: closest.distance } as unknown as THREE.Intersection };
             }
         });
     });

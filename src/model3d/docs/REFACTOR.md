@@ -63,8 +63,11 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 - `GeometryAnchor` 在视口层保存 owner、矩阵快照和代理来源；`GuideRenderer.updateAnimation` 在矩阵变化时刷新 active 与粗箭头，`GeometrySelector.rebindAnchor` 在场景重建后按来源和带符号法向重取当前面，并对所有 `generatedTreatment` 生效，不再只处理 `type=face`。`applyMeshEdgeTreatments` 随 mesh 发布 resolved treatments，保证面编辑后的圆角曲面分类、选择和 active 使用相同坐标。`Viewport.sync` 统一执行重绑，Transform 和 Face Extrude 不再依赖 blur 或独立世界坐标补偿。
 - 3D 草图通过单个命中即可解析独立 `profileFace`，选择状态明确为 `face`；只有 Ctrl/Command 累加，开放线无封闭面时不回退到整个草图或边选择。草图编辑 active 面由 `SketchRenderer.refreshFaces()` 按最新 document 重建。
+- `engine/sketchConstraintSolver` 使用全局 Gauss-Newton 联合求解约束，替代逐边顺序覆盖；`sketchConstraintChain` 只保留调用入口和变更计数，UI 候选优先级、固定点及回滚契约不变。参考规则只表达双向关联，不再长期优先保护参考物。
+- `sketchGuides` 统一操作点参考匹配，`InteractionController.sketchSelectionAnchor` 计算选中内容中心，`sketchDragEdgeStart` 提供线段另一端方向锚点；`computeSketchFaces` 与 `buildSketchRegionPreviews` 用回归保证约束后的面一致。
 
 ## Changelog
+- 2026-11-06：独立分支重构草图约束和参考线：全局联合求解支持正交等长、正多边形及多 line 关联，操作点/中心磁吸与平行参考从底层修复；圆角区域优先选择生成曲面，155 项回归通过。
 - 2026-11-06：倒角/圆角生成面全部参与 active 重绑，resolved treatment 坐标随 mesh 发布以修复面推拉后的圆角选择；边倒角上限放宽到完整截面并形成直角三棱柱，边圆角保持安全半径，145 项回归通过。
 - 2026-11-06：统一 Transform 与粗箭头推拉的 active 实时同步，增加矩阵跟随和拓扑面重绑；3D 草图改为单击独立面、Ctrl/Command 累加并移除边/整形状回退，141 项回归及浏览器推拉/Transform 验证通过。
 - 2026-11-06：恢复圆角后的原角点与入射边选择，基础代理按 treatment 限定可拾取几何并调整角/边/生成面优先级；保留原角编辑箭头及入射边连续处理能力，137 项回归和浏览器点击验证通过。
