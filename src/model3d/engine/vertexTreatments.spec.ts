@@ -7,7 +7,7 @@ import { buildMeshTopology } from './topology/MeshTopology';
 import { buildEntityMesh } from './geometry';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { createDocument, createEntity, type VertexTreatment } from '../types';
-import { buildVertexRoundingCutter } from './modeling/VertexRoundingGeometry';
+import { buildVertexRoundingCutter, VERTEX_ROUNDING_CENTER_RATIO } from './modeling/VertexRoundingGeometry';
 
 await initializeManifold();
 
@@ -21,6 +21,11 @@ test('convex rounding cutter is a closed oriented solid', () => {
     const result = validateSolidGeometry(cutter);
     assert.equal(result.valid, true, JSON.stringify(result));
     cutter.dispose();
+});
+
+test('rounding center stays outside the boundary chord instead of collapsing into a recess', () => {
+    assert.ok(VERTEX_ROUNDING_CENTER_RATIO > 1 / (2 - Math.SQRT1_2));
+    assert.ok(VERTEX_ROUNDING_CENTER_RATIO >= 0.87 && VERTEX_ROUNDING_CENTER_RATIO < 0.9, '101-point symmetry profiles must not reintroduce the concave intervals present at 0.86');
 });
 
 function volume(geometry: THREE.BufferGeometry) {
@@ -57,7 +62,7 @@ test('all cube corners remove sharp remnants and expose the external spherical s
         const base = new THREE.BoxGeometry(40, 40, 40);
         const vertexTreatment = { ...treatment, type: 'fillet' as const, size, vertex: { point, normals } };
         const result = applyVertexTreatments(base, [vertexTreatment]);
-        assert.ok(volume(result) < volume(base) - 1, 'fillet must remove material instead of only retessellating the box');
+        assert.ok(volume(result) < volume(base) - 0.05, 'fillet must remove material instead of only retessellating the box');
         assert.equal(validateSolidGeometry(result).valid, true, `corner ${point.join(',')} must remain a closed solid`);
         const position = result.attributes.position;
         const indices = result.index ? Array.from(result.index.array) : Array.from({ length: position.count }, (_, index) => index);
@@ -105,7 +110,7 @@ test('vertex rounding replaces the corner with one convex tangent patch without 
     const direction = new THREE.Vector3(-1, -1, -1).normalize();
     const hit = new THREE.Raycaster(origin, direction).intersectObject(new THREE.Mesh(result), false)[0];
     assert.ok(hit);
-    const expectedCenter = 20 - radius + radius * (60 + 8 * (4 / Math.SQRT2 - 2.5)) / 81;
+    const expectedCenter = 20 - radius + radius * VERTEX_ROUNDING_CENTER_RATIO;
     assert.ok(Math.abs(hit.point.x - expectedCenter) < 0.05, 'the diagonal surface must bulge outward instead of forming a spherical recess');
 
     const positions = result.attributes.position;

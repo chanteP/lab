@@ -3,6 +3,8 @@ import type { Vec3 } from '../../types';
 
 const PATCH_SEGMENTS = 36;
 const ARC_CONTROL = 4 / Math.SQRT2 - 2.5;
+// Symmetry-profile regression: 0.86 still creates 6 concave intervals; 0.87 is the first ratio with none.
+export const VERTEX_ROUNDING_CENTER_RATIO = 0.87;
 
 function signedVolume(position: THREE.BufferAttribute, indices: number[]) {
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
@@ -67,7 +69,7 @@ function factorial(value: number): number {
 }
 
 /** One continuous quartic triangular patch; inner control rows keep it tangent to all three original planes. */
-export function buildVertexRoundingCutter(radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+export function buildVertexRoundingCutter(radius: number, corner: Vec3, adjacentNormals: Vec3[], centerRatio = VERTEX_ROUNDING_CENTER_RATIO) {
     const normals = adjacentNormals.map((normal) => new THREE.Vector3(...normal).normalize());
     const sourceCorner = new THREE.Vector3(...corner);
     const center = normals.reduce((point, normal) => point.addScaledVector(normal, -radius), sourceCorner.clone());
@@ -77,7 +79,7 @@ export function buildVertexRoundingCutter(radius: number, corner: Vec3, adjacent
         return result;
     };
 
-    const r = radius, a = r * ARC_CONTROL;
+    const r = radius, a = r * ARC_CONTROL, h = r * (81 * centerRatio - 60 - 8 * ARC_CONTROL) / 12;
     const controls = [
         { i: 4, j: 0, k: 0, p: new THREE.Vector3(0, r, r) },
         { i: 0, j: 4, k: 0, p: new THREE.Vector3(r, 0, r) },
@@ -91,9 +93,9 @@ export function buildVertexRoundingCutter(radius: number, corner: Vec3, adjacent
         { i: 2, j: 2, k: 0, p: new THREE.Vector3(r, r, r) },
         { i: 2, j: 0, k: 2, p: new THREE.Vector3(r, r, r) },
         { i: 0, j: 2, k: 2, p: new THREE.Vector3(r, r, r) },
-        { i: 2, j: 1, k: 1, p: new THREE.Vector3(0, r, r) },
-        { i: 1, j: 2, k: 1, p: new THREE.Vector3(r, 0, r) },
-        { i: 1, j: 1, k: 2, p: new THREE.Vector3(r, r, 0) },
+        { i: 2, j: 1, k: 1, p: new THREE.Vector3(h, r, r) },
+        { i: 1, j: 2, k: 1, p: new THREE.Vector3(r, h, r) },
+        { i: 1, j: 1, k: 2, p: new THREE.Vector3(r, r, h) },
     ];
     const evaluate = (i: number, j: number, k: number) => {
         const point = new THREE.Vector3();
