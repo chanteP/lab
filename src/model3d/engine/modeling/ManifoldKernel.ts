@@ -5,6 +5,7 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm';
 import type { BooleanOperation, Vec3 } from '../../types';
 import { geometryMergeVectors } from '../topology/RenderVertices';
+import { buildVertexRoundingCutter, normalizeVertexRoundingNormals } from './VertexRoundingGeometry';
 
 let modulePromise: Promise<ManifoldToplevel> | null = null;
 let kernel: ManifoldToplevel | null = null;
@@ -149,39 +150,14 @@ export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, r
     }
 }
 
-/** Subtract one local sphere octant; its circular boundaries are tangent to the adjacent planes and end on the incident edges. */
+/** Remove a custom convex corner cap; the rounded patch is tangent to adjacent planes and never extends along incident edges. */
 export function evaluateVertexRounding(base: THREE.BufferGeometry, radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
     if (radius <= 0 || adjacentNormals.length !== 3) return null;
-    const { Manifold } = getManifold();
-    let baseSolid: InstanceType<typeof Manifold> | null = null;
-    let sphere: InstanceType<typeof Manifold> | null = null;
-    let centered: InstanceType<typeof Manifold> | null = null;
-    let result: InstanceType<typeof Manifold> | null = null;
+    const cutter = buildVertexRoundingCutter(radius, corner, adjacentNormals);
     try {
-        baseSolid = new Manifold(inputMesh(base));
-        if (baseSolid.status() !== 'NoError') throw new Error(`目标实体无效：${baseSolid.status()}`);
-        const simplifiedBase = baseSolid.simplify();
-        baseSolid.delete();
-        baseSolid = simplifiedBase;
-        centered = Manifold.sphere(radius, 64);
-        sphere = centered.translate(...corner);
-        centered.delete();
-        centered = null;
-        result = baseSolid.subtract(sphere);
-        if (result.status() !== 'NoError') throw new Error(`顶点圆滑化失败：${result.status()}`);
-        if (result.isEmpty()) return new THREE.BufferGeometry();
-        const simplified = result.asOriginal().simplify();
-        result.delete();
-        result = simplified;
-        const shaded = result.calculateNormals(0, 60);
-        result.delete();
-        result = shaded;
-        return outputGeometry(result.getMesh(0));
+        return normalizeVertexRoundingNormals(evaluateBoolean(base, cutter, 'subtract'), corner, adjacentNormals);
     } finally {
-        result?.delete();
-        centered?.delete();
-        sphere?.delete();
-        baseSolid?.delete();
+        cutter.dispose();
     }
 }
 

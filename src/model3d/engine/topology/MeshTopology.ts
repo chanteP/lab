@@ -145,9 +145,11 @@ export function buildMeshTopology(geometry: THREE.BufferGeometry, bodyId: string
         const faceTriangles = triangleIds.map((id) => triangles[id]);
         const first = faceTriangles[0];
         let domain = faceDomains[faceIndex];
-        if (!domain) {
-            const planar = faceTriangles.every((triangle) => vector(first.normal).dot(vector(triangle.normal)) > 1 - 1e-4
-                && Math.abs(vector(first.normal).dot(vector(triangle.center).sub(vector(first.center)))) <= PLANE_DISTANCE_TOLERANCE);
+        const planar = faceTriangles.every((triangle) => vector(first.normal).dot(vector(triangle.normal)) > 1 - 1e-4
+            && Math.abs(vector(first.normal).dot(vector(triangle.center).sub(vector(first.center)))) <= PLANE_DISTANCE_TOLERANCE);
+        if (planar && domain?.kind === 'smooth') {
+            domain = { kind: 'plane', normal: [...first.normal], offset: vector(first.normal).dot(vector(first.center)), analytic: true };
+        } else if (!domain) {
             domain = planar
                 ? { kind: 'plane', normal: [...first.normal], offset: vector(first.normal).dot(vector(first.center)), analytic: true }
                 : { kind: 'smooth', analytic: false };

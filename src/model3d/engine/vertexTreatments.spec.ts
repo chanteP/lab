@@ -7,6 +7,7 @@ import { buildMeshTopology } from './topology/MeshTopology';
 import { buildEntityMesh } from './geometry';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { createDocument, createEntity, type VertexTreatment } from '../types';
+import { buildVertexRoundingCutter } from './modeling/VertexRoundingGeometry';
 
 await initializeManifold();
 
@@ -14,6 +15,13 @@ const treatment: VertexTreatment = {
     id: 'corner', type: 'chamfer', size: 3,
     vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
 };
+
+test('convex rounding cutter is a closed oriented solid', () => {
+    const cutter = buildVertexRoundingCutter(3, [20, 20, 20], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    const result = validateSolidGeometry(cutter);
+    assert.equal(result.valid, true, JSON.stringify(result));
+    cutter.dispose();
+});
 
 function volume(geometry: THREE.BufferGeometry) {
     const position = geometry.attributes.position, index = geometry.index;
@@ -47,7 +55,8 @@ test('all cube corners remove sharp remnants and expose the external spherical s
         const normals = signs.map((sign, axis) => [0, 0, 0].map((value, index) => index === axis ? sign : value)) as [number, number, number][];
         const corner = new THREE.Vector3(...point);
         const base = new THREE.BoxGeometry(40, 40, 40);
-        const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size, vertex: { point, normals } }]);
+        const vertexTreatment = { ...treatment, type: 'fillet' as const, size, vertex: { point, normals } };
+        const result = applyVertexTreatments(base, [vertexTreatment]);
         assert.ok(volume(result) < volume(base) - 1, 'fillet must remove material instead of only retessellating the box');
         assert.equal(validateSolidGeometry(result).valid, true, `corner ${point.join(',')} must remain a closed solid`);
         const position = result.attributes.position;
@@ -62,34 +71,49 @@ test('all cube corners remove sharp remnants and expose the external spherical s
         assert.equal(sharpRemnant, false, `corner ${point.join(',')} must not retain sharp fragments at radius ${size}`);
         const normal = new THREE.Vector3(...signs).normalize();
         const origin = corner.clone().addScaledVector(normal, 60);
-        const ray = new THREE.Raycaster(origin, corner.clone().sub(origin).normalize());
-        const firstHit = ray.intersectObject(new THREE.Mesh(result), false)[0];
-        assert.ok(firstHit, `corner ${point.join(',')} must expose a rounded outer surface`);
-        const topology = buildMeshTopology(result, 'corner-test', createEntity('box', 'corner-test'), createDocument());
-        const hitFace = topology.faces.find((face) => face.id === topology.triangleFaceIds[firstHit.faceIndex!]);
-        assert.equal(hitFace?.planar, false, `corner ${point.join(',')} must expose curved fillet geometry`);
+        const direction = corner.clone().sub(origin);
+        direction.x *= 1.01;
+        const ray = new THREE.Raycaster(origin, direction.normalize());
+        const firstHit = ray.intersectObject(new THREE.Mesh(result, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), false)[0];
+        assert.ok(firstHit, `corner ${point.join(',')} at radius ${size} must expose a rounded outer surface`);
+        const axisAligned = normals.some((normal) => Math.abs(firstHit.face!.normal.dot(new THREE.Vector3(...normal))) > 0.999);
+        assert.equal(axisAligned, false, `corner ${point.join(',')} must expose curved fillet geometry`);
         base.dispose(); result.dispose();
     }
 });
 
-test('vertex rounding replaces the corner with one tangent spherical patch without chamfer bands', () => {
+test('vertex rounding replaces the corner with one convex tangent patch without chamfer bands', () => {
     const radius = 3;
     const base = new THREE.BoxGeometry(40, 40, 40);
     const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size: radius }]);
-    const topology = buildMeshTopology(result, 'box', createEntity('box', 'box'), createDocument());
+    const entity = createEntity('box', 'box');
+    entity.vertexTreatments = [{ ...treatment, type: 'fillet', size: radius }];
+    const topology = buildMeshTopology(result, 'box', entity, createDocument());
+    const cutter = buildVertexRoundingCutter(radius, [20, 20, 20], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    assert.ok(Math.abs((volume(base) - volume(result)) - volume(cutter)) < 1e-4);
 
     assert.equal(validateSolidGeometry(result).valid, true);
     assert.equal(topology.faces.filter((face) => face.planar).length, 6);
     assert.equal(topology.faces.filter((face) => !face.planar).length, 1);
-    const expectedRemoved = Math.PI * radius ** 3 / 6;
-    assert.ok(Math.abs((volume(base) - volume(result)) - expectedRemoved) < expectedRemoved * 0.02);
+    topology.faces.filter((face) => face.planar).forEach((face) => face.triangleIds.forEach((id) => {
+        topology.triangles[id].renderVertices.forEach((vertex) => {
+            const normal = new THREE.Vector3().fromBufferAttribute(result.attributes.normal, vertex);
+            assert.ok(normal.dot(new THREE.Vector3(...face.normal)) > 0.999, 'adjacent planes must retain flat render normals');
+        });
+    }));
+    const origin = new THREE.Vector3(80, 80, 80);
+    const direction = new THREE.Vector3(-1, -1, -1).normalize();
+    const hit = new THREE.Raycaster(origin, direction).intersectObject(new THREE.Mesh(result), false)[0];
+    assert.ok(hit);
+    const expectedCenter = 20 - radius + radius * (60 + 8 * (4 / Math.SQRT2 - 2.5)) / 81;
+    assert.ok(Math.abs(hit.point.x - expectedCenter) < 0.05, 'the diagonal surface must bulge outward instead of forming a spherical recess');
 
     const positions = result.attributes.position;
     const indices = result.index ? Array.from(result.index.array) : [];
     for (const point of [[20, 20, 17], [20, 17, 20], [17, 20, 20]] as [number, number, number][]) {
         assert.ok(indices.some((index) => new THREE.Vector3().fromBufferAttribute(positions, index).distanceTo(new THREE.Vector3(...point)) < 1e-4));
     }
-    base.dispose(); result.dispose();
+    base.dispose(); result.dispose(); cutter.dispose();
 });
 
 test('a corner fillet creates a curved surface and follows a later face drag', () => {
@@ -180,7 +204,6 @@ test('vertex rounding retains an existing incident edge chamfer outside the sphe
 
     assert.equal(validateSolidGeometry(result.geometry).valid, true);
     assert.ok(curved.length >= 1);
-    assert.ok(curved.some((face) => face.domain.kind === 'sphere'));
     assert.ok(curved.every((face) => face.domain.kind !== 'cylinder'), 'an existing edge chamfer may split but must not extend the vertex sphere into a cylinder');
     const edgeOnly = (await import('./modeling/EdgeTreatments')).applyEdgeTreatments(new THREE.BoxGeometry(40, 40, 40), entity.edgeTreatments);
     assert.ok(volume(result.geometry) < volume(edgeOnly));

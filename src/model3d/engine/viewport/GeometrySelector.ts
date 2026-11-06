@@ -129,12 +129,13 @@ export class GeometrySelector {
         for (const treatment of entity.vertexTreatments || []) {
             const adjacent = treatment.type === 'fillet' && !finalSurface.planar ? false : treatment.vertex.normals.some((wanted) => Math.abs(surfaceNormal.dot(new THREE.Vector3(...wanted).normalize())) > 0.995);
             const corner = new THREE.Vector3(...treatment.vertex.point);
-            const domain = finalSurface.face.domain;
             let ownsSurface = treatment.type === 'chamfer' && localPoint.distanceTo(corner) <= treatment.size * 2.5 + 0.25;
-            if (treatment.type === 'fillet' && domain.kind === 'sphere') {
-                ownsSurface = Math.abs(domain.radius - treatment.size) < 1e-3 && new THREE.Vector3(...domain.center).distanceTo(corner) < 1e-3;
+            if (treatment.type === 'fillet' && !finalSurface.planar) {
+                ownsSurface = finalSurface.face.triangleIds.every((id) => {
+                    const triangle = this.topology(mesh).triangles[id];
+                    return new THREE.Vector3(...triangle.center).distanceTo(corner) <= treatment.size * 1.75;
+                });
             }
-            if (!ownsSurface && treatment.type === 'fillet' && !finalSurface.planar) ownsSurface = Math.abs(localPoint.distanceTo(corner) - treatment.size) < 0.01;
             if (adjacent || !ownsSurface) continue;
             const generated = { vertices: finalSurface.vertices, indices: finalSurface.indices };
             return {

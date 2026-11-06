@@ -42,14 +42,10 @@ export function analyticTriangleDomain(
 
     for (const treatment of entity.vertexTreatments || []) {
         if (treatment.type !== 'fillet' || treatment.size <= 0) continue;
-        const center = vec(treatment.vertex.point);
-        const triangleCenter = points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3);
-        const radial = triangleCenter.sub(center).normalize();
-        // Boundary triangles on an adjacent plane can also have all three vertices on the sphere; radial normals distinguish the actual patch.
-        const sphericalNormal = Math.abs(vec(triangle.normal).dot(radial)) > 0.9;
-        if (sphericalNormal && points.every((point) => Math.abs(point.distanceTo(center) - treatment.size) <= LENGTH_TOLERANCE)) {
-            return { kind: 'sphere', center: center.toArray(), radius: treatment.size, analytic: true };
-        }
+        const corner = vec(treatment.vertex.point);
+        const onAdjacentPlane = treatment.vertex.normals.some((normal) => Math.abs(vec(triangle.normal).dot(vec(normal).normalize())) > 0.999);
+        // Hermite sectors share exact seams but not one analytic sphere; classify the whole local patch as one smooth domain.
+        if (!onAdjacentPlane && vec(triangle.center).distanceTo(corner) <= treatment.size * 1.75) return { kind: 'smooth', analytic: true };
     }
 
     for (const treatment of entity.edgeTreatments || []) {
