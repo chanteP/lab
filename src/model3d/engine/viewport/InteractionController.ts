@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { sketchAssetExcludedIds } from '../sketchAssets';
-import { intersectionProfileAtPoint } from '../profileIntersection'; import { entityProfileClosed } from '../profiles';
+import { intersectionProfileAtPoint } from '../profileIntersection';
 import { INTERACTION } from '../../config/const';
 import type { ModelEntity, Point2, Vec3 } from '../../types';
 import type { ViewTool, ViewportCallbacks } from '../Viewport';
@@ -314,11 +314,11 @@ export class InteractionController {
     }
 
     private sketchIntersectionAnchor(hits: THREE.Intersection[]): GeometryAnchor | null {
-        if (hits.length < 2) return null;
+        if (!hits.length) return null;
         const region = hits[0].object.userData.regionProfile ? hits[0].object.userData : null;
         const entities = region ? region.regionEntityIds.map((id: string) => this.document?.entities.find((entity) => entity.id === id)).filter(Boolean) as ModelEntity[] : hits.map((hit) => this.document?.entities.find((entity) => entity.id === hit.object.userData.entityId)).filter(Boolean) as ModelEntity[];
         const plane = this.document?.planes.find((item) => item.id === entities[0]?.planeId);
-        if (!plane || (!region && entities.length < 2)) return null;
+        if (!plane) return null;
         const origin = new THREE.Vector3(...plane.origin), u = new THREE.Vector3(...plane.u), v = new THREE.Vector3(...plane.v);
         const relative = hits[0].point.clone().sub(origin);
         const points = region ? region.profilePoints : intersectionProfileAtPoint(entities, plane.id, [relative.dot(u), relative.dot(v)]);
@@ -326,7 +326,10 @@ export class InteractionController {
         const vertices = points.map(([x, y]) => origin.clone().addScaledVector(u, x).addScaledVector(v, y).toArray() as Vec3);
         const indices = points.slice(1, -1).flatMap((_, index) => [0, index + 1, index + 2]);
         const point = vertices.reduce((center, vertex) => center.add(new THREE.Vector3(...vertex)), new THREE.Vector3()).multiplyScalar(1 / vertices.length).toArray() as Vec3;
-        return { id: entities[0].id, key: `${entities[0].id}:intersection`, normal: [...plane.normal], localNormal: [...plane.normal], point, type: 'face', planar: true, vertices, indices, profilePoints: points };
+        return {
+            id: entities[0].id, key: `${entities[0].id}:intersection`, normal: [...plane.normal], localNormal: [...plane.normal], point, type: 'face', planar: true, vertices, indices, profilePoints: points,
+            sourceObject: hits[0].object, sourceMatrixWorld: hits[0].object.matrixWorld.clone(), sourceProxy: false,
+        };
     }
 
     private hitEntityVertex(event: PointerEvent) {
@@ -871,13 +874,15 @@ export class InteractionController {
         if (hit && hitIsSketch) {
             const hits = this.hitSketchEntities(event);
             const intersection = this.sketchIntersectionAnchor(hits);
-            const openSketch = this.document?.entities.find((item) => item.id === hit.object.userData.entityId && item.kind === 'sketch' && !entityProfileClosed(item));
-            if (!intersection && openSketch) { this.geometryAnchor = this.hoverFaceAnchor = null; this.callbacks.onBodySelect(openSketch.id); return; }
+            const hitKind = this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind;
+            if (!intersection) {
+                if (hitKind === 'image') this.callbacks.onBodySelect(hit.object.userData.entityId);
+                return;
+            }
             const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
             this.geometryAnchor = intersection || this.createGeometryAnchor(hit);
             this.hoverFaceAnchor = null;
-            const selectedHits = intersection ? [hits[0]] : hits;
-            selectedHits.forEach((sketchHit, index) => this.callbacks.onGeometrySelect(sketchHit.object.userData.entityId, 'face', normal, sketchHit.point.toArray() as Vec3, additive || index > 0, intersection?.profilePoints));
+            this.callbacks.onGeometrySelect(hits[0].object.userData.entityId, 'face', normal, hits[0].point.toArray() as Vec3, event.metaKey || event.ctrlKey, intersection.profilePoints);
             return;
         }
         if (hit) {
@@ -993,7 +998,13 @@ export class InteractionController {
             ...this.geometryAnchor,
             point: new THREE.Vector3(...this.geometryAnchor.point).add(delta).toArray(),
             vertices: this.geometryAnchor.vertices.map((point) => new THREE.Vector3(...point).add(delta).toArray()),
+            feedbackVertices: this.geometryAnchor.feedbackVertices?.map((point) => new THREE.Vector3(...point).add(delta).toArray()),
         };
+    }
+    rebindGeometryAnchor() {
+        if (!this.document) return;
+        if (this.geometryAnchor) this.geometryAnchor = this.geometrySelector.rebindAnchor(this.geometryAnchor, this.model, this.document);
+        if (this.hoverFaceAnchor) this.hoverFaceAnchor = this.geometrySelector.rebindAnchor(this.hoverFaceAnchor, this.model, this.document);
     }
     resetSketchGesture() {
         this.sketchDrag = null;

@@ -7,6 +7,10 @@ import { createTopologyEdgeGeometry } from './viewport/TopologyEdges';
 import { planeHelperPosition } from './viewport/SceneSynchronizer';
 import { INTERACTION } from '../config/const';
 import { createDocument, createEntity } from '../types';
+import { buildEntityMesh } from './geometry';
+import { initializeManifold } from './modeling/ManifoldKernel';
+
+await initializeManifold();
 
 function hit(mesh: THREE.Mesh, faceIndex: number) {
     const geometry = mesh.geometry;
@@ -107,6 +111,27 @@ test('outline hit uses the actual display-edge segment rather than a mesh triang
     assert.equal(anchor.type, 'edge');
     assert.equal(anchor.vertices.length, 2);
     assert.equal(anchor.vertices[0].length, 3);
+});
+
+test('face anchors rebind to the current topology after direct face extrusion', () => {
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    entity.position = [0, 0, 0];
+    document.entities.push(entity);
+    const mesh = buildEntityMesh(entity, document);
+    mesh.userData.topology = buildMeshTopology(mesh.geometry, entity.id, entity, document);
+    const selector = new GeometrySelector();
+    const face = mesh.userData.topology.faces.find((item) => item.normal[1] > 0.99)!;
+    const anchor = selector.createFaceAnchor(hit(mesh, face.triangleIds[0]), entity);
+    entity.faceOffset = { normal: [0, 1, 0], distance: 5, vertices: anchor.vertices, indices: anchor.indices, faceIds: anchor.faceIds };
+    const nextMesh = buildEntityMesh(entity, document);
+    const model = new THREE.Group();
+    model.add(nextMesh);
+
+    const rebound = selector.rebindAnchor(anchor, model, document)!;
+
+    assert.equal(rebound.point[1], 25);
+    assert.ok((rebound.feedbackVertices || rebound.vertices).every((point) => Math.abs(point[1] - 25) < 1e-4));
 });
 
 test('cylinder cap outline selects the complete circular loop', () => {

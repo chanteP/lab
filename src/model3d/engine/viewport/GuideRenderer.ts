@@ -11,6 +11,7 @@ import type { ViewTool } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
 import type { OverlayController } from './OverlayController';
 import type { GeometryAnchor } from './GeometrySelector';
+import { refreshAnchorTransform } from './GeometrySelector';
 
 export type { GeometryAnchor } from './GeometrySelector';
 
@@ -181,6 +182,13 @@ export class GuideRenderer {
     }
 
     updateAnimation(camera: THREE.Camera, time: number) {
+        const selected = this.options.getGeometryAnchor();
+        const hovered = this.options.getHoverFaceAnchor();
+        const document = this.options.getDocument?.();
+        const transformChanged = [selected, hovered].filter((anchor, index, list) => anchor && list.indexOf(anchor) === index)
+            .some((anchor) => refreshAnchorTransform(anchor!));
+        if (transformChanged && document) this.update(document);
+
         const breath = Math.sin(time * 2.4);
         this.group.children.forEach((arrow) => {
             const origin = arrow.getWorldPosition(new THREE.Vector3());

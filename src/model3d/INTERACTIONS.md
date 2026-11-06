@@ -43,7 +43,8 @@
 
 实现：`Viewport.onPointerDown`、 `OrientationGizmo.ts`。
 
-- 左键单击选择 face / edge，双击实体选择完整 Body，Shift + 单击累加选择。3D 中的草图轮廓只可选择，不可通过双击、右键或 Delete 编辑/删除；需要编辑时从 History 显式回改。变换工具激活时，单击实体仍可重新选择几何；只有 gizmo、直接编辑手柄和显式工具消费拖动。
+- 左键单击选择 face / edge，双击实体选择完整 Body，Shift + 单击累加选择。3D 草图轮廓单击只选择命中的独立面，Ctrl/Command + 单击累加面，不进入边/角选择，也不默认选整个形状；无封闭面的开放线不可在 3D 中选择。草图仍不可通过双击、右键或 Delete 编辑/删除，需要编辑时从 History 显式回改。图片继续整体选择。变换工具激活时，单击实体仍可重新选择几何；只有 gizmo、直接编辑手柄和显式工具消费拖动。
+- 实体面/边/角和草图面的 active 必须跟随当前操作实时更新：Translate/Rotate/Scale 每帧跟随实体矩阵，粗箭头推拉和数值输入在几何重建后立即重绑当前面，不等待 blur 或 pointerup。草图编辑模式的 active 面按最新轮廓同步重建。
 - 实体 face/edge hover 使用橙色高亮，选中使用深橙色；edge 使用独立粗线，不再用整个 Body 的材质变化代替。高亮遵守场景深度遮挡，选中曲面不会覆盖其他面。
 - 3D 草图以完整封闭图形为 hover/选择单位，与共面的平面同时命中时优先选择草图；交叉区域以最小封闭交集面作为 active 轮廓，只拉伸该交集柱体。Shift 单击累加多个完整轮廓，整体拉伸通过 Union 只显示一个合并 mesh。
 - face 高亮/选择来自当前 body 的 SameDomain 拓扑面片；edge 来自 logical edge graph，不使用三角形内部边。圆柱上下圆边为完整闭环，细分直线仍是一条逻辑边。

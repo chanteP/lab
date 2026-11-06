@@ -259,7 +259,9 @@ export class Viewport {
     sync(document: ModelDocument) {
         this.interaction.clearSurfaceCache();
         this.sceneSynchronizer.sync(document);
+        this.interaction.rebindGeometryAnchor();
         this.sketchAssetRenderer.update();
+        this.guideRenderer.update(document);
     }
 
     setDisplayMode(mode: DisplayMode, showEdges?: boolean) { this.sceneSynchronizer.setDisplayMode(mode, showEdges); }

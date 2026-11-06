@@ -6,6 +6,16 @@ import { OverlayController } from './viewport/OverlayController';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
 import { createDocument, createEntity } from '../types';
 import { buildEntityMesh } from './geometry';
+import { GeometrySelector } from './viewport/GeometrySelector';
+import { buildMeshTopology } from './topology/MeshTopology';
+
+function faceHit(mesh: THREE.Mesh, faceIndex: number) {
+    const geometry = mesh.geometry, index = geometry.index;
+    const vertices = [0, 1, 2].map((offset) => index ? index.getX(faceIndex * 3 + offset) : faceIndex * 3 + offset);
+    const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, vertex));
+    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+    return { object: mesh, faceIndex, face: { a: vertices[0], b: vertices[1], c: vertices[2], normal }, point: points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+}
 
 function anchor(type: 'face' | 'edge'): GeometryAnchor {
     return {
@@ -59,5 +69,33 @@ test('region extrusion arrow starts at the sketch plane instead of beyond the mo
 
     assert.equal(renderer.group.children.length, 1);
     assert.ok(Math.abs(renderer.group.children[0].position.y - 12) < 1e-8, 'arrow origin must coincide with the extruded cap');
+    renderer.dispose();
+});
+
+test('active face and arrow follow the owner matrix during transform dragging', () => {
+    const document = createDocument();
+    const entity = createEntity('box', 'box');
+    entity.position = [0, 0, 0];
+    document.entities.push(entity);
+    const mesh = buildEntityMesh(entity, document);
+    const model = new THREE.Group();
+    model.add(mesh);
+    mesh.userData.topology = buildMeshTopology(mesh.geometry, entity.id, entity, document);
+    const face = mesh.userData.topology.faces.find((item: any) => item.normal[1] > 0.99);
+    const geometryAnchor = new GeometrySelector().createFaceAnchor(faceHit(mesh, face.triangleIds[0]), entity);
+    const renderer = new GuideRenderer({
+        overlay: new OverlayController(), model,
+        renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+        getSelected: () => [entity.id], getTool: () => 'offsetFace', getGeometryAnchor: () => geometryAnchor,
+        getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm', getDocument: () => document,
+    });
+    renderer.update(document);
+    const initialX = (renderer.faceFeedback.children[0] as THREE.Mesh).geometry.attributes.position.getX(0);
+
+    mesh.position.x = 10;
+    renderer.updateAnimation(new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 500), 1);
+
+    assert.equal((renderer.faceFeedback.children[0] as THREE.Mesh).geometry.attributes.position.getX(0), initialX + 10);
+    assert.equal(renderer.group.children[0].position.x, 10);
     renderer.dispose();
 });

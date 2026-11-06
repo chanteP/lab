@@ -3,7 +3,7 @@ import { buildMeshTopology } from '../topology/MeshTopology';
 import { domainsEqual } from '../topology/SurfaceDomains';
 import { expandTangentEdges, expandTangentFaces } from '../topology/TopologySelection';
 import type { BodyTopology, LogicalFace } from '../topology/types';
-import { createDocument, createEntity, type ModelEntity, type Point2, type SelectionKind, type Vec3 } from '../../types';
+import { createDocument, createEntity, type ModelDocument, type ModelEntity, type Point2, type SelectionKind, type Vec3 } from '../../types';
 
 export type GeometryAnchor = {
     id: string;
@@ -31,10 +31,36 @@ export type GeometryAnchor = {
     generatedTreatment?: boolean;
     /** Original corner retained only as a rounding selection/edit anchor after the visible vertex was replaced. */
     sourceVertexProxy?: boolean;
+    /** Viewport-only owner and snapshot used to follow live transforms without entering Vue reactive state. */
+    sourceObject?: THREE.Object3D;
+    sourceMatrixWorld?: THREE.Matrix4;
+    sourceProxy?: boolean;
     revision?: number;
 };
 export type Surface = { id: string; vertices: Vec3[]; indices: number[]; point: Vec3; planar: boolean; normal: Vec3; triangles: number[]; face: LogicalFace };
 export type SelectionStats = { objects: number; faces: number; triangles: number; size: Vec3 };
+
+function anchorSource(mesh: THREE.Mesh) {
+    mesh.updateWorldMatrix(true, false);
+    return { sourceObject: mesh, sourceMatrixWorld: mesh.matrixWorld.clone(), sourceProxy: !!mesh.userData.selectionProxy };
+}
+
+/** Applies only the owner's latest matrix delta; local geometry is rebound separately after topology sync. */
+export function refreshAnchorTransform(anchor: GeometryAnchor) {
+    if (!anchor.sourceObject || !anchor.sourceMatrixWorld) return false;
+    anchor.sourceObject.updateWorldMatrix(true, false);
+    const current = anchor.sourceObject.matrixWorld;
+    if (current.equals(anchor.sourceMatrixWorld)) return false;
+    const delta = current.clone().multiply(anchor.sourceMatrixWorld.clone().invert());
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(delta);
+    const transform = (point: Vec3) => new THREE.Vector3(...point).applyMatrix4(delta).toArray() as Vec3;
+    anchor.point = transform(anchor.point);
+    anchor.vertices = anchor.vertices.map(transform);
+    if (anchor.feedbackVertices) anchor.feedbackVertices = anchor.feedbackVertices.map(transform);
+    anchor.normal = new THREE.Vector3(...anchor.normal).applyMatrix3(normalMatrix).normalize().toArray();
+    anchor.sourceMatrixWorld = current.clone();
+    return true;
+}
 
 /** Measures world-axis dimensions and only the triangles belonging to the current body/face selection. */
 export function measureSelectionStats(objects: THREE.Mesh[], selectedIds: string[], kind: SelectionKind, anchor: GeometryAnchor | null): SelectionStats | null {
@@ -86,6 +112,61 @@ export class GeometrySelector {
         cache.set(face.id, surface);
         this.surfaceCache.set(topology, cache);
         return surface;
+    }
+
+    private faceHit(mesh: THREE.Mesh, triangleIndex: number): THREE.Intersection {
+        const geometry = mesh.geometry, index = geometry.index;
+        const vertices = [0, 1, 2].map((offset) => index ? index.getX(triangleIndex * 3 + offset) : triangleIndex * 3 + offset);
+        const points = vertices.map((vertex) => new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, vertex));
+        const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+        return { object: mesh, faceIndex: triangleIndex, face: { a: vertices[0], b: vertices[1], c: vertices[2], normal }, point: points[0].clone().add(points[1]).add(points[2]).multiplyScalar(1 / 3) } as unknown as THREE.Intersection;
+    }
+
+    /** Rebinds a live anchor after SceneSynchronizer replaces the entity mesh and topology. */
+    rebindAnchor(anchor: GeometryAnchor, model: THREE.Group, document: ModelDocument): GeometryAnchor | null {
+        const entity = document.entities.find((item) => item.id === anchor.id);
+        if (!entity) return null;
+        const mesh = model.children.find((child): child is THREE.Mesh => child instanceof THREE.Mesh
+            && child.userData.entityId === anchor.id && !!child.userData.selectionProxy === !!anchor.sourceProxy);
+        if (!mesh) return null;
+        if (anchor.type !== 'face' || entity.kind === 'sketch') {
+            anchor.sourceObject = mesh;
+            refreshAnchorTransform(anchor);
+            return anchor;
+        }
+
+        const topology = this.topology(mesh);
+        let face: LogicalFace | undefined;
+        if (anchor.generatedTreatment && anchor.vertexTreatmentId) {
+            const treatment = entity.vertexTreatments?.find((item) => item.id === anchor.vertexTreatmentId);
+            const corner = treatment ? new THREE.Vector3(...treatment.vertex.point) : null;
+            if (treatment && corner) face = topology.faces.find((candidate) => !candidate.planar && candidate.triangleIds.every((id) =>
+                new THREE.Vector3(...topology.triangles[id].center).distanceTo(corner) <= treatment.size * 1.75));
+        } else if (anchor.generatedTreatment && anchor.edgeTreatmentId) {
+            const treatment = entity.edgeTreatments?.find((item) => item.id === anchor.edgeTreatmentId);
+            if (treatment) {
+                const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);
+                const direction = b.clone().sub(a), lengthSquared = direction.lengthSq();
+                face = topology.faces.find((candidate) => {
+                    if (candidate.planar !== (treatment.type === 'chamfer')) return false;
+                    if (treatment.edge.normals.some((normal) => Math.abs(new THREE.Vector3(...candidate.normal).dot(new THREE.Vector3(...normal).normalize())) > 0.995)) return false;
+                    const center = new THREE.Vector3(...candidate.point);
+                    const t = lengthSquared ? THREE.MathUtils.clamp(center.clone().sub(a).dot(direction) / lengthSquared, 0, 1) : 0;
+                    return center.distanceTo(a.clone().addScaledVector(direction, t)) <= treatment.size * 1.5 + 0.25;
+                });
+            }
+        } else {
+            const ids = new Set(anchor.faceIds || []);
+            const normal = new THREE.Vector3(...anchor.localNormal);
+            const compatible = (candidate: LogicalFace) => anchor.planar
+                ? new THREE.Vector3(...candidate.normal).dot(normal) > 0.999
+                : Math.abs(new THREE.Vector3(...candidate.normal).dot(normal)) > 0.999;
+            face = topology.faces.find((candidate) => ids.has(candidate.id) && compatible(candidate))
+                || topology.faces.find((candidate) => candidate.sourceIds.some((id) => ids.has(id)) && compatible(candidate))
+                || topology.faces.find(compatible);
+        }
+        if (!face) return null;
+        return this.createFaceAnchor(this.faceHit(mesh, face.triangleIds[0]), entity, (anchor.faceIds?.length || 0) > 1);
     }
 
     collectSurface(mesh: THREE.Mesh, hit: THREE.Intersection): Surface {
@@ -146,6 +227,7 @@ export class GeometrySelector {
                 vertices: generated.vertices, indices: generated.indices, vertexTreatmentId: treatment.id,
                 localVertex: JSON.parse(JSON.stringify(treatment.vertex)), revision: baseTopology.revision,
                 feedbackVertices: generated.vertices, feedbackIndices: generated.indices, finalTopology: true, generatedTreatment: true,
+                ...anchorSource(mesh),
             };
         }
 
@@ -162,6 +244,7 @@ export class GeometrySelector {
                 localNormal: [...anchorNormal], point: point.toArray(), type: 'edge', planar: false,
                 vertices: finalSurface.vertices, indices: finalSurface.indices, edgeTreatmentId: treatment.id,
                 localEdge: JSON.parse(JSON.stringify(treatment.edge)), revision: baseTopology.revision, ...feedback,
+                ...anchorSource(mesh),
             };
         }
 
@@ -179,6 +262,7 @@ export class GeometrySelector {
             localNormal: [...face.normal], point: new THREE.Vector3(...face.point).applyMatrix4(baseMesh.matrixWorld).toArray(), type: 'face', planar: true,
             vertices: baseSurface.vertices, indices: baseSurface.indices, faceIds: [face.id], revision: baseTopology.revision,
             feedbackVertices: finalSurface.vertices, feedbackIndices: finalSurface.indices, finalTopology: true,
+            ...anchorSource(baseMesh),
         };
     }
 
@@ -210,6 +294,7 @@ export class GeometrySelector {
             id: mesh.userData.entityId || entity?.id || '', key: `${mesh.userData.entityId}:face:${faces.map((face) => face.id).sort().join(',')}`,
             normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'face', planar: samePlane,
             vertices, indices, faceIds: faces.map((face) => face.id), revision: topology.revision,
+            ...anchorSource(mesh),
         };
     }
 
@@ -231,6 +316,7 @@ export class GeometrySelector {
             vertexId: vertex.id, localVertex: { point: [...vertex.point], normals }, revision: topology.revision,
             finalTopology: !!mesh.userData.edgeTreated,
             sourceVertexProxy: !!mesh.userData.vertexRoundingProxy,
+            ...anchorSource(mesh),
         };
     }
 
@@ -264,6 +350,7 @@ export class GeometrySelector {
             normal: normal.toArray(), localNormal: localNormal.toArray(), point: point.toArray(), type: 'edge', planar: false,
             vertices, indices: vertices.map((_, index) => index), edgeIds: selectedEdges.map((edge) => edge.id), localEdge, revision: topology.revision,
             finalTopology: !!mesh.userData.edgeTreated,
+            ...anchorSource(mesh),
         };
     }
 }

@@ -411,7 +411,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: 
     selectedProfileFace.value = profileFace?.map((point) => [...point]) || null;
     selectedFacePlanar.value = type === 'face' && !!viewport?.getGeometryAnchor()?.planar;
     selectEntity(id, additive);
-    selectionKind.value = additive ? 'mixed' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
+    selectionKind.value = additive ? 'mixed' : profileFace ? 'face' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
     activePanel.value = null;
     parameterCardOpen.value = true;
     if (additive) { setTool('select'); return; }
