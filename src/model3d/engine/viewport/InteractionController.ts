@@ -865,7 +865,7 @@ export class InteractionController {
             const point = this.sketchOperationPoint(event, { edgeStart });
             if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
             else if (point && this.shouldCloseSketchPath(event)) this.callbacks.onSketchClosePath();
-            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1, false); }
             this.clearSketchReferences();
             this.shapeDrag = null;
             return;
@@ -895,7 +895,7 @@ export class InteractionController {
                 return;
             }
             const point = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
-            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1, false); }
             this.clearSketchReferences();
             return;
         }

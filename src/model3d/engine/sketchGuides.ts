@@ -126,6 +126,7 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
         });
     });
     const eligible = candidates.filter((candidate) => candidate.distance <= threshold).sort((a, b) => a.priority - b.priority || a.distance - b.distance);
+    if (!eligible.length) return null;
     const exact = eligible.find((candidate) => candidate.priority === 0 && candidate.distance <= Math.min(1, threshold * 0.25));
     if (exact) return { point: [...exact.point], matches: [exact] };
     const bestPriority = (eligible.find((candidate) => candidate.priority > 0) || eligible[0]).priority;

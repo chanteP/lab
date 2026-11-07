@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
-import { AddOutline, BuildOutline, EyeOutline, LayersOutline, MoveOutline, PencilOutline, RemoveOutline, RepeatOutline, ResizeOutline, SearchOutline, TimeOutline } from '@vicons/ionicons5';
+import { AddOutline, EyeOutline, FolderOpenOutline, LayersOutline, MoveOutline, PencilOutline, RemoveOutline, RepeatOutline, ResizeOutline, TimeOutline } from '@vicons/ionicons5';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
@@ -22,6 +22,7 @@ const emit = defineEmits<{
     tool: [tool: string];
     isolate: [];
     history: [id: string];
+    import: [];
     boolean: [type: 'union' | 'subtract' | 'intersect'];
 }>();
 const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉伸', boolean: '布尔' };
@@ -31,11 +32,10 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
     <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel }" aria-label="建模工具">
         <div class="toolbar-section toolbar-top">
             <div class="tool-group primary-tools">
-                <ViewportToolItem :description-on-hover="false" label="搜索" :active="activePanel === 'search'" @click="emit('panel', 'search')"><NIcon><SearchOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="构造平面" :active="activePanel === 'construct'" @click="emit('panel', 'construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
-                <ViewportToolItem :description-on-hover="false" label="构造平面" :active="activePanel === 'construct'" @click="emit('panel', 'construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
-                <ViewportToolItem :description-on-hover="false" label="工具" :active="activePanel === 'tools'" @click="emit('panel', 'tools')"><NIcon><BuildOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="导入" @click="emit('import')"><NIcon><FolderOpenOutline /></NIcon></ViewportToolItem>
             </div>
             <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
                 <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>

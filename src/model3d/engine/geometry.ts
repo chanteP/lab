@@ -7,7 +7,7 @@ import { sketchImageTexture } from './sketchImageTexture';
 import { applyEdgeTreatments, rebindEdgeTreatments } from './modeling/EdgeTreatments';
 import { applyVertexTreatments, rebindVertexTreatments } from './modeling/VertexTreatments';
 import { SKETCH_COLORS } from '../config/colors';
-import type { GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
+import type { BooleanOperation, GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
 function qualityValues(quality: GeometryQuality) {
     if (quality === 'preview') return { radial: 48, sphere: 48 };

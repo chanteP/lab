@@ -4,7 +4,7 @@ export type SurfaceDomain =
     | { kind: 'plane'; normal: Vec3; offset: number; analytic: boolean }
     | { kind: 'cylinder'; axis: Vec3; origin: Vec3; radius: number; analytic: boolean }
     | { kind: 'sphere'; center: Vec3; radius: number; analytic: boolean }
-    | { kind: 'smooth'; analytic: false };
+    | { kind: 'smooth'; analytic: boolean };
 
 export interface TopologicalVertex {
     id: string;

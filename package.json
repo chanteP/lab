@@ -10,7 +10,8 @@
         "index": "node scripts/lab.mjs index",
         "sitemap": "node scripts/lab.mjs sitemap",
         "copy-public": "node scripts/lab.mjs copy-public",
-        "serve": "node scripts/lab.mjs serve"
+    "serve": "node scripts/lab.mjs serve",
+    "typecheck:model3d": "tsc -p tsconfig.model3d.json"
     },
     "repository": {
         "type": "git",
@@ -56,6 +57,7 @@
         "@types/antlr4": "4.11",
         "@types/css-tree": "^2.3.8",
         "@types/mime": "^4.0.0",
+        "@types/node": "^26.6.6",
         "@types/opentype.js": "^1.3.8",
         "@types/three": "^0.171.0",
         "@vitejs/plugin-vue": "^6.0.0",

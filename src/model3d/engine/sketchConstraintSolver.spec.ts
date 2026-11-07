@@ -32,7 +32,7 @@ test('orthogonal rectangle becomes a square through adjacent equal edges and sta
         2: { type: 'perpendicular', reference: { entityId: rectangle.id, index: 1 } },
         3: { type: 'perpendicular', reference: { entityId: rectangle.id, index: 2 } },
     };
-    rectangle.edgeConstraints[0] = [rectangle.edgeConstraints[0], { type: 'equal', reference: { entityId: rectangle.id, index: 1 } }];
+    rectangle.edgeConstraints[0] = [rectangle.edgeConstraints[0], { type: 'equal', reference: { entityId: rectangle.id, index: 1 } }] as any;
     document.entities.push(rectangle);
     stable(document, rectangle.id);
     const lengths = rectangle.points!.map((point, index) => {

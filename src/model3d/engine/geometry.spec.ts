@@ -178,7 +178,7 @@ test('a baked cylinder remains a valid subtraction tool on the next boolean oper
     const result = Object.assign(createEntity('box', 'result'), { kind: 'boolean' as const, operation: 'subtract' as const, operands: ['box', 'cylinder'] as [string, string], position: [0, 0, 0] });
     document.entities.push(box, source, result);
     const mesh = buildEntityMesh(result, document);
-    mesh.material.side = THREE.DoubleSide;
+    (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => { material.side = THREE.DoubleSide; });
     const raycaster = new THREE.Raycaster(new THREE.Vector3(0, 21, 0), new THREE.Vector3(0, -1, 0));
     const hit = raycaster.intersectObject(mesh)[0];
     assert.equal(hit, undefined, 'the center ray must pass through the entire cylinder hole');
@@ -269,7 +269,7 @@ test('lowering one combined top face does not move the other top face', () => {
     const combined = mergeGeometries([boxGeometry, cylinderGeometry], false)!;
     result.meshGeometry = { positions: Array.from(combined.attributes.position.array), indices: combined.index ? Array.from(combined.index.array) : [] };
     const mesh = buildEntityMesh(result, document);
-    mesh.material.side = THREE.DoubleSide;
+    (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => { material.side = THREE.DoubleSide; });
     const circleTop = (target: THREE.Mesh) => {
         const positions = target.geometry.attributes.position;
         const index = target.geometry.index;
@@ -295,7 +295,7 @@ test('lowering one combined top face does not move the other top face', () => {
     assert(anchor.vertices.every((point) => Math.abs(point[1] - 30) < 0.001));
     result.faceOffset = { normal: anchor.localNormal, distance: -35, vertices: anchor.vertices, indices: anchor.indices };
     const edited = buildEntityMesh(result, document);
-    edited.material.side = THREE.DoubleSide;
+    (Array.isArray(edited.material) ? edited.material : [edited.material]).forEach((material) => { material.side = THREE.DoubleSide; });
     assert.deepEqual(circleTop(edited), beforeCircle);
     const positionsAfter = edited.geometry.attributes.position;
     assert(Array.from({ length: positionsAfter.count }, (_, index) => positionsAfter.getY(index)).some((value) => Math.abs(value + 5) < 0.001));

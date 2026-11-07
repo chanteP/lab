@@ -6,7 +6,9 @@ const ARC_CONTROL = 4 / Math.SQRT2 - 2.5;
 // Symmetry-profile regression: 0.86 still creates 6 concave intervals; 0.87 is the first ratio with none.
 export const VERTEX_ROUNDING_CENTER_RATIO = 0.87;
 
-function signedVolume(position: THREE.BufferAttribute, indices: number[]) {
+type PositionAttribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+
+function signedVolume(position: PositionAttribute, indices: number[]) {
     const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
     let volume = 0;
     for (let offset = 0; offset < indices.length; offset += 3) {
@@ -18,7 +20,7 @@ function signedVolume(position: THREE.BufferAttribute, indices: number[]) {
     return volume;
 }
 
-function orientClosedMesh(position: THREE.BufferAttribute, indices: number[]) {
+function orientClosedMesh(position: PositionAttribute, indices: number[]) {
     type EdgeUse = { triangle: number; from: number; to: number };
     const edges = new Map<string, EdgeUse[]>();
     const sharedEdges = new Map<string, { first: EdgeUse; second: EdgeUse }>();

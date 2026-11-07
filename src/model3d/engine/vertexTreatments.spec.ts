@@ -134,7 +134,7 @@ test('a corner fillet creates a curved surface and follows a later face drag', (
     assert.ok(topology.faces.some((face) => !face.planar));
     const expectedBase = new THREE.BoxGeometry(50, 40, 40);
     expectedBase.translate(5, 0, 0);
-    const expected = applyVertexTreatments(expectedBase, [{ ...treatment, type: 'fillet', vertex: { ...treatment.vertex, point: [30, 20, 20] } }], entity, document);
+    const expected = applyVertexTreatments(expectedBase, [{ ...treatment, type: 'fillet', vertex: { ...treatment.vertex, point: [30, 20, 20] } }]);
     assert.ok(Math.abs(volume(result.geometry) - volume(expected)) < Math.max(1e-5, volume(expected) * 0.001));
     result.geometry.dispose(); expectedBase.dispose(); expected.dispose();
 });

@@ -40,7 +40,7 @@ export function entityProfileParts(entity: ModelEntity): SketchProfilePart[] {
     );
     const editable = !entity.curves && !entity.analyticCurves && entity.points?.length;
     const editor = editable ? {
-        type: entity.profileType || 'polygon', source: entity.points!.map((point) => [...point]),
+        type: entity.profileType || 'polygon', source: entity.points!.map((point) => [...point] as Point2),
         sides: entity.sides, sectorAngle: entity.sectorAngle, startAngle: entity.profileStartAngle,
     } : undefined;
     return points.length >= 2 ? [{ points: points.map((point) => [...point]), closed: entityProfileClosed(entity), editor }] : [];

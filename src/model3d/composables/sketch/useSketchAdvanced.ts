@@ -436,7 +436,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         centerSnapMatches.value = [];
         const editor = current.before.editor;
         if (!editor) return;
-        const nextEditor = { ...editor, source: editor.source.map((value) => [...value]) };
+        const nextEditor = { ...editor, source: editor.source.map((value) => [...value] as Point2) };
         if (editor.type === 'rectangle') {
             const opposite = editor.source[(current.pointIndex + 2) % 4];
             nextEditor.source = [opposite, [point[0], opposite[1]], point, [opposite[0], point[1]]];
