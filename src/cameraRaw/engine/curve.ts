@@ -41,3 +41,7 @@ export function applyCurves(rgb: number[], curves: Curves): number[] {
     const composite = rgb.map((value) => evaluateCurve(curves.rgb, value));
     return composite.map((value, index) => evaluateCurve(curves[(['r', 'g', 'b'] as const)[index]], value));
 }
+
+export function overlayCurveChannels(channel: 'rgb' | 'r' | 'g' | 'b'): ('r' | 'g' | 'b')[] {
+    return channel === 'rgb' ? ['r', 'g', 'b'] : [];
+}

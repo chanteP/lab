@@ -90,3 +90,35 @@ test('optics keeps image center fixed and only changes coordinates when requeste
     assert.deepEqual(opticsCoordinate(.2, .7, 0), [.2, .7]);
     assert.notDeepEqual(opticsCoordinate(.2, .7, 80), [.2, .7]);
 });
+
+test('shadow and highlight controls are regional and keep midtones comparatively stable', () => {
+    const a = createDefaultAdjustments(); a.shadows = 100;
+    const liftedBlack = applyTone([0, 0, 0], a), liftedDark = applyTone([.1, .1, .1], a), liftedWhite = applyTone([1, 1, 1], a);
+    assert.ok(liftedBlack[0] > 0, 'positive shadows should lift true black');
+    assert.ok(liftedDark[0] > .1, 'positive shadows should lift dark tones');
+    assert.ok(Math.abs(liftedWhite[0] - 1) < 1e-8, 'shadows should not change white');
+    a.shadows = 0; a.highlights = -100;
+    const loweredWhite = applyTone([1, 1, 1], a), loweredDark = applyTone([.1, .1, .1], a);
+    assert.ok(loweredWhite[0] < 1, 'negative highlights should lower white');
+    assert.ok(Math.abs(loweredDark[0] - .1) < .02, 'highlights should have little effect on dark tones');
+});
+
+test('whites and blacks are independent level controls and contrast pivots at display middle gray', () => {
+    const a = createDefaultAdjustments(); a.whites = 100;
+    assert.ok(applyTone([1, 1, 1], a)[0] === 1);
+    assert.ok(Math.abs(applyTone([0, 0, 0], a)[0]) < 1e-8);
+    a.whites = 0; a.blacks = 100;
+    assert.ok(applyTone([0, 0, 0], a)[0] > 0);
+    assert.ok(Math.abs(applyTone([1, 1, 1], a)[0] - 1) < 1e-8);
+    a.blacks = 0; a.contrast = 100;
+    const displayMiddle = ((.5 + .055) / 1.055) ** 2.4;
+    assert.ok(Math.abs(applyTone([displayMiddle, displayMiddle, displayMiddle], a)[0] - displayMiddle) < 1e-8);
+    assert.ok(applyTone([.8, .8, .8], a)[0] > .8);
+    assert.ok(applyTone([.2, .2, .2], a)[0] < .2);
+});
+
+test('saturation and vibrance never invert channels', () => {
+    const a = createDefaultAdjustments(); a.saturation = -100; a.vibrance = -100;
+    const result = applyTone([.8, .3, .1], a);
+    assert.ok(result.every((value) => value >= 0 && value <= 1));
+});

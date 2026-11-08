@@ -16,3 +16,11 @@ test('pointer-centered zoom keeps the selected image position stationary', () =>
 test('split comparison stays reachable at both edges', () => {
     assert.equal(clampSplit(-2), .05); assert.equal(clampSplit(2), .95); assert.equal(clampSplit(.4), .4);
 });
+
+test('RGB curve view exposes read-only color reference channels only in composite mode', async () => {
+    const { overlayCurveChannels } = await import('./curve.ts');
+    assert.deepEqual(overlayCurveChannels('rgb'), ['r', 'g', 'b']);
+    assert.deepEqual(overlayCurveChannels('r'), []);
+    assert.deepEqual(overlayCurveChannels('g'), []);
+    assert.deepEqual(overlayCurveChannels('b'), []);
+});
