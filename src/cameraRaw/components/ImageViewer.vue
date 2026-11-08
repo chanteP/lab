@@ -6,6 +6,7 @@ import type { ImageMask, MaskShape, MaskTool } from '../engine/masks/types';
 import { createShape } from '../engine/masks/mask';
 import { RawRenderer } from '../engine/renderer';
 import { clampSplit, clampZoom, zoomAtPoint } from '../engine/view';
+import { createLatestFrameScheduler } from '../engine/frame';
 
 const props = withDefaults(defineProps<{
     asset?: ImageAsset;
@@ -31,17 +32,15 @@ const pan = ref({ x: 0, y: 0 }), spacePressed = ref(false), panning = ref(false)
 const draft = ref<MaskShape>(), editing = ref<{ shape: MaskShape; handle: string }>();
 const stageSize = ref({ width: '0px', height: '0px' });
 const stageStyle = computed(() => ({ transform: `translate(${pan.value.x}px, ${pan.value.y}px)`, ...stageSize.value }));
-let renderer: RawRenderer | undefined, source: ImageBitmap | undefined, frame = 0, resizeObserver: ResizeObserver | undefined, dragging = false, renderVersion = 0;
+let renderer: RawRenderer | undefined, source: ImageBitmap | undefined, resizeObserver: ResizeObserver | undefined, dragging = false;
 let pointerStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 };
 
-function schedule() {
-    const version = ++renderVersion;
-    if (!frame) frame = requestAnimationFrame(() => { frame = 0; void render(version); });
-}
+const scheduler = createLatestFrameScheduler((version) => { void render(version); });
+const schedule = scheduler.schedule;
 async function render(version: number) {
     await nextTick();
     const asset = props.asset, box = container.value, target = image.value;
-    if (version !== renderVersion || !asset?.bitmap || !box || !target) return;
+    if (!scheduler.isCurrent(version) || !asset?.bitmap || !box || !target) return;
     try {
         renderer ??= new RawRenderer();
         if (source !== asset.bitmap) { renderer.setSource(asset.bitmap); source = asset.bitmap; }
@@ -59,7 +58,8 @@ async function render(version: number) {
         presentCanvas.width = renderer.canvas.width; presentCanvas.height = renderer.canvas.height;
         presentCanvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(pixels), presentCanvas.width, presentCanvas.height), 0, 0);
         previewUrl.value = presentCanvas.toDataURL('image/png');
-        if (version === renderVersion && props.asset?.id === asset.id) emit('histogram', pixels);
+        // The scheduler always renders the latest asset and adjustment state.
+        if (scheduler.isCurrent(version) && props.asset?.id === asset.id) emit('histogram', pixels);
     } catch (error) { console.error(error); }
 }
 
@@ -74,7 +74,7 @@ function maskStart(event: PointerEvent) {
     if (shape.type === 'radial') { shape.radiusX = 0; shape.radiusY = 0; }
     if (shape.type === 'linear') shape.end = { ...point };
     draft.value = shape;
-    container.value?.setPointerCapture(event.pointerId);
+    stage.value?.setPointerCapture(event.pointerId);
 }
 function maskMove(event: PointerEvent) {
     if (editing.value) {
@@ -101,7 +101,7 @@ function maskEnd() {
 function editShape(shape: MaskShape, handle: string, event: PointerEvent) {
     event.preventDefault(); event.stopPropagation();
     editing.value = { shape: JSON.parse(JSON.stringify(shape)), handle };
-    container.value?.setPointerCapture(event.pointerId);
+    stage.value?.setPointerCapture(event.pointerId);
 }
 
 function maskClick(event: MouseEvent) {
@@ -146,7 +146,7 @@ function panMove(event: PointerEvent) { if (panning.value) pan.value = { x: panS
 function panEnd() { panning.value = false; }
 function resetView() { pan.value = { x: 0, y: 0 }; panning.value = false; }
 
-watch(() => props.asset?.id, () => {
+watch(() => props.asset?.id, (id) => {
     resetView(); draft.value = undefined;
     // A canvas is a GPU resource, not just a view of the current bitmap. Drop
     // the old context on asset changes so its first frame cannot retain an empty texture.
@@ -165,7 +165,7 @@ onMounted(() => {
     window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', resetView);
 });
 onBeforeUnmount(() => {
-    renderVersion++; resizeObserver?.disconnect(); if (frame) cancelAnimationFrame(frame); renderer?.dispose();
+    scheduler.cancel(); resizeObserver?.disconnect(); renderer?.dispose();
     window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', resetView);
 });
 </script>
@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
     <div ref="container" class="image-viewer" :class="{ comparing: compare === 2, 'can-pan': spacePressed, panning, 'mask-drawing': maskTool }" @wheel.prevent="wheel" @pointerdown="panStartEvent" @pointermove="panMove" @pointerup="panEnd" @pointercancel="panEnd">
         <template v-if="asset?.bitmap">
             <div ref="stage" class="canvas-stage" :style="stageStyle" @pointerdown="maskStart" @pointermove="maskMove" @pointerup="maskEnd" @pointercancel="maskEnd" @click="maskClick">
-                <img ref="image" class="preview-image" :src="previewUrl" tabindex="0" aria-label="当前图片调整预览，选择蒙版工具后可按回车创建" @keyup="maskKeyboard" />
+                <img ref="image" class="preview-image" draggable="false" :src="previewUrl" tabindex="0" aria-label="当前图片调整预览，选择蒙版工具后可按回车创建" @keyup="maskKeyboard" />
                 <svg v-if="activeMask || draft" class="mask-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                     <template v-for="shape in activeMask?.shapes ?? []" :key="shape.id">
                         <g v-if="shape.type === 'linear'">

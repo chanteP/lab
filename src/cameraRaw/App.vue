@@ -132,6 +132,20 @@ function duplicateMask(id: string) {
     copy.id = crypto.randomUUID(); copy.name = `${mask.name} 副本`; copy.shapes.forEach((shape) => { shape.id = crypto.randomUUID(); });
     activeAsset.value.masks!.push(copy); activeAsset.value.activeMaskId = copy.id;
 }
+async function resolveActiveDcpProfile() {
+    const asset = activeAsset.value;
+    if (!asset?.dcp?.enabled) return undefined;
+    if (activeDcpProfile.value) return activeDcpProfile.value;
+    const entry = dcpCatalog.value.find((item) => item.id === asset.dcp?.profileId);
+    if (!entry) throw new Error('找不到当前 DCP 配置');
+    dcpLoading.value = true;
+    try {
+        const profile = await loadDcp(entry);
+        if (activeAsset.value?.id === asset.id) activeDcpProfile.value = profile;
+        return profile;
+    } finally { dcpLoading.value = false; }
+}
+
 async function performSave(format: 'jpeg' | 'dng', abandonDcp = false) {
     if (!activeAsset.value || exporting.value) return;
     exporting.value = true;
@@ -148,6 +162,10 @@ async function performSave(format: 'jpeg' | 'dng', abandonDcp = false) {
 async function save(format: 'jpeg' | 'dng') {
     if (!activeAsset.value || exporting.value) return;
     if (dcpLoading.value) { notice.value = '请等待 DCP 加载完成'; return; }
+    if (activeAsset.value.dcp?.enabled && !activeDcpProfile.value) {
+        try { await resolveActiveDcpProfile(); }
+        catch (error) { notice.value = `DCP 加载失败：${error instanceof Error ? error.message : String(error)}`; }
+    }
     if (format === 'dng' && activeAsset.value.dcp?.enabled && !activeDcpProfile.value) { dngConfirmOpen.value = true; return; }
     await performSave(format);
 }
