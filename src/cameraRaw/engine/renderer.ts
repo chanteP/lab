@@ -1,7 +1,7 @@
 import type { Adjustments, MixerColor } from '../types';
 import { MIXER_COLORS } from '../types';
 import type { DcpProfile } from './dcp/types';
-import { dcpMatrix, dcpTableBytes, dcpToneLut } from './dcp/render';
+import { dcpTableBytes, dcpToneLut } from './dcp/render';
 import { calibrationMatrix, gradeFor } from './color';
 import { createCurveLut } from './curve';
 import { combineMaskAdjustments } from './masks/mask';
@@ -106,7 +106,7 @@ export class RawRenderer {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, dcpToneLut(profile));
         const look = this.uploadTable(3, this.lookTexture, profile, 'look'), delta = this.uploadTable(4, this.deltaTexture, profile, 'delta');
         gl.useProgram(this.program);
-        gl.uniformMatrix3fv(this.u('uDcpMatrix'), false, dcpMatrix(profile)); gl.uniform1f(this.u('uDcpBaseline'), profile?.baselineExposure ?? 0);
+        gl.uniform1f(this.u('uDcpBaseline'), profile?.baselineExposure ?? 0);
         gl.uniform3fv(this.u('uDcpLookDims'), look.dimensions); gl.uniform3fv(this.u('uDcpDeltaDims'), delta.dimensions);
         gl.uniform1i(this.u('uDcpHasLook'), Number(Boolean(look.table))); gl.uniform1i(this.u('uDcpHasDelta'), Number(Boolean(delta.table)));
         gl.uniform1i(this.u('uDcpLookSrgb'), Number(Boolean(look.table?.srgbEncoded))); gl.uniform1i(this.u('uDcpDeltaSrgb'), Number(Boolean(delta.table?.srgbEncoded)));

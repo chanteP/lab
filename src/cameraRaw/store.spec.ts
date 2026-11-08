@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activeId, assets, canRedo, canUndo, redo, selectedIds, syncToSelected, toggleSelected, undo } from './store.ts';
+import { activeAsset, activeId, assets, canRedo, canUndo, importFiles, redo, selectedIds, syncToSelected, toggleSelected, undo } from './store.ts';
 import { createDefaultAdjustments } from './engine/adjustments.ts';
 import type { ImageAsset } from './types.ts';
 
@@ -24,4 +24,23 @@ test('undo and redo restore independent adjustment history', async () => {
     assert.equal(canUndo.value, true); undo(); assert.equal(asset.adjustments.exposure, 0);
     assert.equal(canRedo.value, true); redo(); assert.equal(asset.adjustments.exposure, 2);
     assets.value = []; activeId.value = ''; selectedIds.value = new Set();
+});
+
+test('sequential imports always select and decode the newly added image', async () => {
+    const previousBitmap = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = async () => ({ width: 2, height: 1 }) as ImageBitmap;
+    try {
+        assets.value = []; activeId.value = ''; selectedIds.value = new Set();
+        const first = new File([new Uint8Array([1])], 'first.png', { type: 'image/png' });
+        const second = new File([new Uint8Array([2])], 'second.png', { type: 'image/png' });
+        await importFiles([first]);
+        const firstId = activeId.value;
+        await importFiles([second]);
+        assert.notEqual(activeId.value, firstId);
+        assert.equal(activeAsset.value?.name, 'second.png');
+        assert.ok(activeAsset.value?.bitmap);
+    } finally {
+        globalThis.createImageBitmap = previousBitmap;
+        assets.value = []; activeId.value = ''; selectedIds.value = new Set();
+    }
 });

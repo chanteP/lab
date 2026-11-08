@@ -26,8 +26,8 @@ test('writes a readable 16-bit RGB DNG with EXIF and XMP', async () => {
 
 test('embeds the selected DCP as an ExtraCameraProfiles IFD', async () => {
     const pixels = new Uint8ClampedArray(8 * 8 * 4); pixels.fill(128);
-    const profile = parseDcp(readFileSync('src/cameraRaw/profiles/Sony ILCE-7CM2 Camera FL2.dcp'));
-    const data = encodeDng({ data: pixels, width: 8, height: 8 } as ImageData, { name: 'sample.arw', metadata: { Make: 'SONY', Model: 'Sony ILCE-7CM2' } }, '<xmp>profile</xmp>', profile);
+    const profile = parseDcp(readFileSync('src/cameraRaw/profiles/SONY ILCE-7RM3.dcp'));
+    const data = encodeDng({ data: pixels, width: 8, height: 8 } as ImageData, { name: 'sample.arw', metadata: { Make: 'SONY', Model: 'Sony ILCE-7RM3A' } }, '<xmp>profile</xmp>', profile);
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength), count = view.getUint16(8, true);
     let profileOffset = 0;
     for (let i = 0; i < count; i++) {
@@ -44,7 +44,7 @@ test('embeds the selected DCP as an ExtraCameraProfiles IFD', async () => {
             name = new TextDecoder().decode(data.slice(offset, offset + length)).replace(/\0.*$/s, '');
         }
     }
-    assert.equal(name, 'Camera FL2');
+    assert.equal(name, 'SONY ILCE-7RM3');
     const metadata = await exifr.parse(data, { tiff: true });
-    assert.equal(metadata.Model, 'Sony ILCE-7CM2');
+    assert.equal(metadata.Model, 'Sony ILCE-7RM3A');
 });

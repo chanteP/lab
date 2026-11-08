@@ -28,7 +28,6 @@ uniform vec3 uGrain;
 uniform int uCompare;
 uniform float uSplit;
 uniform int uDcpEnabled;
-uniform mat3 uDcpMatrix;
 uniform float uDcpBaseline;
 uniform sampler2D uDcpTone;
 uniform sampler3D uDcpLook;
@@ -125,7 +124,7 @@ vec3 dcpTable(sampler3D table, vec3 dims, int encoded, vec3 c) {
 }
 vec3 applyDcp(vec3 c) {
     if (uDcpEnabled == 0) return c;
-    c = max(uDcpMatrix * c, vec3(0.)) * exp2(uDcpBaseline);
+    c = max(c, vec3(0.)) * exp2(uDcpBaseline);
     c = vec3(texture(uDcpTone, vec2(clamp(c.r, 0., 1.), .5)).r, texture(uDcpTone, vec2(clamp(c.g, 0., 1.), .5)).r, texture(uDcpTone, vec2(clamp(c.b, 0., 1.), .5)).r);
     if (uDcpHasDelta == 1) c = dcpTable(uDcpDelta, uDcpDeltaDims, uDcpDeltaSrgb, c);
     if (uDcpHasLook == 1) c = dcpTable(uDcpLook, uDcpLookDims, uDcpLookSrgb, c);

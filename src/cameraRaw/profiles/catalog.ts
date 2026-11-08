@@ -17,10 +17,8 @@ import profile15 from './SONY ILCE-9.dcp?url';
 import profile16 from './SONY SLT-A99V.dcp?url';
 import profile17 from './Sony DSLR-A700.dcp?url';
 import profile18 from './Sony DSLR-A900.dcp?url';
-import profile19 from './Sony ILCE-7CM2 Camera FL2.dcp?url';
-import profile20 from './Sony ILCE-7CM2 Camera FL3.dcp?url';
-import profile21 from './Sony NEX-5N.dcp?url';
-import profile22 from './Sony SLT-A55V.dcp?url';
+import profile19 from './Sony NEX-5N.dcp?url';
+import profile20 from './Sony SLT-A55V.dcp?url';
 
 import type { DcpCatalogEntry } from '../engine/dcp/types';
 
@@ -44,8 +42,6 @@ export const builtinDcpCatalog: DcpCatalogEntry[] = [
     {"id": "builtin-16", "name": "SONY SLT-A99V", "cameraModel": "Sony SLT-A99V", "fileName": "SONY SLT-A99V.dcp", "url": profile16},
     {"id": "builtin-17", "name": "Sony DSLR-A700", "cameraModel": "Sony DSLR-A700", "fileName": "Sony DSLR-A700.dcp", "url": profile17},
     {"id": "builtin-18", "name": "Sony DSLR-A900", "cameraModel": "Sony DSLR-A900", "fileName": "Sony DSLR-A900.dcp", "url": profile18},
-    {"id": "builtin-19", "name": "Camera FL2", "cameraModel": "Sony ILCE-7CM2", "fileName": "Sony ILCE-7CM2 Camera FL2.dcp", "url": profile19},
-    {"id": "builtin-20", "name": "Camera FL3", "cameraModel": "Sony ILCE-7CM2", "fileName": "Sony ILCE-7CM2 Camera FL3.dcp", "url": profile20},
-    {"id": "builtin-21", "name": "Sony NEX-5N", "cameraModel": "Sony NEX-5N", "fileName": "Sony NEX-5N.dcp", "url": profile21},
-    {"id": "builtin-22", "name": "Sony SLT-A55V Adobe", "cameraModel": "Sony SLT-A55V", "fileName": "Sony SLT-A55V.dcp", "url": profile22},
+    {"id": "builtin-19", "name": "Sony NEX-5N", "cameraModel": "Sony NEX-5N", "fileName": "Sony NEX-5N.dcp", "url": profile19},
+    {"id": "builtin-20", "name": "Sony SLT-A55V Adobe", "cameraModel": "Sony SLT-A55V", "fileName": "Sony SLT-A55V.dcp", "url": profile20},
 ];

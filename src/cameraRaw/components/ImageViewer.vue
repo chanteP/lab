@@ -24,10 +24,13 @@ const emit = defineEmits<{
     shape: [shape: MaskShape];
     'update-shape': [shape: MaskShape];
 }>();
-const container = ref<HTMLDivElement>(), canvas = ref<HTMLCanvasElement>(), stage = ref<HTMLDivElement>();
+const container = ref<HTMLDivElement>(), image = ref<HTMLImageElement>(), stage = ref<HTMLDivElement>();
+const previewUrl = ref('');
+const presentCanvas = document.createElement('canvas');
 const pan = ref({ x: 0, y: 0 }), spacePressed = ref(false), panning = ref(false);
 const draft = ref<MaskShape>(), editing = ref<{ shape: MaskShape; handle: string }>();
-const stageStyle = computed(() => ({ transform: `translate(${pan.value.x}px, ${pan.value.y}px)` }));
+const stageSize = ref({ width: '0px', height: '0px' });
+const stageStyle = computed(() => ({ transform: `translate(${pan.value.x}px, ${pan.value.y}px)`, ...stageSize.value }));
 let renderer: RawRenderer | undefined, source: ImageBitmap | undefined, frame = 0, resizeObserver: ResizeObserver | undefined, dragging = false, renderVersion = 0;
 let pointerStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 };
 
@@ -37,22 +40,26 @@ function schedule() {
 }
 async function render(version: number) {
     await nextTick();
-    const asset = props.asset, box = container.value, target = canvas.value;
+    const asset = props.asset, box = container.value, target = image.value;
     if (version !== renderVersion || !asset?.bitmap || !box || !target) return;
     try {
-        renderer ??= new RawRenderer(target);
+        renderer ??= new RawRenderer();
         if (source !== asset.bitmap) { renderer.setSource(asset.bitmap); source = asset.bitmap; }
         const availableWidth = Math.max(100, box.clientWidth - 42), availableHeight = Math.max(100, box.clientHeight - 42);
         const ratio = asset.bitmap.width / asset.bitmap.height;
         const width = Math.min(availableWidth, availableHeight * ratio) * props.zoom, height = width / ratio;
         target.style.width = `${width}px`; target.style.height = `${height}px`;
-        if (stage.value) { stage.value.style.width = `${width}px`; stage.value.style.height = `${height}px`; }
+        stageSize.value = { width: `${width}px`, height: `${height}px` };
         renderer.render(asset.adjustments, {
             width: Math.min(asset.bitmap.width, Math.round(width * Math.min(devicePixelRatio, 2))),
             compare: props.compare, split: props.split, profile: props.dcpProfile,
             masks: asset.masks, activeMaskId: props.activeMask?.id,
         });
-        if (version === renderVersion && props.asset?.id === asset.id) emit('histogram', renderer.readPixels());
+        const pixels = renderer.readPixels();
+        presentCanvas.width = renderer.canvas.width; presentCanvas.height = renderer.canvas.height;
+        presentCanvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(pixels), presentCanvas.width, presentCanvas.height), 0, 0);
+        previewUrl.value = presentCanvas.toDataURL('image/png');
+        if (version === renderVersion && props.asset?.id === asset.id) emit('histogram', pixels);
     } catch (error) { console.error(error); }
 }
 
@@ -139,7 +146,13 @@ function panMove(event: PointerEvent) { if (panning.value) pan.value = { x: panS
 function panEnd() { panning.value = false; }
 function resetView() { pan.value = { x: 0, y: 0 }; panning.value = false; }
 
-watch(() => props.asset?.id, () => { resetView(); draft.value = undefined; schedule(); });
+watch(() => props.asset?.id, () => {
+    resetView(); draft.value = undefined;
+    // A canvas is a GPU resource, not just a view of the current bitmap. Drop
+    // the old context on asset changes so its first frame cannot retain an empty texture.
+    renderer?.dispose(); renderer = undefined; source = undefined;
+    schedule();
+});
 watch(() => props.asset?.bitmap, schedule);
 watch(() => props.asset?.adjustments, schedule, { deep: true });
 watch(() => props.asset?.masks, schedule, { deep: true });
@@ -161,7 +174,7 @@ onBeforeUnmount(() => {
     <div ref="container" class="image-viewer" :class="{ comparing: compare === 2, 'can-pan': spacePressed, panning, 'mask-drawing': maskTool }" @wheel.prevent="wheel" @pointerdown="panStartEvent" @pointermove="panMove" @pointerup="panEnd" @pointercancel="panEnd">
         <template v-if="asset?.bitmap">
             <div ref="stage" class="canvas-stage" :style="stageStyle" @pointerdown="maskStart" @pointermove="maskMove" @pointerup="maskEnd" @pointercancel="maskEnd" @click="maskClick">
-                <canvas ref="canvas" tabindex="0" aria-label="当前图片调整预览，选择蒙版工具后可按回车创建" @keyup="maskKeyboard" />
+                <img ref="image" class="preview-image" :src="previewUrl" tabindex="0" aria-label="当前图片调整预览，选择蒙版工具后可按回车创建" @keyup="maskKeyboard" />
                 <svg v-if="activeMask || draft" class="mask-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                     <template v-for="shape in activeMask?.shapes ?? []" :key="shape.id">
                         <g v-if="shape.type === 'linear'">
@@ -195,7 +208,7 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .image-viewer { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; background-color: #1d1d1d; background-image: linear-gradient(45deg, #222 25%, transparent 25%), linear-gradient(-45deg, #222 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #222 75%), linear-gradient(-45deg, transparent 75%, #222 75%); background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0; &.can-pan { cursor: grab; } &.panning { cursor: grabbing; } &.mask-drawing .canvas-stage { cursor: crosshair; } }
-.canvas-stage { position: relative; flex: none; box-shadow: 0 2px 16px #0008; canvas { display: block; } }
+.canvas-stage { position: relative; flex: none; box-shadow: 0 2px 16px #0008; .preview-image { display: block; width: 100%; height: 100%; } }
 .mask-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .mask-guide { fill: #ff554422; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; &.draft { stroke: #ffb0a0; } }
 .mask-handle { fill: #fff; stroke: #333; stroke-width: 1; pointer-events: all; cursor: move; vector-effect: non-scaling-stroke; }

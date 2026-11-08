@@ -2,11 +2,11 @@
 
 ## DCP
 
-- `profiles/` 内置 23 个索尼 DCP。21 个来自 RawTherapee，FL2/FL3 来自 QAQLeonard/a7c2-tools；来源和许可见 `THIRD_PARTY_NOTICES.txt`。
+- `profiles/` 内置 21 个索尼 DCP，全部直接来自 RawTherapee；来源和许可见 `THIRD_PARTY_NOTICES.txt`。
 - 下拉分为“无 / 当前相机 / 所有 DCP”。当前相机按规范化机型匹配，Sony 带 A 后缀的改款机身回退到基础机型；其他组不会重复展示当前相机组中的项目。
 - 用户导入的 DCP 保存到 IndexedDB `lab:cameraRaw` 的 `profiles` store。预设也迁移到同一数据库，旧 `camera-raw-lab` 仅在空库时读取并复制，不删除旧数据。
 - `engine/dcp/parser.ts` 校验 TIFF/DCP 目录、偏移、表维度和数据长度，解析双矩阵、双光源、ToneCurve、HueSatMap、LookTable 与 BaselineExposureOffset。
-- 当前渲染以 LibRaw 的显示空间输出为输入，因此属于 DCP 视觉近似，不是 ACR 的逐像素复刻。GPU 使用矩阵、1D tone LUT 和 3D HSV 色彩表，色相循环，饱和度/明度钳制。
+- 当前渲染以 LibRaw 已转换的显示空间输出为输入，因此不再重复应用相机空间矩阵。GPU 使用 1D tone LUT 和 3D HSV 色彩表，色相循环，饱和度/明度钳制；这不是 ACR 的逐像素复刻。
 - DNG 导出通过 tag 50933 (`ExtraCameraProfiles`, IFD type 13) 保留原始 profile entries。普通 Linear DNG 使用 LibRaw 回读测试；带 ExtraCameraProfiles 的文件验证 IFD、profile name 和 EXIF。当前 LibRaw 不支持回读带此扩展的 Linear DNG。
 - 不写回 ARW 等原始文件。DCP 旁的黄色警告说明这一限制；DCP 不可用时，DNG 导出需要选择“放弃 DCP 并导出”或取消。
 

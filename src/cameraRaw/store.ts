@@ -90,7 +90,9 @@ export async function importFiles(files: File[]) {
                 try {
                     const asset = await readImageAsset(file); assets.value.push(asset);
                     setLoading({ progress: (index + 1) / supported.length * 100 });
-                    if (!activeId.value) await selectAsset(asset.id);
+                    // Each import selects and decodes the newly added image. Keeping
+                    // the previous id leaves later RAW imports visible only as thumbnails.
+                    await selectAsset(asset.id);
                 } catch (error) { notice.value = `${file.name}: ${error instanceof Error ? error.message : String(error)}`; }
             }
         } finally { busy.value = false; }

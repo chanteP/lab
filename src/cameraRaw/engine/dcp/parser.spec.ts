@@ -8,7 +8,7 @@ const directory = join(process.cwd(), 'src/cameraRaw/profiles');
 
 test('parses every bundled Sony profile with bounded tables', () => {
     const files = readdirSync(directory).filter((name) => name.endsWith('.dcp'));
-    assert.equal(files.length, 23);
+    assert.equal(files.length, 21);
     for (const fileName of files) {
         const profile = parseDcp(readFileSync(join(directory, fileName)), fileName);
         assert.ok(profile.cameraModel, fileName);
@@ -19,18 +19,13 @@ test('parses every bundled Sony profile with bounded tables', () => {
     }
 });
 
-test('FL2 and FL3 expose their look tables and Sony revision matching', () => {
-    const profile = parseDcp(readFileSync(join(directory, 'Sony ILCE-7CM2 Camera FL2.dcp')));
-    assert.equal(profile.name, 'Camera FL2');
-    assert.deepEqual(profile.lookTable?.dimensions, [90, 16, 16]);
-    assert.equal(profile.lookTable?.srgbEncoded, true);
-    assert.equal(profile.toneCurve?.length, 256);
+test('Sony revised bodies match only the base camera profile', () => {
     assert.ok(cameraModelMatches('ILCE-7RM3A', 'Sony ILCE-7RM3'));
     assert.ok(!cameraModelMatches('ILCE-7RM3A', 'Sony ILCE-7CM2'));
     assert.equal(normalizeCameraModel('Sony ILCE-7RM3'), 'ILCE7RM3');
 });
 
 test('rejects truncated DCP data', () => {
-    const bytes = readFileSync(join(directory, 'Sony ILCE-7CM2 Camera FL3.dcp')).slice(0, 64);
+    const bytes = readFileSync(join(directory, 'SONY ILCE-7RM3.dcp')).slice(0, 64);
     assert.throws(() => parseDcp(bytes), /越界|无效|不完整/);
 });
