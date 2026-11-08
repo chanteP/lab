@@ -2,6 +2,7 @@ import { WLibRawWorker } from '@wasmedia/wlibraw';
 import type { ImageAsset } from '../types';
 import { createDefaultAdjustments } from '../engine/adjustments';
 import { readMetadata } from './metadata';
+import { setLoading } from './loading';
 
 export const RAW_EXTENSIONS = ['arw', 'dng', 'cr2', 'cr3', 'nef', 'nrw', 'raf', 'orf', 'rw2', 'pef', 'srw', 'srf', 'sr2', 'raw', 'rwl', '3fr', 'erf', 'kdc', 'mrw', 'x3f'];
 export const ACCEPTED_EXTENSIONS = [...RAW_EXTENSIONS, 'jpg', 'jpeg', 'png'];
@@ -17,7 +18,7 @@ function rawClient() {
 export async function readImageAsset(file: File): Promise<ImageAsset> {
     const metadata = await readMetadata(file), kind = isRawFile(file) ? 'raw' : file.type === 'image/png' || extension(file.name) === 'png' ? 'png' : 'jpeg';
     const base = {
-        id: crypto.randomUUID(), file, name: file.name, kind, metadata, adjustments: createDefaultAdjustments(), loading: false,
+        id: crypto.randomUUID(), file, name: file.name, kind, metadata, adjustments: createDefaultAdjustments(), masks: [] as import('../engine/masks/types').ImageMask[], loading: false,
     } as const;
     if (kind !== 'raw') {
         const bitmap = await createImageBitmap(file);
@@ -37,18 +38,29 @@ export async function readImageAsset(file: File): Promise<ImageAsset> {
 }
 
 const pending = new Map<string, Promise<ImageBitmap>>();
+// The WASM module handles one decode at a time. Rapid filmstrip switches must
+// not interleave two LibRaw instances in the same worker.
+let decodeQueue: Promise<unknown> = Promise.resolve();
+function queueDecode<T>(task: () => Promise<T>): Promise<T> {
+    const result = decodeQueue.then(task);
+    decodeQueue = result.catch(() => undefined);
+    return result;
+}
 export function ensureBitmap(asset: ImageAsset): Promise<ImageBitmap> {
     if (asset.bitmap) return Promise.resolve(asset.bitmap);
     const running = pending.get(asset.id); if (running) return running;
-    const task = (async () => {
+    const task = queueDecode(async () => {
         const multipliers = asset.rawMetadata?.cameraMultipliers as number[] | undefined;
         const isDng = extension(asset.name) === 'dng';
+        setLoading({ text: `正在解析 ${asset.name}`, progress: 15 });
         const result = await rawClient().decode(await asset.file.arrayBuffer(), {
             outputBps: 8, useCameraWb: Boolean(multipliers?.[0] && multipliers?.[2]), userQual: 3, highlightMode: 2,
             noAutoBright: isDng, brightness: isDng ? 1 : undefined, gamma: isDng ? [2.4, 12.92] : undefined,
         }, { format: 'rgba8' });
+        setLoading({ text: `正在生成预览 ${asset.name}`, progress: 72 });
         const image = new ImageData(new Uint8ClampedArray(result.data), result.width, result.height);
         const bitmap = await createImageBitmap(image);
+        setLoading({ text: `已完成 ${asset.name}`, progress: 100 });
         asset.bitmap = bitmap; asset.width = bitmap.width; asset.height = bitmap.height;
         if (!asset.thumbnail) {
             const canvas = document.createElement('canvas'); canvas.width = Math.min(360, bitmap.width); canvas.height = Math.round(canvas.width / bitmap.width * bitmap.height);
@@ -56,7 +68,7 @@ export function ensureBitmap(asset: ImageAsset): Promise<ImageBitmap> {
             canvas.toBlob((blob) => { if (blob) asset.thumbnail = URL.createObjectURL(blob); }, 'image/jpeg', .82);
         }
         return bitmap;
-    })().finally(() => pending.delete(asset.id));
+    }).finally(() => pending.delete(asset.id));
     pending.set(asset.id, task); return task;
 }
 

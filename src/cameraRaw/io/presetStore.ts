@@ -1,3 +1,5 @@
+import { openCameraRawDatabase, PRESET_STORE, requestResult } from './database';
+
 export interface StoredPreset {
     id: string;
     name: string;
@@ -6,42 +8,46 @@ export interface StoredPreset {
     updatedAt: number;
 }
 
-const DB_NAME = 'camera-raw-lab', STORE = 'presets';
+function changed() { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('camera-raw-presets-changed')); }
 
-function openDatabase(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
-        request.onupgradeneeded = () => {
+async function legacyPresets(): Promise<StoredPreset[]> {
+    return new Promise((resolve) => {
+        const request = indexedDB.open('camera-raw-lab', 1);
+        request.onerror = () => resolve([]); request.onupgradeneeded = () => { request.result.close(); resolve([]); };
+        request.onsuccess = async () => {
             const db = request.result;
-            if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' }).createIndex('updatedAt', 'updatedAt');
+            if (!db.objectStoreNames.contains(PRESET_STORE)) { db.close(); resolve([]); return; }
+            const result = await requestResult(db.transaction(PRESET_STORE, 'readonly').objectStore(PRESET_STORE).getAll()).catch(() => []);
+            db.close(); resolve(result as StoredPreset[]);
         };
-        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
 }
 
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-    return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-}
-
-function changed() { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('camera-raw-presets-changed')); }
-
 export async function listPresets(): Promise<StoredPreset[]> {
-    const db = await openDatabase();
-    try { return (await requestResult(db.transaction(STORE, 'readonly').objectStore(STORE).getAll()) as StoredPreset[]).sort((a, b) => b.updatedAt - a.updatedAt); }
-    finally { db.close(); }
+    const db = await openCameraRawDatabase();
+    try {
+        const store = () => db.transaction(PRESET_STORE, 'readonly').objectStore(PRESET_STORE);
+        let presets = await requestResult(store().getAll()) as StoredPreset[];
+        if (!presets.length) {
+            const legacy = await legacyPresets();
+            for (const preset of legacy) await requestResult(db.transaction(PRESET_STORE, 'readwrite').objectStore(PRESET_STORE).put(preset));
+            presets = await requestResult(store().getAll()) as StoredPreset[];
+        }
+        return presets.sort((a, b) => b.updatedAt - a.updatedAt);
+    } finally { db.close(); }
 }
 
 export async function putPreset(input: Omit<StoredPreset, 'id' | 'updatedAt'> & { id?: string }): Promise<StoredPreset> {
     const preset: StoredPreset = { ...input, id: input.id ?? crypto.randomUUID(), updatedAt: Date.now() };
-    const db = await openDatabase();
-    try { await requestResult(db.transaction(STORE, 'readwrite').objectStore(STORE).put(preset)); }
+    const db = await openCameraRawDatabase();
+    try { await requestResult(db.transaction(PRESET_STORE, 'readwrite').objectStore(PRESET_STORE).put(preset)); }
     finally { db.close(); }
     changed(); return preset;
 }
 
 export async function deletePreset(id: string): Promise<void> {
-    const db = await openDatabase();
-    try { await requestResult(db.transaction(STORE, 'readwrite').objectStore(STORE).delete(id)); }
+    const db = await openCameraRawDatabase();
+    try { await requestResult(db.transaction(PRESET_STORE, 'readwrite').objectStore(PRESET_STORE).delete(id)); }
     finally { db.close(); }
     changed();
 }

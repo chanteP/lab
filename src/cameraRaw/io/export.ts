@@ -4,6 +4,8 @@ import type { ImageAsset } from '../types';
 import { serializePreset } from './preset';
 import { preserveJpegExif } from './metadata';
 import { encodeDng } from './dng';
+import type { DcpProfile } from '../engine/dcp/types';
+import { setLoading } from './loading';
 
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '');
 
@@ -39,18 +41,23 @@ async function withExif(asset: ImageAsset, jpeg: Blob): Promise<Blob> {
     return new Blob([Uint8Array.from(inserted, (v) => v.charCodeAt(0))], { type: 'image/jpeg' });
 }
 
-export async function renderExport(asset: ImageAsset, format: 'jpeg' | 'dng', quality = .94): Promise<Blob> {
+export async function renderExport(asset: ImageAsset, format: 'jpeg' | 'dng', quality = .94, profile?: DcpProfile): Promise<Blob> {
     if (!asset.bitmap) throw new Error('图片尚未完成解码');
     const renderer = new RawRenderer();
     try {
-        renderer.setSource(asset.bitmap); renderer.render(asset.adjustments);
-        if (format === 'jpeg') return withExif(asset, await renderer.blob('image/jpeg', quality));
+        setLoading({ text: '正在渲染全尺寸图像', progress: 20 });
+        renderer.setSource(asset.bitmap); renderer.render(asset.adjustments, { profile, masks: asset.masks });
+        if (format === 'jpeg') {
+            setLoading({ text: '正在编码 JPEG', progress: 72 });
+            return withExif(asset, await renderer.blob('image/jpeg', quality));
+        }
+        setLoading({ text: '正在写入 16-bit DNG', progress: 68 });
         const pixels = renderer.readPixels();
-        const dng = encodeDng(new ImageData(pixels, renderer.canvas.width, renderer.canvas.height), asset, serializePreset(asset.adjustments, baseName(asset.name)));
+        const dng = encodeDng(new ImageData(new Uint8ClampedArray(pixels), renderer.canvas.width, renderer.canvas.height), asset, serializePreset(asset.adjustments, baseName(asset.name)), profile);
         return new Blob([dng as Uint8Array<ArrayBuffer>], { type: 'image/x-adobe-dng' });
     } finally { renderer.dispose(); }
 }
 
-export async function saveAsset(asset: ImageAsset, format: 'jpeg' | 'dng') {
-    downloadBlob(await renderExport(asset, format), `${baseName(asset.name)}-edited.${format === 'jpeg' ? 'jpg' : 'dng'}`);
+export async function saveAsset(asset: ImageAsset, format: 'jpeg' | 'dng', profile?: DcpProfile) {
+    downloadBlob(await renderExport(asset, format, .94, profile), `${baseName(asset.name)}-edited.${format === 'jpeg' ? 'jpg' : 'dng'}`);
 }

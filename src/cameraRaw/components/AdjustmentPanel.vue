@@ -7,9 +7,13 @@ import CurveEditor from './CurveEditor.vue';
 import ColorWheel from './ColorWheel.vue';
 import { MIXER_HUE_SCALE } from '../engine/color';
 import PresetPanel from './PresetPanel.vue';
+import ProfileSelect from './ProfileSelect.vue';
+import MaskPanel from './MaskPanel.vue';
+import type { DcpCatalogEntry } from '../engine/dcp/types';
+import type { ImageMask, MaskTool } from '../engine/masks/types';
 
-defineProps<{ modelValue: Adjustments; panel: string; camera?: string; lens?: string }>();
-const emit = defineEmits<{ reset: []; 'update:modelValue': [value: Adjustments] }>();
+withDefaults(defineProps<{ modelValue: Adjustments; panel: string; camera?: string; lens?: string; cameraModel?: string; dcpCatalog: DcpCatalogEntry[]; dcpProfileId?: string; dcpLoading?: boolean; rawSupported?: boolean; masks?: ImageMask[]; activeMaskId?: string; maskTool?: MaskTool | ''; maskMode?: 'add' | 'subtract' }>(), { cameraModel: '', dcpProfileId: '', dcpLoading: false, rawSupported: true, masks: () => [], activeMaskId: undefined, maskTool: '', maskMode: 'add' });
+const emit = defineEmits<{ reset: []; 'update:modelValue': [value: Adjustments]; 'dcp-change': [value: string]; 'dcp-import': []; 'mask-tool': [tool: MaskTool]; 'mask-select': [id: string]; 'mask-update': [mask: ImageMask]; 'mask-remove': [id: string]; 'mask-duplicate': [id: string]; 'mask-mode': [mode: 'add' | 'subtract'] }>();
 const mixerMode = ref<'hue' | 'saturation' | 'luminance'>('hue');
 const mixerModeLabel = computed(() => ({ hue: '色相', saturation: '饱和度', luminance: '明亮度' }[mixerMode.value]));
 const calibrationHueGradient = (hue: number) => `linear-gradient(90deg, hsl(${hue - 20} 75% 50%) 0%, hsl(${hue} 75% 50%) 50%, hsl(${hue + 20} 75% 50%) 100%)`;
@@ -33,8 +37,10 @@ function setWhiteBalance(value: string, adjustments: Adjustments) {
 
 <template>
     <section class="adjustment-panel">
-        <header><h2>{{ { basic: '基本', curve: '曲线', effects: '效果', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学', presets: '预设' }[panel] }}</h2><button v-if="panel !== 'presets'" type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
-        <div v-if="panel === 'basic'" class="panel-body">
+        <header><h2>{{ { basic: '基本', curve: '曲线', effects: '效果', mixer: '混色器', grading: '颜色分级', calibration: '校准', optics: '光学', presets: '预设', masking: '蒙版' }[panel] }}</h2><button v-if="panel !== 'presets'" type="button" title="复位当前调整" aria-label="复位当前调整" @click="emit('reset')">复位</button></header>
+        <MaskPanel v-if="panel === 'masking'" :masks="masks" :active-mask-id="activeMaskId" :tool="maskTool" :mode="maskMode" @tool="emit('mask-tool', $event)" @select="emit('mask-select', $event)" @update-mask="emit('mask-update', $event)" @remove="emit('mask-remove', $event)" @duplicate="emit('mask-duplicate', $event)" @mode="emit('mask-mode', $event)" />
+        <div v-else-if="panel === 'basic'" class="panel-body">
+            <ProfileSelect :value="dcpProfileId" :catalog="dcpCatalog" :camera-model="cameraModel" :loading="dcpLoading" :disabled="!rawSupported" @change="emit('dcp-change', $event)" @import="emit('dcp-import')" />
             <label class="select-row"><span>白平衡</span><select :value="whiteBalance" @change="setWhiteBalance(($event.target as HTMLSelectElement).value, modelValue)"><option value="asShot">原照设置</option><option value="daylight">日光</option><option value="cloudy">阴天</option><option value="shade">阴影</option><option value="tungsten">白炽灯</option><option value="fluorescent">荧光灯</option><option value="flash">闪光灯</option></select></label>
             <SliderField v-model="modelValue.temperature" label="色温" :gradient="temperatureGradient" /><SliderField v-model="modelValue.tint" label="色调" :gradient="tintGradient" />
             <div class="separator" />

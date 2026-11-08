@@ -1,0 +1,28 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "target": "ES2022",
+        "types": [
+            "vite/client",
+            "node"
+        ],
+        "allowImportingTsExtensions": true,
+        "strict": false,
+        "noUncheckedIndexedAccess": false,
+        "lib": [
+            "ES2022",
+            "DOM",
+            "DOM.Iterable"
+        ]
+    },
+    "include": [
+        "src/cameraRaw/**/*",
+        "src/common/vue.ts",
+        "ext.d.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "docs",
+        "src/cameraRaw/**/*.spec.ts"
+    ]
+}

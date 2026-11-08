@@ -32,6 +32,11 @@ export interface Adjustments {
     optics: { distortion: number; chromaticAberration: number };
 }
 
+export interface DcpSelection {
+    profileId: string;
+    enabled: boolean;
+}
+
 export interface ImageAsset {
     id: string;
     file: File;
@@ -46,6 +51,9 @@ export interface ImageAsset {
     metadata: Record<string, unknown>;
     rawMetadata?: Record<string, unknown>;
     adjustments: Adjustments;
+    dcp?: DcpSelection;
+    masks?: import('./engine/masks/types').ImageMask[];
+    activeMaskId?: string;
     loading: boolean;
     error?: string;
 }

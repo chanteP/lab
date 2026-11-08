@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue';
 import type { Adjustments, ImageAsset } from './types';
 import { cloneAdjustments } from './engine/adjustments';
 import { ensureBitmap, isImageFile, readImageAsset } from './io/raw';
-import { withLoading } from './io/loading';
+import { setLoading, withLoading } from './io/loading';
 
 export const assets = ref<ImageAsset[]>([]);
 export const selectedIds = ref<Set<string>>(new Set());
@@ -84,9 +84,12 @@ export async function importFiles(files: File[]) {
     return withLoading(`正在导入 ${supported.length} 张图片…`, async () => {
         busy.value = true;
         try {
-            for (const file of supported) {
+            for (let index = 0; index < supported.length; index++) {
+                const file = supported[index];
+                setLoading({ text: `正在导入 ${index + 1} / ${supported.length}：${file.name}`, progress: index / supported.length * 100 });
                 try {
                     const asset = await readImageAsset(file); assets.value.push(asset);
+                    setLoading({ progress: (index + 1) / supported.length * 100 });
                     if (!activeId.value) await selectAsset(asset.id);
                 } catch (error) { notice.value = `${file.name}: ${error instanceof Error ? error.message : String(error)}`; }
             }

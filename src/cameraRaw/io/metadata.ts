@@ -2,7 +2,7 @@ import exifr from 'exifr';
 
 export async function readMetadata(file: File): Promise<Record<string, unknown>> {
     try {
-        return await exifr.parse(file, { tiff: true, ifd0: true, ifd1: false, exif: true, gps: true, interop: true, makerNote: false, userComment: true }) ?? {};
+        return await exifr.parse(file, { tiff: true, ifd0: true, ifd1: false, exif: true, gps: true, interop: true, makerNote: false, userComment: true } as never) ?? {};
     } catch {
         return {};
     }

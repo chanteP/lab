@@ -3,6 +3,7 @@ import { cloneAdjustments, createDefaultAdjustments, mergeAdjustments } from '..
 import type { Adjustments, ImageAsset } from '../types';
 import { ensureBitmap } from './raw';
 import { downloadBlob, renderExport } from './export';
+import { loadDcp, loadDcpCatalog } from './dcp';
 import { parsePreset, serializePreset } from './preset';
 import { putPreset } from './presetStore';
 import { withLoading } from './loading';
@@ -118,7 +119,9 @@ const tools: ToolDefinition[] = [
                 const xmp = serializePreset(asset.adjustments); if (args.download) downloadBlob(new Blob([xmp], { type: 'application/rdf+xml' }), `${asset.name}.xmp`);
                 return result({ name: `${asset.name}.xmp`, mimeType: 'application/rdf+xml', data: xmp, encoding: 'utf8' });
             }
-            const blob = await withLoading(format === 'dng' ? 'Agent 正在生成 DNG…' : 'Agent 正在导出 JPEG…', () => renderExport(asset, format, args.quality ?? .94));
+            const entry = asset.dcp?.enabled ? (await loadDcpCatalog()).find((item) => item.id === asset.dcp?.profileId) : undefined;
+            const profile = entry ? await loadDcp(entry) : undefined;
+            const blob = await withLoading(format === 'dng' ? 'Agent 正在生成 DNG…' : 'Agent 正在导出 JPEG…', () => renderExport(asset, format, args.quality ?? .94, profile));
             const name = `${asset.name.replace(/\.[^.]+$/, '')}-edited.${format === 'jpeg' ? 'jpg' : 'dng'}`;
             if (args.download) downloadBlob(blob, name);
             return result({ name, mimeType: blob.type, encoding: 'base64', data: await blobBase64(blob), size: blob.size });

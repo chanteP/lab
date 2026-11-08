@@ -5,6 +5,7 @@ void main() { vUv = vec2(aPosition.x * .5 + .5, .5 - aPosition.y * .5); gl_Posit
 
 export const fragmentShader = `#version 300 es
 precision highp float;
+precision highp sampler3D;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uImage;
@@ -26,6 +27,18 @@ uniform float uSaturation;
 uniform vec3 uGrain;
 uniform int uCompare;
 uniform float uSplit;
+uniform int uDcpEnabled;
+uniform mat3 uDcpMatrix;
+uniform float uDcpBaseline;
+uniform sampler2D uDcpTone;
+uniform sampler3D uDcpLook;
+uniform sampler3D uDcpDelta;
+uniform vec3 uDcpLookDims;
+uniform vec3 uDcpDeltaDims;
+uniform int uDcpHasLook;
+uniform int uDcpHasDelta;
+uniform int uDcpLookSrgb;
+uniform int uDcpDeltaSrgb;
 
 float lum(vec3 c) { return dot(c, vec3(.2126, .7152, .0722)); }
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + .055) / 1.055, vec3(2.4)), step(.04045, c)); }
@@ -81,10 +94,48 @@ vec3 curve(vec3 c) {
     c = vec3(texture(uCurves, vec2(clamp(c.r, 0., 1.), .125)).r, texture(uCurves, vec2(clamp(c.g, 0., 1.), .125)).r, texture(uCurves, vec2(clamp(c.b, 0., 1.), .125)).r);
     return vec3(texture(uCurves, vec2(c.r, .375)).r, texture(uCurves, vec2(c.g, .625)).r, texture(uCurves, vec2(c.b, .875)).r);
 }
+
+vec3 rgb2hsv(vec3 c) {
+    float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), d = mx - mn;
+    float h = 0.;
+    if (d > .00001) {
+        if (mx == c.r) h = mod((c.g - c.b) / d, 6.);
+        else if (mx == c.g) h = (c.b - c.r) / d + 2.;
+        else h = (c.r - c.g) / d + 4.;
+        h /= 6.;
+    }
+    return vec3(h, mx > 0. ? d / mx : 0., mx);
+}
+vec3 hsv2rgb(vec3 hsv) {
+    vec3 p = abs(fract(hsv.x + vec3(0., 2. / 3., 1. / 3.)) * 6. - 3.);
+    return hsv.z * mix(vec3(1.), clamp(p - 1., 0., 1.), hsv.y);
+}
+vec3 dcpTable(sampler3D table, vec3 dims, int encoded, vec3 c) {
+    vec3 hsv = rgb2hsv(clamp(c, 0., 1.));
+    float value = encoded == 1 ? toSrgb(vec3(hsv.z)).r : hsv.z;
+    vec3 coord = vec3(hsv.x, (clamp(hsv.y, 0., 1.) * (dims.y - 1.) + .5) / dims.y, (clamp(value, 0., 1.) * (dims.z - 1.) + .5) / dims.z);
+    vec3 delta = texture(table, coord).rgb;
+    float hueShift = (delta.r - .5) * 2.;
+    float satScale = delta.g * 4., valScale = delta.b * 4.;
+    hsv.x = fract(hsv.x + hueShift + 1.);
+    hsv.y = clamp(hsv.y * satScale, 0., 1.);
+    value = clamp(value * valScale, 0., 1.);
+    hsv.z = encoded == 1 ? toLinear(vec3(value)).r : value;
+    return hsv2rgb(hsv);
+}
+vec3 applyDcp(vec3 c) {
+    if (uDcpEnabled == 0) return c;
+    c = max(uDcpMatrix * c, vec3(0.)) * exp2(uDcpBaseline);
+    c = vec3(texture(uDcpTone, vec2(clamp(c.r, 0., 1.), .5)).r, texture(uDcpTone, vec2(clamp(c.g, 0., 1.), .5)).r, texture(uDcpTone, vec2(clamp(c.b, 0., 1.), .5)).r);
+    if (uDcpHasDelta == 1) c = dcpTable(uDcpDelta, uDcpDeltaDims, uDcpDeltaSrgb, c);
+    if (uDcpHasLook == 1) c = dcpTable(uDcpLook, uDcpLookDims, uDcpLookSrgb, c);
+    return c;
+}
+
 void main() {
     vec3 original = sourceAt(vUv);
     if (uCompare == 1 || (uCompare == 2 && vUv.x < uSplit)) { outColor = vec4(original, 1.); return; }
-    vec3 c = toLinear(clamp(original, 0., 1.));
+    vec3 c = applyDcp(toLinear(clamp(original, 0., 1.)));
     float temp = uWhiteBalance.x / 100., tint = uWhiteBalance.y / 100.;
     c *= vec3(1. + temp * .35, 1. - abs(temp) * .04 + tint * .18, 1. - temp * .35);
     c *= exp2(uBasic.x);
@@ -119,4 +170,25 @@ void main() {
     grainNoise = mix(grainNoise, grainFine, uGrain.z / 300.);
     c += (grainNoise - .5) * uGrain.x / 100. * .22 * (1. - lum(c) * .45);
     outColor = vec4(toSrgb(clamp(c, 0., 1.)), 1.);
+}`;
+
+export const maskBlendFragmentShader = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uMaskBase;
+uniform sampler2D uMaskAdjusted;
+uniform sampler2D uMask;
+uniform float uMaskAmount;
+uniform int uMaskOverlay;
+uniform int uMaskCompare;
+uniform float uMaskSplit;
+void main() {
+    vec4 base = texture(uMaskBase, vUv), adjusted = texture(uMaskAdjusted, vUv);
+    float mask = texture(uMask, vUv).r * uMaskAmount;
+    vec3 c = mix(base.rgb, adjusted.rgb, mask);
+    if (uMaskOverlay == 1 && !(uMaskCompare == 1 || (uMaskCompare == 2 && vUv.x < uMaskSplit))) {
+        c = mix(c, vec3(1., .16, .12), texture(uMask, vUv).r * .32);
+    }
+    outColor = vec4(c, 1.);
 }`;

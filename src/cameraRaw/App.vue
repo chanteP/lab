@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { NIcon, useMessage } from 'naive-ui';
-import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, SparklesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
-import { activeAsset, assets, busy, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { NIcon, NModal, NProgress } from 'naive-ui';
+import { Add, AnalyticsOutline, ApertureOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, ColorPaletteOutline, ContrastOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, PulseOutline, RefreshOutline, Remove, ShapesOutline, SparklesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
+import { activeAsset, assets, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import { createDefaultAdjustments } from './engine/adjustments';
 import { parsePreset, serializePreset } from './io/preset';
 import { saveAsset } from './io/export';
@@ -10,7 +10,11 @@ import { downloadBlob } from './io/export';
 import { disposeRaw } from './io/raw';
 import { initWebMCP } from './io/webmcp';
 import { putPreset } from './io/presetStore';
-import { disposeLoading, registerLoading, withLoading } from './io/loading';
+import { disposeLoading, loadingState, setLoading, withLoading } from './io/loading';
+import { importDcp, loadDcp, loadDcpCatalog } from './io/dcp';
+import type { DcpCatalogEntry, DcpProfile } from './engine/dcp/types';
+import type { ImageMask, MaskShape, MaskTool } from './engine/masks/types';
+import { createMask } from './engine/masks/mask';
 import ImageViewer from './components/ImageViewer.vue';
 import AdjustmentPanel from './components/AdjustmentPanel.vue';
 import FilmStrip from './components/FilmStrip.vue';
@@ -18,7 +22,7 @@ import Histogram from './components/Histogram.vue';
 import MetadataDialog from './components/MetadataDialog.vue';
 
 const panels = [
-    { id: 'basic', label: '基本', icon: OptionsOutline }, { id: 'curve', label: '曲线', icon: PulseOutline },
+    { id: 'basic', label: '基本', icon: OptionsOutline }, { id: 'masking', label: '蒙版', icon: ShapesOutline }, { id: 'curve', label: '曲线', icon: PulseOutline },
     { id: 'effects', label: '效果', icon: SparklesOutline }, { id: 'grading', label: '分级', icon: ContrastOutline }, { id: 'mixer', label: '混色', icon: ColorPaletteOutline },
     { id: 'calibration', label: '校准', icon: ApertureOutline }, { id: 'optics', label: '光学', icon: CameraOutline },
     { id: 'presets', label: '预设', icon: BookmarksOutline },
@@ -27,18 +31,22 @@ const panel = ref('basic'), compare = ref(0), split = ref(.5), zoom = ref(1), hi
 const mobilePanelOpen = ref(false);
 const histogram = ref<Uint8ClampedArray>(), metadataOpen = ref(false), exporting = ref(false), toast = ref('');
 const agentStatus = ref({ available: false, mode: 'local', count: 0 });
+const dcpCatalog = ref<DcpCatalogEntry[]>([]), dcpLoading = ref(false), activeDcpProfile = shallowRef<DcpProfile>();
+const maskTool = ref<MaskTool | ''>(''), maskMode = ref<'add' | 'subtract'>('add'), dngConfirmOpen = ref(false);
+const dcpInput = ref<HTMLInputElement>();
 const adjustmentVersion = ref(0);
-const message = useMessage();
-registerLoading((text) => message.loading(text, { duration: 0, closable: false }));
 const fileInput = ref<HTMLInputElement>(), folderInput = ref<HTMLInputElement>(), presetInput = ref<HTMLInputElement>();
 const camera = computed(() => String(activeAsset.value?.metadata.Make || activeAsset.value?.metadata.make || ''));
 const cameraModel = computed(() => String(activeAsset.value?.metadata.Model || activeAsset.value?.metadata.model || ''));
 const lens = computed(() => String(activeAsset.value?.metadata.LensModel || activeAsset.value?.metadata.lens || ''));
+const activeMask = computed(() => activeAsset.value?.masks?.find((mask) => mask.id === activeAsset.value?.activeMaskId));
 const dimensions = computed(() => activeAsset.value ? `${activeAsset.value.width} × ${activeAsset.value.height}` : '');
 const modifiedPanels = computed(() => {
     adjustmentVersion.value;
     const a = activeAsset.value?.adjustments, modified = new Set<string>(); if (!a) return modified;
     const d = createDefaultAdjustments();
+    if (activeAsset.value?.dcp?.enabled) modified.add('basic');
+    if (activeAsset.value?.masks?.length) modified.add('masking');
     const basicKeys = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'vibrance', 'saturation'] as const;
     if (basicKeys.some((key) => a[key] !== d[key])) modified.add('basic');
     if (JSON.stringify(a.curves) !== JSON.stringify(d.curves)) modified.add('curve');
@@ -49,6 +57,17 @@ let toastTimer: ReturnType<typeof setTimeout>;
 
 watch(() => activeAsset.value?.adjustments, () => adjustmentVersion.value++, { deep: true, flush: 'sync' });
 watch(notice, (message) => { if (!message) return; toast.value = message; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = ''; notice.value = ''; }, 3200); });
+watch(() => [activeAsset.value?.id, activeAsset.value?.dcp?.profileId, activeAsset.value?.dcp?.enabled] as const, async ([assetId, profileId, enabled]) => {
+    activeDcpProfile.value = undefined;
+    if (!assetId || !profileId || !enabled) return;
+    const entry = dcpCatalog.value.find((item) => item.id === profileId); if (!entry) return;
+    dcpLoading.value = true;
+    try {
+        const profile = await withLoading(`正在加载 ${entry.name}`, () => loadDcp(entry));
+        if (activeAsset.value?.id === assetId && activeAsset.value.dcp?.profileId === profileId) activeDcpProfile.value = profile;
+    } catch (error) { notice.value = `DCP 加载失败：${error instanceof Error ? error.message : String(error)}`; }
+    finally { dcpLoading.value = false; }
+}, { immediate: true });
 function chooseFiles(event: Event) { const input = event.target as HTMLInputElement; void importFiles(Array.from(input.files ?? [])); input.value = ''; }
 async function choosePreset(event: Event) {
     const input = event.target as HTMLInputElement, file = input.files?.[0]; if (!file || !activeAsset.value) return;
@@ -67,17 +86,76 @@ function exportPreset() {
     if (!activeAsset.value) return;
     downloadBlob(new Blob([serializePreset(activeAsset.value.adjustments)], { type: 'application/rdf+xml' }), `${activeAsset.value.name.replace(/\.[^.]+$/, '')}.xmp`);
 }
-async function save(format: 'jpeg' | 'dng') {
+async function chooseDcpFile(event: Event) {
+    const input = event.target as HTMLInputElement, file = input.files?.[0]; if (!file) return;
+    try {
+        await withLoading(`正在导入 ${file.name}`, async () => {
+            const { entry } = await importDcp(file);
+            if (!dcpCatalog.value.some((item) => item.id === entry.id)) dcpCatalog.value.push(entry);
+            if (activeAsset.value) activeAsset.value.dcp = { profileId: entry.id, enabled: true };
+            notice.value = `已导入 ${entry.name}`;
+        });
+    } catch (error) { notice.value = `DCP 导入失败：${error instanceof Error ? error.message : String(error)}`; }
+    input.value = '';
+}
+function changeDcp(profileId: string) {
+    if (!activeAsset.value) return;
+    activeAsset.value.dcp = profileId ? { profileId, enabled: true } : undefined;
+}
+function chooseMaskTool(tool: MaskTool) { maskTool.value = maskTool.value === tool ? '' : tool; }
+function selectMask(id: string) { if (activeAsset.value) { activeAsset.value.activeMaskId = id || undefined; if (!id) maskTool.value = ''; } }
+function addMaskShape(shape: MaskShape) {
+    const asset = activeAsset.value; if (!asset) return;
+    asset.masks ??= [];
+    if (activeMask.value) activeMask.value.shapes.push(shape);
+    else {
+        const mask = createMask(asset.masks.length + 1, shape); asset.masks.push(mask); asset.activeMaskId = mask.id;
+    }
+    maskTool.value = ''; maskMode.value = 'add';
+}
+function updateMask(mask: ImageMask) {
+    const asset = activeAsset.value, index = asset?.masks?.findIndex((item) => item.id === mask.id) ?? -1;
+    if (asset?.masks && index >= 0) asset.masks[index] = mask;
+}
+function updateMaskShape(shape: MaskShape) {
+    if (!activeMask.value) return;
+    activeMask.value.shapes = activeMask.value.shapes.map((item) => item.id === shape.id ? shape : item);
+}
+function removeMask(id: string) {
+    const asset = activeAsset.value; if (!asset?.masks) return;
+    asset.masks = asset.masks.filter((mask) => mask.id !== id);
+    if (asset.activeMaskId === id) asset.activeMaskId = asset.masks[0]?.id;
+}
+function duplicateMask(id: string) {
+    const mask = activeAsset.value?.masks?.find((item) => item.id === id); if (!mask || !activeAsset.value) return;
+    const copy = JSON.parse(JSON.stringify(mask)) as ImageMask;
+    copy.id = crypto.randomUUID(); copy.name = `${mask.name} 副本`; copy.shapes.forEach((shape) => { shape.id = crypto.randomUUID(); });
+    activeAsset.value.masks!.push(copy); activeAsset.value.activeMaskId = copy.id;
+}
+async function performSave(format: 'jpeg' | 'dng', abandonDcp = false) {
     if (!activeAsset.value || exporting.value) return;
     exporting.value = true;
     try {
-        await withLoading(format === 'dng' ? '正在生成 DNG…' : '正在导出 JPEG…', () => saveAsset(activeAsset.value!, format));
-        notice.value = format === 'dng' ? '已生成调整后的 DNG' : '已导出全尺寸 JPEG';
-    }
-    catch (error) { notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`; }
+        await withLoading(format === 'dng' ? '正在生成 DNG…' : '正在导出 JPEG…', async () => {
+            setLoading({ progress: 5 });
+            await saveAsset(activeAsset.value!, format, abandonDcp ? undefined : activeDcpProfile.value);
+            setLoading({ progress: 100 });
+        });
+        notice.value = format === 'dng' ? `已生成调整后的 DNG${activeDcpProfile.value && !abandonDcp ? '，已嵌入 DCP' : ''}` : '已导出全尺寸 JPEG';
+    } catch (error) { notice.value = `导出失败：${error instanceof Error ? error.message : String(error)}`; }
     finally { exporting.value = false; }
 }
-function reset() { if (activeAsset.value) activeAsset.value.adjustments = createDefaultAdjustments(); }
+async function save(format: 'jpeg' | 'dng') {
+    if (!activeAsset.value || exporting.value) return;
+    if (dcpLoading.value) { notice.value = '请等待 DCP 加载完成'; return; }
+    if (format === 'dng' && activeAsset.value.dcp?.enabled && !activeDcpProfile.value) { dngConfirmOpen.value = true; return; }
+    await performSave(format);
+}
+function reset() {
+    if (!activeAsset.value) return;
+    if (panel.value === 'masking' && activeMask.value) activeMask.value.adjustments = createDefaultAdjustments();
+    else activeAsset.value.adjustments = createDefaultAdjustments();
+}
 function keyboard(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && ['+', '=', '-', '_', '0'].includes(event.key)) { event.preventDefault(); return; }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
@@ -102,7 +180,7 @@ async function entriesFromDrop(data: DataTransfer): Promise<File[]> {
 }
 async function drop(event: DragEvent) { if (event.dataTransfer) void importFiles(await entriesFromDrop(event.dataTransfer)); }
 function preventGesture(event: Event) { event.preventDefault(); }
-onMounted(() => { window.addEventListener('keydown', keyboard); document.addEventListener('gesturestart', preventGesture, { passive: false }); agentStatus.value = initWebMCP(); });
+onMounted(() => { void loadDcpCatalog().then((catalog) => { dcpCatalog.value = catalog; }); window.addEventListener('keydown', keyboard); document.addEventListener('gesturestart', preventGesture, { passive: false }); agentStatus.value = initWebMCP(); });
 onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); document.removeEventListener('gesturestart', preventGesture); clearTimeout(toastTimer); disposeLoading(); disposeRaw(); });
 </script>
 
@@ -117,8 +195,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
                 <button type="button" title="查看元数据" aria-label="查看元数据" :disabled="!activeAsset" @click="metadataOpen = true"><NIcon><InformationCircleOutline /></NIcon></button>
                 <button class="mobile-edit" type="button" title="打开调整面板" aria-label="打开或关闭调整面板" @click="mobilePanelOpen = !mobilePanelOpen"><NIcon><OptionsOutline /></NIcon><span>调整</span></button>
                 <span class="agent-status" :class="{ online: agentStatus.available }" :title="agentStatus.available ? `WebMCP 已注册 ${agentStatus.count} 个工具` : `本地 Agent API 已就绪，${agentStatus.count} 个工具`"><NIcon><HardwareChipOutline /></NIcon>MCP</span>
-                <button class="save-button" type="button" :disabled="!activeAsset?.bitmap || exporting" @click="save('dng')"><NIcon><CloudDownloadOutline /></NIcon><span>保存 DNG</span></button>
-                <button class="export-button" type="button" :disabled="!activeAsset?.bitmap || exporting" @click="save('jpeg')"><NIcon><DownloadOutline /></NIcon><span>{{ exporting ? '处理中' : '导出 JPG' }}</span></button>
+                <button class="save-button" type="button" aria-label="保存 DNG" :disabled="!activeAsset?.bitmap || exporting" @click="save('dng')"><NIcon><CloudDownloadOutline /></NIcon><span>保存 DNG</span></button>
+                <button class="export-button" type="button" aria-label="导出 JPG" :disabled="!activeAsset?.bitmap || exporting" @click="save('jpeg')"><NIcon><DownloadOutline /></NIcon><span>{{ exporting ? '处理中' : '导出 JPG' }}</span></button>
             </div>
         </header>
 
@@ -129,7 +207,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
                 <button type="button" title="适合视图 (F)" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</button>
             </nav>
 
-            <ImageViewer :asset="activeAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" @histogram="histogram = $event">
+            <ImageViewer :asset="activeAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" :dcp-profile="activeDcpProfile" :mask-tool="maskTool" :mask-mode="maskMode" :active-mask="activeMask" @shape="addMaskShape" @update-shape="updateMaskShape" @histogram="histogram = $event">
                 <div class="empty-workspace">
                     <CameraOutline class="empty-icon" /><h1>在浏览器中冲洗照片</h1><p>将 RAW、JPEG、PNG 图片或整个文件夹拖到这里</p>
                     <div><button type="button" @click="fileInput?.click()">选择图片</button><button type="button" class="secondary" @click="folderInput?.click()">选择文件夹</button></div>
@@ -140,7 +218,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
             <aside class="right-panel">
                 <div class="histogram-head"><div class="histogram-tools"><span>直方图</span><button type="button" :title="histogramMode === 'rgb' ? '切换为明度直方图' : '切换为 RGB 直方图'" @click="histogramMode = histogramMode === 'rgb' ? 'luminance' : 'rgb'"><NIcon><AnalyticsOutline /></NIcon>{{ histogramMode === 'rgb' ? 'RGB' : '明度' }}</button></div><Histogram :pixels="histogram" :mode="histogramMode" /></div>
                 <nav class="panel-tabs" aria-label="调整面板"><button v-for="item in panels" :key="item.id" type="button" :class="{ active: panel === item.id }" :aria-label="item.label" :title="item.label" @click="panel = item.id; mobilePanelOpen = true"><NIcon><component :is="item.icon" /></NIcon><span>{{ item.label }}</span><sup v-if="modifiedPanels.has(item.id)" aria-label="已调整">*</sup></button></nav>
-                <div class="panel-scroll"><AdjustmentPanel v-if="activeAsset" v-model="activeAsset.adjustments" :panel="panel" :camera="`${camera} ${cameraModel}`" :lens="lens" @reset="reset" /><div v-else class="no-image">打开图片后开始调整</div></div>
+                <div class="panel-scroll"><AdjustmentPanel v-if="activeAsset" v-model="activeAsset.adjustments" :panel="panel" :camera="`${camera} ${cameraModel}`" :camera-model="cameraModel" :lens="lens" :dcp-catalog="dcpCatalog" :dcp-profile-id="activeAsset.dcp?.profileId" :dcp-loading="dcpLoading" :raw-supported="activeAsset.kind === 'raw'" :masks="activeAsset.masks" :active-mask-id="activeAsset.activeMaskId" :mask-tool="maskTool" :mask-mode="maskMode" @dcp-change="changeDcp" @dcp-import="dcpInput?.click()" @mask-tool="chooseMaskTool" @mask-select="selectMask" @mask-update="updateMask" @mask-remove="removeMask" @mask-duplicate="duplicateMask" @mask-mode="maskMode = $event" @reset="reset" /><div v-else class="no-image">打开图片后开始调整</div></div>
                 <div class="preset-actions"><button type="button" :disabled="!activeAsset" @click="presetInput?.click()">导入预设</button><button type="button" :disabled="!activeAsset" @click="exportPreset">导出预设</button></div>
             </aside>
         </section>
@@ -153,9 +231,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
         <input ref="fileInput" type="file" hidden multiple accept=".arw,.dng,.cr2,.cr3,.nef,.raf,.orf,.rw2,.jpg,.jpeg,.png,image/jpeg,image/png" @change="chooseFiles" />
         <input ref="folderInput" type="file" hidden multiple webkitdirectory @change="chooseFiles" />
         <input ref="presetInput" type="file" hidden accept=".xmp,.json,application/json" @change="choosePreset" />
+        <input ref="dcpInput" type="file" hidden accept=".dcp" @change="chooseDcpFile" />
         <MetadataDialog :open="metadataOpen" :asset="activeAsset" @close="metadataOpen = false" />
         <div v-if="toast" class="toast" role="status">{{ toast }}</div>
-        <div v-if="busy && assets.length" class="import-progress" role="status">正在导入图片…</div>
+        <div v-if="loadingState.visible" class="task-progress" role="status" aria-live="polite"><div><span>{{ loadingState.text }}</span><strong>{{ loadingState.progress === undefined ? '处理中' : `${Math.round(loadingState.progress)}%` }}</strong></div><NProgress type="line" :percentage="loadingState.progress ?? 100" :processing="loadingState.progress === undefined" :show-indicator="false" :height="4" /></div>
+        <NModal v-model:show="dngConfirmOpen" preset="card" title="DCP 无法写入" :closable="false" style="width: 420px" role="dialog" aria-modal="true"><p>当前 DCP 无法写入 DNG。继续导出将放弃 DCP，其他图像调整仍会保留。</p><div class="confirm-actions"><button type="button" @click="dngConfirmOpen = false">取消</button><button type="button" class="danger" @click="dngConfirmOpen = false; void performSave('dng', true)">放弃 DCP 并导出</button></div></NModal>
     </main>
 </template>
 
@@ -181,7 +261,7 @@ button:disabled { opacity: .35; cursor: default !important; }
 .right-panel { display: grid; grid-template-rows: auto 54px minmax(0, 1fr) 39px; min-height: 0; border-left: 1px solid #111; background: #303030; }
 .histogram-head { padding: 0 12px 9px; border-bottom: 1px solid #444; }
 .histogram-tools { display: flex; align-items: center; justify-content: space-between; height: 34px; color: #999; font-size: 10px; button { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; color: #aaa; font-size: 9px; cursor: pointer; } }
-.panel-tabs { display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid #444; button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } sup { position: absolute; top: 2px; right: 4px; color: #f0c64f; font-size: 15px; font-weight: 700; line-height: 1; } } }
+.panel-tabs { display: grid; grid-template-columns: repeat(9, 1fr); border-bottom: 1px solid #444; button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; background: transparent; color: #888; font-size: 9px; cursor: pointer; .n-icon { font-size: 17px; } &.active { background: #3a3a3a; color: #fff; box-shadow: inset 0 -2px #6bbbea; } sup { position: absolute; top: 2px; right: 4px; color: #f0c64f; font-size: 15px; font-weight: 700; line-height: 1; } } }
 .panel-scroll { min-height: 0; overflow-y: auto; scrollbar-color: #555 #303030; }
 .no-image { padding: 35px 0; color: #777; text-align: center; }
 .preset-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 6px 11px; border-top: 1px solid #444; button { border: 1px solid #555; border-radius: 3px; background: #373737; color: #bbb; font-size: 10px; cursor: pointer; &:hover { color: white; background: #444; } } }
@@ -189,7 +269,8 @@ button:disabled { opacity: .35; cursor: default !important; }
 .film-toolbar { position: absolute; top: -31px; left: 42px; right: 324px; display: flex; align-items: center; height: 30px; padding: 0 9px; background: #292929; color: #999; font-size: 10px; z-index: 1; > span { margin-right: auto; } > i { width: 1px; height: 16px; margin: 0 5px; background: #484848; } button { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 25px; height: 23px; margin-left: 3px; padding: 0 5px; border: 0; border-radius: 2px; background: transparent; color: #aaa; cursor: pointer; &:hover { color: white; background: #3b3b3b; } &.active { color: #71c4ef; background: #3b3b3b; } } }
 .empty-workspace { text-align: center; color: #aaa; .empty-icon { width: 58px; color: #777; } h1 { margin: 15px 0 8px; color: #ddd; font-size: 20px; font-weight: 400; } p { margin: 0 0 22px; font-size: 12px; } button { height: 32px; padding: 0 18px; border: 1px solid #609abb; border-radius: 3px; background: #397fa6; color: white; cursor: pointer; &.secondary { margin-left: 7px; border-color: #555; background: #383838; color: #ccc; } } small { display: block; margin-top: 22px; color: #6f6f6f; font-size: 10px; line-height: 1.8; } }
 .toast { position: fixed; bottom: 145px; left: 50%; z-index: 20; max-width: 520px; transform: translateX(-50%); padding: 10px 16px; border: 1px solid #666; border-radius: 4px; background: #111e; color: #eee; box-shadow: 0 4px 20px #0006; font-size: 12px; }
-.import-progress { position: fixed; top: 61px; left: 52px; z-index: 5; padding: 5px 9px; border-radius: 3px; background: #111c; color: #bbb; font-size: 10px; }
+.task-progress { position: fixed; top: 61px; left: 52px; z-index: 30; width: min(360px, calc(100vw - 80px)); padding: 10px 12px; border: 1px solid #555; border-radius: 4px; background: #202020ee; color: #ccc; box-shadow: 0 4px 18px #0008; > div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: 10px; } span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } strong { flex: none; color: #888; font-weight: 400; } }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; button { padding: 7px 12px; border: 1px solid #555; border-radius: 3px; background: #363636; color: #ddd; cursor: pointer; &.danger { border-color: #b4853f; background: #8a642e; color: white; } } }
 .top-actions .mobile-edit { display: none; }
 @media (max-width: 800px) {
     .camera-raw { min-width: 0; grid-template-rows: 48px minmax(0, 1fr) 112px; }

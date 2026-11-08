@@ -36,17 +36,19 @@ export function mergeAdjustments(base: Adjustments, patch: Partial<Adjustments>)
     const result = cloneAdjustments(base);
     for (const [key, value] of Object.entries(patch)) {
         if (value === undefined) continue;
-        if (key === 'curves') Object.assign(result.curves, value);
+        if (key === 'curves') Object.assign(result.curves, value as Adjustments['curves']);
         else if (key === 'mixer') {
-            for (const color of MIXER_COLORS) if (value[color]) Object.assign(result.mixer[color], value[color]);
+            const mixer = value as Adjustments['mixer'];
+            for (const color of MIXER_COLORS) if (mixer[color]) Object.assign(result.mixer[color], mixer[color]);
         } else if (key === 'grading') {
+            const grading = value as Adjustments['grading'];
             for (const range of ['shadows', 'midtones', 'highlights'] as const) {
-                if (value[range]) Object.assign(result.grading[range], value[range]);
+                if (grading[range]) Object.assign(result.grading[range], grading[range]);
             }
-            if (value.blending !== undefined) result.grading.blending = value.blending;
-            if (value.balance !== undefined) result.grading.balance = value.balance;
+            if (grading.blending !== undefined) result.grading.blending = grading.blending;
+            if (grading.balance !== undefined) result.grading.balance = grading.balance;
         } else if (key === 'calibration' || key === 'effects' || key === 'optics') Object.assign(result[key], value);
-        else (result as Record<string, unknown>)[key] = value;
+        else (result as unknown as Record<string, unknown>)[key] = value;
     }
     return result;
 }

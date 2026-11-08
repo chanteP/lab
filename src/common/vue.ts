@@ -1,6 +1,7 @@
 import { type Component, createApp, ref, watch, createVNode } from 'vue';
 import { saveParseJSON } from './common';
 import NaiveUIContainer from '../common/NaiveUIContainer.vue';
+import type { BuiltInGlobalTheme } from 'naive-ui/es/themes/interface';
 
 function getWrapper() {
     if (document.getElementById('app')) {
@@ -12,18 +13,18 @@ function getWrapper() {
     return div;
 }
 
-export function mountVue(App: Component, withUI = false) {
+export function mountVue(App: Component, withUI = false, theme?: BuiltInGlobalTheme) {
     if (withUI) {
         const root = {
             functional: true,
             render: (context) => {
-                return createVNode(NaiveUIContainer, {}, [createVNode(App)]);
+                return createVNode(NaiveUIContainer, { theme }, { default: () => createVNode(App) });
             },
         };
-        const app = createApp(root).mount(getWrapper());
+        const app = createApp(root).mount(getWrapper()!);
         return app;
     } else {
-        return createApp(App).mount(getWrapper());
+        return createApp(App).mount(getWrapper()!);
     }
 }
 

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import exifr from 'exifr';
 import { initWLibraw } from '@wasmedia/wlibraw';
 import { encodeDng } from './dng.ts';
+import { readFileSync } from 'node:fs';
+import { parseDcp } from '../engine/dcp/parser.ts';
 
 test('writes a readable 16-bit RGB DNG with EXIF and XMP', async () => {
     const pixels = new Uint8ClampedArray(64 * 64 * 4);
@@ -20,4 +22,29 @@ test('writes a readable 16-bit RGB DNG with EXIF and XMP', async () => {
     assert.ok(rgba.data.some((value) => value > 0));
     assert.ok(rgba.data[0] > 240 && rgba.data[1] < 20 && rgba.data[2] < 20);
     decoded.free(); file.close();
+});
+
+test('embeds the selected DCP as an ExtraCameraProfiles IFD', async () => {
+    const pixels = new Uint8ClampedArray(8 * 8 * 4); pixels.fill(128);
+    const profile = parseDcp(readFileSync('src/cameraRaw/profiles/Sony ILCE-7CM2 Camera FL2.dcp'));
+    const data = encodeDng({ data: pixels, width: 8, height: 8 } as ImageData, { name: 'sample.arw', metadata: { Make: 'SONY', Model: 'Sony ILCE-7CM2' } }, '<xmp>profile</xmp>', profile);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength), count = view.getUint16(8, true);
+    let profileOffset = 0;
+    for (let i = 0; i < count; i++) {
+        const at = 10 + i * 12;
+        if (view.getUint16(at, true) === 50933) profileOffset = view.getUint32(at + 8, true);
+    }
+    assert.ok(profileOffset > 0);
+    const profileCount = view.getUint16(profileOffset, true);
+    let name = '';
+    for (let i = 0; i < profileCount; i++) {
+        const at = profileOffset + 2 + i * 12;
+        if (view.getUint16(at, true) === 50936) {
+            const length = view.getUint32(at + 4, true), offset = view.getUint32(at + 8, true);
+            name = new TextDecoder().decode(data.slice(offset, offset + length)).replace(/\0.*$/s, '');
+        }
+    }
+    assert.equal(name, 'Camera FL2');
+    const metadata = await exifr.parse(data, { tiff: true });
+    assert.equal(metadata.Model, 'Sony ILCE-7CM2');
 });

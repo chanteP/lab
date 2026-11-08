@@ -68,7 +68,7 @@ async function runPageSpecs(page) {
         const name = spec.slice(join(rootDir, 'src', page).length + 1).replaceAll(/[\\/]/g, '-').replace(/\.ts$/, '.mjs');
         const outfile = join(rootDir, '.temp', 'spec', page, name);
         mkdirSync(join(outfile, '..'), { recursive: true });
-        await bundle({ entryPoints: [spec], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['@wasmedia/wlibraw'], loader: { '.wasm': 'file' }, logLevel: 'silent' });
+        await bundle({ entryPoints: [spec], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['@wasmedia/wlibraw'], loader: { '.wasm': 'file', '.dcp': 'file' }, logLevel: 'silent' });
         console.log(`[lab] spec ${page}: ${name}`);
         const result = spawnSync(process.execPath, ['--test', outfile], { stdio: 'inherit' });
         if (result.status !== 0) throw new Error(`Page spec failed: ${spec}`);
@@ -100,6 +100,10 @@ const commands = {
 
     async build() {
         const page = requirePage();
+        if (existsSync(join(rootDir, `tsconfig.${page}.json`))) {
+            const typecheck = spawnSync('yarn', [`typecheck:${page}`], { cwd: rootDir, stdio: 'inherit' });
+            if (typecheck.status !== 0) throw new Error(`Type check failed: ${page}`);
+        }
         await runPageSpecs(page);
         const outDir = flags.out ? join(rootDir, flags.out) : undefined;
         const target = outDir ?? join(rootDir, 'docs', page);
