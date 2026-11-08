@@ -32,6 +32,11 @@ function hasSourceEdgePriority(hit: THREE.Intersection | null) {
     return isVertexRoundingProxyHit(hit) && Number((hit as any)?.pixelDistance ?? Infinity) <= INTERACTION.sourceEdgePriorityPx;
 }
 
+export function hasDistinctVertexPriority(vertex: GeometryAnchor | null, generated: GeometryAnchor | null) {
+    if (!vertex?.localVertex || !generated?.generatedTreatment || !generated.localVertex) return false;
+    return new THREE.Vector3(...vertex.localVertex.point).distanceTo(new THREE.Vector3(...generated.localVertex.point)) > 0.05;
+}
+
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
 export class InteractionController {
     geometryAnchor: GeometryAnchor | null = null;
@@ -724,7 +729,7 @@ export class InteractionController {
                 this.refreshFaceFeedback();
                 return;
             }
-            if (faceAnchor?.generatedTreatment && !sourceEdgeHit) {
+            if (faceAnchor?.generatedTreatment && !sourceEdgeHit && !hasDistinctVertexPriority(vertexAnchor, faceAnchor)) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = faceAnchor;
             } else if (vertexAnchor) {
@@ -926,9 +931,10 @@ export class InteractionController {
             this.callbacks.onGeometrySelect(hits[0].object.userData.entityId, 'face', normal, hits[0].point.toArray() as Vec3, event.metaKey || event.ctrlKey, intersection.profilePoints);
             return;
         }
+        const vertexAnchor = vertexHit ? this.geometrySelector.createVertexAnchor(vertexHit) : null;
         if (hit) {
             const anchor = this.createGeometryAnchor(hit);
-            if (anchor.generatedTreatment && !hasSourceEdgePriority(edgeHit)) {
+            if (anchor.generatedTreatment && !hasSourceEdgePriority(edgeHit) && !hasDistinctVertexPriority(vertexAnchor, anchor)) {
                 this.geometryAnchor = anchor;
                 this.hoverFaceAnchor = null;
                 this.callbacks.onGeometrySelect(anchor.id, anchor.type, anchor.normal, anchor.point, additive);
@@ -936,11 +942,10 @@ export class InteractionController {
             }
         }
         if (vertexHit && (vertexHit.object.userData.vertexRoundingProxy || !hit || vertexHit.distance <= hit.distance + 2)) {
-            const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
-            if (anchor) {
-                this.geometryAnchor = anchor;
+            if (vertexAnchor) {
+                this.geometryAnchor = vertexAnchor;
                 this.hoverFaceAnchor = null;
-                this.callbacks.onGeometrySelect(anchor.id, 'vertex', anchor.normal, anchor.point, additive);
+                this.callbacks.onGeometrySelect(vertexAnchor.id, 'vertex', vertexAnchor.normal, vertexAnchor.point, additive);
                 return;
             }
         }

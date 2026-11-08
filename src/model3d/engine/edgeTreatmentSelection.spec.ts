@@ -15,6 +15,7 @@ import { GeometrySelector, type GeometryAnchor } from './viewport/GeometrySelect
 import { useEdgeTreatmentOperations } from '../composables/useEdgeTreatmentOperations';
 import { GuideRenderer } from './viewport/GuideRenderer';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
+import { hasDistinctVertexPriority } from './viewport/InteractionController';
 
 await initializeManifold();
 
@@ -333,12 +334,33 @@ test('raycast selection owns the rounded surface instead of its three adjacent p
     assert.equal(anchor.type, 'vertex');
     assert.equal(anchor.vertexTreatmentId, corner.id);
 
-    const nearCorner = new THREE.Vector3(19.5, 40, 19.5);
-    const adjacentRay = new THREE.Raycaster(origin, nearCorner.clone().sub(origin).normalize());
-    const planeHit = adjacentRay.intersectObject(visible, false)[0];
+    const adjacentFace = visible.userData.topology.faces.find((face: any) => face.planar && face.normal[1] > 0.99);
+    const planeHit = faceHit(visible as THREE.Mesh, adjacentFace.triangleIds[0]);
     const priorityAnchor = new GeometrySelector().createFaceAnchor(planeHit, document.entities[0]);
-    assert.equal(priorityAnchor.type, 'vertex', 'the rounding region takes priority over an adjacent plane triangle');
-    assert.equal(priorityAnchor.vertexTreatmentId, corner.id);
+    assert.equal(priorityAnchor.type, 'face', 'adjacent planar triangles remain ordinary face selections');
+});
+
+test('a different cube corner wins over the existing rounded face and hover still renders', () => {
+    const corner: VertexTreatment = {
+        id: 'hover-corner', type: 'fillet', size: 8,
+        vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+    };
+    const { document, synchronizer } = fixture({ edge: [], vertex: [corner] });
+    const visible = synchronizer.model.children.find((child) => child.userData.entityId === 'box' && !child.userData.selectionProxy)!;
+    const generated = visible.userData.topology.faces.find((face: any) => !face.planar);
+    const anchor = new GeometrySelector().createFaceAnchor(faceHit(visible as THREE.Mesh, generated.triangleIds[0]), document.entities[0]);
+    const otherCorner = { ...anchor, localVertex: { point: [-20, 20, 20] as [number, number, number], normals: corner.vertex.normals } };
+    assert.equal(hasDistinctVertexPriority(otherCorner, anchor), true);
+    assert.equal(hasDistinctVertexPriority(anchor, anchor), false);
+
+    const guide = new GuideRenderer({
+        overlay: new OverlayController(), model: synchronizer.model, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+        getSelected: () => [], getTool: () => 'select', getGeometryAnchor: () => null, getHoverFaceAnchor: () => anchor,
+        getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm', getDocument: () => document,
+    });
+    guide.update(document);
+    assert.ok(guide.faceFeedback.children.some((child) => !child.userData.activeSelection), 'hover must render the generated curved face');
+    guide.dispose();
 });
 
 test('edge chamfer limit spans the full section while fillet keeps the safe radius limit', () => {
