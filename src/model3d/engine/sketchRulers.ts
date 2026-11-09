@@ -9,6 +9,8 @@ export type SketchRulerFrame = {
     unitsPerPixel: number;
     unit: LengthUnit;
     guides: ProjectedSketchGuide[];
+    /** Screen-space operation handles cut out of persistent guides and win pointer priority. */
+    handles?: ScreenPoint[];
 };
 
 /** A ruler drag uses the opposite axis: top creates horizontal lines, left creates vertical lines. */

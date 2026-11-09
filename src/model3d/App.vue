@@ -601,6 +601,11 @@ function onSketchGuideChange(guide: SketchReferenceGuide, phase: EditPhase) {
 function onSketchGuideSnap(guide: SketchReferenceGuide, offset: number) {
     return viewport?.snapSketchGuideOffset(guide, offset) ?? offset;
 }
+function onSketchGuidePointer(event: PointerEvent, phase: 'down' | 'move') {
+    if (!viewport?.hasSketchContentAt(event)) return false;
+    viewport.forwardSketchPointer(event, phase);
+    return true;
+}
 function onSketchGuideInput(id: string, offset: number) {
     const guide = document.value.planes.find((item) => item.id === activePlaneId.value)?.guides?.find((item) => item.id === id);
     if (!guide || !Number.isFinite(offset) || Math.abs(guide.offset - offset) < 1e-9) return;
@@ -682,6 +687,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchGuideSelect,
         onSketchGuideChange,
         onSketchGuideSnap,
+        onSketchGuidePointer,
         onSketchGuideInput,
         onSketchGuideDelete,
         onLengthUnitChange: setLengthUnit,
@@ -751,7 +757,7 @@ onBeforeUnmount(() => {
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
-                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :guide-snap-enabled="sketchGuideSnapEnabled" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :guide-snap-enabled="sketchGuideSnapEnabled" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"

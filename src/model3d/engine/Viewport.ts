@@ -61,6 +61,8 @@ export interface ViewportCallbacks {
     onSketchGuideSelect: (id: string | null) => void;
     onSketchGuideChange: (guide: SketchReferenceGuide, phase: EditPhase) => void;
     onSketchGuideSnap: (guide: SketchReferenceGuide, offset: number) => number;
+    /** Returns true when a sketch handle/border consumes the pointer instead of a ruler guide. */
+    onSketchGuidePointer: (event: PointerEvent, phase: 'down' | 'move') => boolean;
     onSketchGuideInput: (id: string, offset: number) => void;
     onSketchGuideDelete: (id: string) => void;
     onLengthUnitChange: (unit: LengthUnit) => void;
@@ -429,12 +431,17 @@ export class Viewport {
                 rulerPosition: guideScreenPosition(guide, origin, unitsPerPixel).position,
             };
         });
+        const handles = this.sketchRenderer.markers().map((marker) => {
+            const point = marker.getWorldPosition(new THREE.Vector3()).project(this.cameraController.camera);
+            return { x: (point.x + 1) * canvas.clientWidth / 2, y: (1 - point.y) * canvas.clientHeight / 2 };
+        });
         return {
             width: canvas.clientWidth, height: canvas.clientHeight,
-            origin: originPoint, unitsPerPixel, unit: this.lengthUnit, guides,
+            origin: originPoint, unitsPerPixel, unit: this.lengthUnit, guides, handles,
         };
     }
 
+    hasSketchContentAt(event: PointerEvent) { return this.interaction.hasSketchContentAt(event); }
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     forwardWheel(event: WheelEvent) {
         this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));

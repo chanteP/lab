@@ -8,8 +8,9 @@ import { uid } from '../../utils/id';
 
 const RULER_SIZE = 12;
 const RULER_CENTER = RULER_SIZE / 2;
-const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; guideSnapEnabled?: boolean; callbacks: ViewportCallbacks }>();
+const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; guideSnapEnabled?: boolean; selectionTool?: boolean; callbacks: ViewportCallbacks }>();
 const root = ref<HTMLElement>();
+const hoverThrough = ref<string | null>(null);
 const drafts = new Map<string, string>();
 
 type PendingDrag = {
@@ -47,8 +48,15 @@ function snappedOffset(guide: SketchReferenceGuide, raw: number) {
     const tick = snapGuideOffsetToRuler(guide, raw, props.frame);
     return Math.abs(tick - raw) <= Math.abs(reference - raw) ? tick : reference;
 }
+function hoverGuide(event: PointerEvent, id: string) {
+    hoverThrough.value = props.callbacks.onSketchGuidePointer(event, 'move') ? id : null;
+}
 function begin(event: PointerEvent, side?: SketchRulerSide, guide?: SketchReferenceGuide) {
     if (event.button !== 0 || !props.frame) return;
+    if (guide && props.callbacks.onSketchGuidePointer(event, 'down')) {
+        hoverThrough.value = null;
+        return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const position = point(event);
@@ -132,11 +140,16 @@ useEventListener(window, 'pointercancel', cancel);
 <template>
     <div v-if="frame" ref="root" class="sketch-rulers" :style="{ width: `${frame.width}px`, height: `${frame.height}px` }">
         <svg class="sketch-guide-lines" :width="frame.width" :height="frame.height">
+            <mask id="sketch-guide-handle-mask" maskUnits="userSpaceOnUse">
+                <rect :width="frame.width" :height="frame.height" fill="white" />
+                <circle v-for="(handle, index) in frame.handles" :key="index" :cx="handle.x" :cy="handle.y" r="9" fill="black" />
+            </mask>
             <template v-for="guide in frame.guides" :key="guide.id">
                 <line
                     :x1="guide.axis === 'u' ? guide.x : 0" :y1="guide.axis === 'u' ? 0 : guide.y"
                     :x2="guide.axis === 'u' ? guide.x : frame.width" :y2="guide.axis === 'u' ? frame.height : guide.y"
-                    class="sketch-guide-hit" :class="guide.axis === 'u' ? 'vertical' : 'horizontal'" role="button" tabindex="0" aria-label="选择参考线"
+                    class="sketch-guide-hit" :class="[guide.axis === 'u' ? 'vertical' : 'horizontal', { disabled: selectionTool === false, 'content-priority': hoverThrough === guide.id }]" role="button" :tabindex="selectionTool === false ? -1 : 0" aria-label="选择参考线"
+                    @pointermove="hoverGuide($event, guide.id)" @pointerleave="hoverThrough = null"
                     @pointerdown="begin($event, undefined, guide)"
                     @keydown.enter.prevent="callbacks.onSketchGuideSelect(guide.id)"
                     @keydown.delete.prevent="callbacks.onSketchGuideDelete(guide.id)"
@@ -144,7 +157,7 @@ useEventListener(window, 'pointercancel', cancel);
                 <line
                     :x1="guide.axis === 'u' ? guide.x : 0" :y1="guide.axis === 'u' ? 0 : guide.y"
                     :x2="guide.axis === 'u' ? guide.x : frame.width" :y2="guide.axis === 'u' ? frame.height : guide.y"
-                    class="sketch-guide-line" :class="{ selected: selectedId === guide.id }"
+                    class="sketch-guide-line" :class="{ selected: selectedId === guide.id }" mask="url(#sketch-guide-handle-mask)"
                 />
             </template>
         </svg>
@@ -207,6 +220,8 @@ useEventListener(window, 'pointercancel', cancel);
     stroke: rgb(0 0 0 / 1%);
     stroke-width: 12;
     pointer-events: stroke;
+    &.disabled { pointer-events: none; }
+    &.content-priority { cursor: grab; }
     &.vertical { cursor: col-resize; }
     &.horizontal { cursor: row-resize; }
     &:active { cursor: grabbing; }

@@ -271,6 +271,12 @@ export class InteractionController {
         this.controls.enableRotate = !this.sketchMode && !this.measureMode;
     }
 
+    hasSketchContentAt(event: PointerEvent) {
+        this.setPointer(event);
+        return !!(this.raycaster.intersectObjects(this.sketchRenderer.markers(), false)[0]
+            || this.raycaster.intersectObjects(this.sketchRenderer.borderTargets(), false)[0]);
+    }
+
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') {
         if (phase === 'down') this.onPointerDown(event);
         else if (phase === 'move') this.onPointerMove(event);
