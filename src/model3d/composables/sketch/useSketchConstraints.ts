@@ -1,11 +1,9 @@
 import { useMessage } from 'naive-ui';
 import type { Viewport } from '../../engine/Viewport';
 import { entityProfileClosed } from '../../engine/profiles';
+import { runConstraintChain, SKETCH_CONSTRAINT_TOLERANCE, type SketchConstraintOperation } from '../../engine/sketchConstraintChain';
 import {
-    changedConstraintPointCount, runConstraintChain, SKETCH_CONSTRAINT_TOLERANCE,
-} from '../../engine/sketchConstraintChain';
-import {
-    constraintRules, solveSketchConstraints, straightConstraintSegment, type SketchConstraintType,
+    constraintRules, solveSketchConstraints, straightConstraintSegment, supportsSketchEdgeConstraints, upsertSketchConstraintRule, type SketchConstraintType,
 } from '../../engine/sketchConstraints';
 import { uid } from '../../utils/id';
 import type { ProfileCurves } from '../../engine/profiles';
@@ -117,30 +115,21 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         ];
         return [...new Map(levels.map((anchors) => [key(anchors), anchors])).values()];
     }
-    function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void) {
+    function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void, operation?: SketchConstraintOperation) {
         const attempted = cloneDocument(document.value);
         let failure: 'limit' | 'conflict' = 'conflict';
 
-        // Try stronger preservation first; endpoint direction variants break ties by changed vertex count.
+        // Try stronger preservation first; an explicit dimension operation remains exact at every level.
         for (const anchors of constraintAnchorLevels()) {
-            let best: { document: ModelDocument; changed: number } | null = null;
-            for (const preferEndpointA of [false, true]) {
-                document.value.entities = cloneDocument(attempted).entities;
-                const result = runConstraintChain(document.value, rootId, anchors, preferEndpointA, constraintLimit.value, trimmedSelection.value);
-                if (result === 'limit') {
-                    failure = 'limit';
-                    break;
-                }
-                if (result !== 'ok') continue;
-                const candidate = cloneDocument(document.value);
-                const changed = changedConstraintPointCount(attempted, candidate);
-                if (!best || changed < best.changed) best = { document: candidate, changed };
+            document.value.entities = cloneDocument(attempted).entities;
+            const result = runConstraintChain(document.value, rootId, anchors, constraintLimit.value, operation, before);
+            if (result === 'limit') {
+                failure = 'limit';
+                break;
             }
-            if (best) {
-                document.value.entities = best.document.entities;
-                syncLocalSketchFromDocument();
-                return true;
-            }
+            if (result !== 'ok') continue;
+            syncLocalSketchFromDocument();
+            return true;
         }
 
         document.value.entities = before.entities;
@@ -150,19 +139,19 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         message.warning(failure === 'limit' ? `约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚` : '约束链无法同时满足固定元素，本次操作已回滚');
         return false;
     }
-    function syncEditingSketch() {
+    function syncEditingSketch(operation?: SketchConstraintOperation) {
         const before = sketchGesture.before || cloneDocument(document.value);
         if (trimmedSelection.value) {
             const sourceCount = trimmedSelection.value.sourceCount;
             syncTrimmedEntity(sketchPoints.value);
-            if (!enforceSketchConstraints(editingSketchId.value, before, () => { if (trimmedSelection.value) trimmedSelection.value.sourceCount = sourceCount; })) return;
+            if (!enforceSketchConstraints(editingSketchId.value, before, () => { if (trimmedSelection.value) trimmedSelection.value.sourceCount = sourceCount; }, operation)) return;
             syncLocalSketchFromDocument();
             return;
         }
         if (!editingSketchId.value) return;
         const item = document.value.entities.find((entity) => entity.id === editingSketchId.value);
         if (item) { item.points = sketchPoints.value.map((point) => [...point]); item.profileType = sketchType.value; item.curves = JSON.parse(JSON.stringify(sketchCurves.value)); item.sides = sketchSides.value; item.lockedPoints = [...sketchLockedPoints.value]; item.sectorAngle = sketchSectorAngle.value; item.open = sketchOpen.value; item.profileStartAngle = sketchProfileStartAngle.value; }
-        if (!enforceSketchConstraints(editingSketchId.value, before)) return;
+        if (!enforceSketchConstraints(editingSketchId.value, before, undefined, operation)) return;
         syncLocalSketchFromDocument();
     }
     function selectConstraintRule(entityId: string, index: number, ruleId: string) {
@@ -198,6 +187,10 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
     function applySketchConstraint(type: SketchConstraintType) {
         const selected = selectedEdges.value;
         if (!selected.length) return;
+        if (selected.some(({ entityId }) => !supportsSketchEdgeConstraints(document.value.entities.find((entity) => entity.id === entityId) || {}))) {
+            message.warning('正多边形的展开边不支持附加约束，请使用整形状半径编辑');
+            return;
+        }
         const before = cloneDocument(document.value);
         activeConstraintRule.value = null;
         viewport()?.setActiveConstraintRule(null);
@@ -263,7 +256,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
                 if (result.changed) changes.set(entityId, { points: result.points.slice(2), curves: Object.fromEntries(Object.entries(result.curves).filter(([key]) => Number(key) >= 2).map(([key, curve]) => [Number(key) - 2, curve])) });
             }
         }
-        if (!changes.size) return;
+        // A rule must be saved even when the current geometry already satisfies it.
         pushHistory();
         changes.forEach((change, entityId) => {
             const entity = document.value.entities.find((item) => item.id === entityId)!;
@@ -279,12 +272,19 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
             const entity = document.value.entities.find((item) => item.id === entityId)!;
             const a = entity.points![index], b = entity.points![(index + 1) % entity.points!.length];
             const resolved = type === 'auto' ? (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? 'horizontal' : 'vertical') : type;
-            const rules = constraintRules(entity.edgeConstraints?.[index]);
             const next = { id: uid(), type: resolved, reference: ['parallel', 'perpendicular', 'equal'].includes(type) ? reference : undefined };
-            if (!rules.some((rule) => rule.type === next.type && rule.reference?.entityId === next.reference?.entityId && rule.reference?.index === next.reference?.index)) rules.push(next);
-            entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
+            upsertSketchConstraintRule(entity, index, next);
         });
-        if (!enforceSketchConstraints(editingSketchId.value, before)) {
+        const a = referenceEntity.points[reference.index], b = referenceEntity.points[(reference.index + 1) % referenceEntity.points.length];
+        const referenceLength = a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+        const operation: SketchConstraintOperation | undefined = referenceLength > 0 && ['parallel', 'perpendicular', 'equal'].includes(type) ? {
+            entityId: reference.entityId,
+            index: reference.index,
+            length: referenceLength,
+            direction: [(b[0] - a[0]) / referenceLength, (b[1] - a[1]) / referenceLength],
+            preserve: 'start',
+        } : undefined;
+        if (!enforceSketchConstraints(editingSketchId.value, before, undefined, operation)) {
             popHistory();
             refreshSketch();
             return;
@@ -294,6 +294,10 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         refreshSketch();
     }
     function toggleSketchPointLock() {
+        if (selectedEdges.value.some(({ entityId }) => !supportsSketchEdgeConstraints(document.value.entities.find((entity) => entity.id === entityId) || {}))) {
+            message.warning('正多边形的展开边不支持固定，请使用整形状编辑');
+            return;
+        }
         const grouped = new Map<string, number[]>();
         const add = (entityId: string, indices: number[]) => grouped.set(entityId, [...new Set([...grouped.get(entityId) || [], ...indices])]);
         selectedPoints.value.forEach(({ entityId, index }) => add(entityId, [index]));

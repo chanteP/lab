@@ -21,6 +21,8 @@ export const INTERACTION = {
     cameraTransitionMs: 600,
     clickTolerancePx: 5,
     edgeSelectionPx: 16,
+    // Source edges yield to generated treatment faces outside this tight screen-space priority zone.
+    sourceEdgePriorityPx: 4,
     vertexSelectionPx: 18,
     directArrowSelectionPx: 28,
     sketchDragThresholdPx: 4,

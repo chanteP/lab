@@ -48,7 +48,7 @@ test('wrapped closed-curve slices only contain finite points', () => {
 test('trim and restitch retain an ellipse arc instead of expanding it into polyline vertices', () => {
     const circle = borderSegments(sketch('circle', [[0, 0], [10, 0]]))[0];
     const remaining = sliceBorderCurve(circle, 0.5, 1);
-    const [path] = restitchSketchEdges([{ a: remaining.points[0], b: remaining.points.at(-1)!, points: remaining.points, curve: remaining.curve }]);
+    const [path] = restitchSketchEdges([{ a: remaining.points[0], b: remaining.points[remaining.points.length - 1]!, points: remaining.points, curve: remaining.curve }]);
     assert.equal(path.points.length, 2, 'only semantic endpoints are stored');
     assert.equal(path.analyticCurves[0].kind, 'ellipse');
 
@@ -67,7 +67,7 @@ test('restitch splits a rectangle edge at analytic arc intersections before clos
     const arc: SketchCurve = { kind: 'ellipse', center: [0, 0], radiusX: 10, radiusY: 10, rotation: 0, orientation: 1, startAngle: Math.PI, endAngle: Math.PI * 2 };
     const points = Array.from({ length: 65 }, (_, index) => curvePoint(arc, index / 64));
     const paths = restitchSketchEdges([
-        { a: points[0], b: points.at(-1)!, points, curve: arc },
+        { a: points[0], b: points[points.length - 1]!, points, curve: arc },
         { a: [-20, 0], b: [20, 0], points: [[-20, 0], [20, 0]] },
         { a: [20, 0], b: [20, -20], points: [[20, 0], [20, -20]] },
         { a: [20, -20], b: [-20, -20], points: [[20, -20], [-20, -20]] },

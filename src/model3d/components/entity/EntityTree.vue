@@ -2,18 +2,8 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { NIcon } from 'naive-ui';
 import { ChevronForwardOutline, ChevronDownOutline, CubeOutline, FolderOutline, GridOutline, EyeOutline, EyeOffOutline } from '@vicons/ionicons5';
-import type { ModelEntity } from '../../types';
-
-export interface OutlinerNode {
-    id: string;
-    kind: 'entity' | 'folder' | 'plane';
-    name: string;
-    parentId?: string | null;
-    visible?: boolean;
-    children: OutlinerNode[];
-    profileType?: ModelEntity['profileType'];
-    trimmed?: boolean;
-}
+import type { OutlinerNode } from '../../types/entityTree';
+export type { OutlinerNode };
 
 type DropTarget = { id: string; mode: 'before' | 'after' | 'inside' } | null;
 const props = withDefaults(defineProps<{ nodes: OutlinerNode[]; selectedIds: string[]; depth?: number; parentLast?: boolean[] }>(), { depth: 0, parentLast: () => [] });

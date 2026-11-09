@@ -19,6 +19,7 @@ import {
 import { GIZMO_COLORS } from '../config/colors';
 
 export class OrientationGizmo extends Object3D {
+    [key: string]: any;
 
 	constructor( camera, domElement, marginBottom = 42 ) {
 
@@ -35,7 +36,7 @@ export class OrientationGizmo extends Object3D {
 		const color2 = new Color( GIZMO_COLORS.y );
 		const color3 = new Color( GIZMO_COLORS.z );
 
-		const options = {};
+		const options: any = {};
 
 		const interactiveObjects = [];
 		const raycaster = new Raycaster();
@@ -171,7 +172,7 @@ export class OrientationGizmo extends Object3D {
 
 			raycaster.setFromCamera( mouse, orthoCamera );
 
-			const intersects = raycaster.intersectObjects( interactiveObjects );
+			const intersects = raycaster.intersectObjects( interactiveObjects, false );
 
 			return intersects.length > 0 ? intersects[ 0 ].object : null;
 
@@ -311,7 +312,7 @@ export class OrientationGizmo extends Object3D {
 
 		}
 
-		function getSpriteMaterial( color, text ) {
+		function getSpriteMaterial( color, text = null ) {
 
 			const { font = '24px Arial', color: labelColor = GIZMO_COLORS.negative, radius = 14 } = options;
 

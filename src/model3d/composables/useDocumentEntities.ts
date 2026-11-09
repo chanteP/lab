@@ -1,7 +1,7 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue';
 import * as THREE from 'three';
 import { useMessage } from 'naive-ui';
-import type { OutlinerNode } from '../components/entity/EntityTree.vue';
+import type { OutlinerNode } from '../types/entityTree';
 import type { Viewport, ViewTool } from '../engine/Viewport';
 import { detachFeatureReferences } from '../engine/modeling/FeatureReferences';
 import { constraintRules } from '../engine/sketchConstraints';

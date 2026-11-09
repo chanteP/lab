@@ -121,7 +121,7 @@ function inlineValue(text: string): unknown {
     if (text === '{}') return {};
     const parts = splitComma(text);
     if (parts.length > 1 || text.endsWith(',')) {
-        if (parts.at(-1) === '') parts.pop();
+        if (parts[parts.length - 1] === '') parts.pop();
         return parts.map(scalarValue);
     }
     return scalarValue(text);
@@ -162,7 +162,7 @@ function parseBlock(tokens: Token[], start: number, indent: number): { value: un
             } else value.push(null);
         } else {
             const { key, rest } = mappingKey(token.text, token.line);
-            if (Object.hasOwn(value, key)) throw new Error(`第 ${token.line} 行对象键重复：${key}`);
+            if (Object.prototype.hasOwnProperty.call(value, key)) throw new Error(`第 ${token.line} 行对象键重复：${key}`);
             if (rest) value[key] = inlineValue(rest);
             else if (tokens[index + 1]?.indent > indent) {
                 const child = parseBlock(tokens, index + 1, tokens[index + 1].indent);

@@ -24,3 +24,16 @@ test('a single closed 3D sketch resolves its individual hit face without requiri
     assert.equal(anchor.profilePoints.length, 4);
     assert.notEqual(anchor.profilePoints, null);
 });
+
+test('multi-point translation uses the selected content center as its operation anchor', () => {
+    const document = createDocument();
+    const rectangle = createEntity('sketch', 'rectangle');
+    rectangle.profileType = 'rectangle';
+    rectangle.points = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    document.entities.push(rectangle);
+    const controller = Object.create(InteractionController.prototype) as any;
+    controller.sceneSynchronizer = { document, selected: [rectangle.id] };
+    controller.sketchRenderer = { selectedPointRefs: [] };
+
+    assert.deepEqual(controller.sketchSelectionAnchor([100, 100]), [5, 5]);
+});

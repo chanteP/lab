@@ -152,10 +152,10 @@ const historySteps = computed(() => document.value.entities.flatMap((item) => {
 }).reverse());
 const activePlane = computed(() => document.value.planes.find((plane) => plane.id === activePlaneId.value) || null);
 const {
-    importInput, projects, project, saveState, exportQuality, exporting,
+    importInput, meshImportInput, projects, project, saveState, exportQuality, exporting,
     showNewProject, newProjectName, flushSave, scheduleSave, clearSaveTimer, openProject,
     newProject, duplicateProject, removeProject, onExportAction,
-    importProject, onImportFile, initializeProjects,
+    importProject, importMesh, onImportFile, onImportMeshFile, initializeProjects,
 } = useProjectLibrary({
     document, selectedIds, activePlaneId, activePlane, lengthUnit, isolateActive, sectionActive,
     viewport: () => viewport, clearHistory, cancelSketch: () => sketchSession.cancelSketch(), setTool, message,
@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"
-                    @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate"
+                    @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
                     @history="editHistory" @boolean="applyBoolean" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
@@ -748,6 +748,7 @@ onBeforeUnmount(() => {
             </div>
         </NModal>
         <input ref="importInput" type="file" accept=".yaml,.yml,.model.yaml" hidden @change="onImportFile" />
+        <input ref="meshImportInput" type="file" accept=".stl,.obj,.glb" hidden @change="onImportMeshFile" />
     </div>
 </template>
 

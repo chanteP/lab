@@ -6,6 +6,7 @@ import { deleteProject, getActiveProjectId, listProjects, putProject, setActiveP
 import { uid } from '../utils/id';
 import { storedLengthUnit } from './useUnits';
 import { parseProjectYaml } from '../utils/projectYaml';
+import { importMeshFile } from '../engine/importers';
 import {
     cloneDocument, createDocument, isDocument, normalizeDocument,
     type GeometryQuality, type LengthUnit, type ModelDocument, type ProjectRecord, type SketchPlane,
@@ -33,6 +34,7 @@ export function useProjectLibrary(options: ProjectLibraryOptions) {
         viewport, clearHistory, cancelSketch, setTool, message,
     } = options;
     const importInput = ref<HTMLInputElement>();
+    const meshImportInput = ref<HTMLInputElement>();
     const projects = ref<ProjectRecord[]>([]);
     const project = ref<ProjectRecord>(createProject('未命名项目'));
     const saveState = ref<'saved' | 'saving' | 'dirty'>('saved');
@@ -146,6 +148,23 @@ export function useProjectLibrary(options: ProjectLibraryOptions) {
         else runExport(type);
     }
     function importProject() { importInput.value?.click(); }
+    function importMesh() { meshImportInput.value?.click(); }
+    async function onImportMeshFile(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) return;
+        try {
+            const entities = await importMeshFile(file);
+            document.value.entities.push(...entities);
+            clearHistory();
+            selectedIds.value = entities.map((entity) => entity.id);
+            await nextTick();
+            viewport()?.sync(document.value);
+            viewport()?.fit();
+            message.success(`已导入 ${entities.length} 个实体`);
+        } catch (error) { message.error(`3D 文件导入失败：${(error as Error).message}`); }
+    }
     async function onImportFile(event: Event) {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
@@ -176,9 +195,9 @@ export function useProjectLibrary(options: ProjectLibraryOptions) {
     }
 
     return {
-        importInput, projects, project, projectOptions, saveState, exportQuality, exporting,
+        importInput, meshImportInput, projects, project, projectOptions, saveState, exportQuality, exporting,
         showNewProject, newProjectName, flushSave, scheduleSave, clearSaveTimer, openProject,
         reloadProjects, newProject, duplicateProject, removeProject, runExport, onExportAction,
-        importProject, onImportFile, initializeProjects,
+        importProject, importMesh, onImportFile, onImportMeshFile, initializeProjects,
     };
 }

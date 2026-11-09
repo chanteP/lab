@@ -87,8 +87,8 @@ export class CameraController {
         // Both projection modes retain 20x full-content framing while allowing close inspection.
         this.controls.minDistance = Math.max(0.05, radius * 0.03);
         this.controls.maxDistance = Math.max(100, radius * 20);
-        this.orthographicCamera.minZoom = 0.05;
-        this.orthographicCamera.maxZoom = Math.max(20, 100 / radius);
+        (this.orthographicCamera as any).minZoom = 0.05;
+        (this.orthographicCamera as any).maxZoom = Math.max(20, 100 / radius);
     }
 
     update(delta: number, onTransitionEnd: () => void) {

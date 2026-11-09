@@ -1,0 +1,11 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "target": "ES2022",
+        "types": ["vite/client", "node"],
+        "allowImportingTsExtensions": true,
+        "noUncheckedIndexedAccess": true
+    },
+    "include": ["src/model3d/**/*", "src/common/**/*", "ext.d.ts"],
+    "exclude": ["node_modules", "docs"]
+}

@@ -11,7 +11,8 @@
         "sitemap": "node scripts/lab.mjs sitemap",
         "copy-public": "node scripts/lab.mjs copy-public",
         "serve": "node scripts/lab.mjs serve",
-        "typecheck:cameraRaw": "vue-tsc -p tsconfig.cameraRaw.json"
+        "typecheck:cameraRaw": "vue-tsc -p tsconfig.cameraRaw.json",
+        "typecheck:model3d": "tsc -p tsconfig.model3d.json"
     },
     "repository": {
         "type": "git",
@@ -57,13 +58,13 @@
         "@types/antlr4": "4.11",
         "@types/css-tree": "^2.3.8",
         "@types/mime": "^4.0.0",
+        "@types/node": "^26.6.6",
         "@types/opentype.js": "^1.3.8",
         "@types/three": "^0.171.0",
         "@vitejs/plugin-vue": "^6.0.0",
         "typescript": "^5.6.0",
         "vite": "^7.0.0",
-        "vue-tsc": "^3.1.3",
-        "@types/node": "^26.6.6"
+        "vue-tsc": "^3.1.3"
     },
     "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
 }

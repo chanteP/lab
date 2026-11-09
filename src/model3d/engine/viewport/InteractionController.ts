@@ -28,11 +28,20 @@ function isVertexRoundingProxyHit(hit: THREE.Intersection | null) {
     return !!owner?.userData.vertexRoundingProxy;
 }
 
+function hasSourceEdgePriority(hit: THREE.Intersection | null) {
+    return isVertexRoundingProxyHit(hit) && Number((hit as any)?.pixelDistance ?? Infinity) <= INTERACTION.sourceEdgePriorityPx;
+}
+
+export function hasDistinctVertexPriority(vertex: GeometryAnchor | null, generated: GeometryAnchor | null) {
+    if (!vertex?.localVertex || !generated?.generatedTreatment || !generated.localVertex) return false;
+    return new THREE.Vector3(...vertex.localVertex.point).distanceTo(new THREE.Vector3(...generated.localVertex.point)) > 0.05;
+}
+
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
 export class InteractionController {
     geometryAnchor: GeometryAnchor | null = null;
     hoverFaceAnchor: GeometryAnchor | null = null;
-    sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; startX: number; startY: number; startPoint: Point2; moved: boolean } | null = null;
+    sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; startX: number; startY: number; startPoint: Point2; rawStart: Point2; anchor: Point2; moved: boolean } | null = null;
     measureMode = false;
 
     private readonly container: HTMLElement;
@@ -406,11 +415,47 @@ export class InteractionController {
 
     private sketchDragPoint(event: PointerEvent) {
         if (!this.sketchDrag) return this.sketchPoint(event);
-        return this.sketchOperationPoint(event, {
+        const raw = this.sketchPoint(event);
+        if (!raw) return null;
+        const delta = [raw[0] - this.sketchDrag.rawStart[0], raw[1] - this.sketchDrag.rawStart[1]] as Point2;
+        const operationPoint: Point2 = [this.sketchDrag.anchor[0] + delta[0], this.sketchDrag.anchor[1] + delta[1]];
+        const snapped = this.guideController.operation(operationPoint, {
             disabled: this.sketchDrag.sector,
             excludeEntityId: this.sketchDrag.center ? this.editingSketchId || undefined : undefined,
             excludePointIndex: !this.sketchDrag.center && !this.sketchDrag.handle && !this.sketchDrag.sector ? this.sketchDrag.index : undefined,
+            edgeStart: this.sketchDragEdgeStart(),
         });
+        return snapped ? [raw[0] + snapped[0] - operationPoint[0], raw[1] + snapped[1] - operationPoint[1]] as Point2 : raw;
+    }
+    private sketchDragEdgeStart() {
+        if (!this.sketchDrag || this.sketchDrag.handle || this.sketchDrag.sector || this.sketchDrag.center) return undefined;
+        const points = this.currentSketchPoints;
+        if (points.length < 2) return undefined;
+        if (points.length === 2) return [...points[this.sketchDrag.index === 0 ? 1 : 0]] as Point2;
+        const segment = this.sketchRenderer.activeSketchSegment;
+        if (segment >= 0 && this.sketchDrag.index === segment) return [...points[(segment + 1) % points.length]] as Point2;
+        if (segment >= 0 && this.sketchDrag.index === (segment + 1) % points.length) return [...points[segment]] as Point2;
+        return undefined;
+    }
+    private sketchSelectionAnchor(startPoint: Point2): Point2 {
+        const pointRefs = this.sketchRenderer.selectedPointRefs;
+        if (pointRefs.length > 1) {
+            const sum = pointRefs.reduce((result, reference) => {
+                const entity = this.document?.entities.find((item) => item.id === reference.entityId);
+                const point = entity?.points?.[reference.index];
+                return point ? [result[0] + point[0], result[1] + point[1]] : result;
+            }, [0, 0] as Point2);
+            return [sum[0] / pointRefs.length, sum[1] / pointRefs.length];
+        }
+        const ids = this.sceneSynchronizer.selected;
+        const points = ids.flatMap((id) => {
+            const entity = this.document?.entities.find((item) => item.id === id);
+            const indices = entity?.controlPoints || entity?.points?.map((_, index) => index) || [];
+            return indices.map((index) => entity!.points![index]);
+        }).filter(Boolean);
+        if (!points.length) return [...startPoint];
+        const center = points.reduce((sum, point) => [sum[0] + point[0], sum[1] + point[1]], [0, 0] as Point2);
+        return [center[0] / points.length, center[1] / points.length];
     }
     private drawingEdgeStart() {
         return !this.sketchSelectionTool && ['polygon', 'line'].includes(this.sketchProfileType) ? this.currentSketchPoints[this.currentSketchPoints.length - 1] : undefined;
@@ -494,7 +539,8 @@ export class InteractionController {
                     return;
                 }
                 const startPoint = this.sketchDragPoint(event)!;
-                const gesture = { startX: event.clientX, startY: event.clientY, startPoint, moved: false };
+                const rawStart = this.sketchPoint(event) || [...startPoint];
+                const gesture = { startX: event.clientX, startY: event.clientY, startPoint, rawStart, anchor: this.sketchSelectionAnchor(startPoint), moved: false };
                 this.sketchDrag = center ? { index, center: true, ...gesture } : sector ? { index, sector: true, ...gesture } : handle ? { index, handle: hit.object.userData.handleIndex, ...gesture } : { index, ...gesture };
                 this.container.classList.add('is-handle-dragging');
                 if (!handle && !sector && !center) {
@@ -673,7 +719,7 @@ export class InteractionController {
             const vertexHit = sketchId ? null : this.hitEntityVertex(event);
             const vertexAnchor = vertexHit ? this.geometrySelector.createVertexAnchor(vertexHit) : null;
             const faceAnchor = hit && !sketchId ? this.createGeometryAnchor(hit) : null;
-            const sourceEdgeHit = isVertexRoundingProxyHit(edgeHit);
+            const sourceEdgeHit = hasSourceEdgePriority(edgeHit);
             const sketchHits = sketchId ? this.hitSketchEntities(event) : [];
             const intersection = this.sketchIntersectionAnchor(sketchHits);
             this.setSketchHovers(intersection ? [] : sketchHits.map((item) => item.object.userData.entityId));
@@ -683,7 +729,7 @@ export class InteractionController {
                 this.refreshFaceFeedback();
                 return;
             }
-            if (faceAnchor?.generatedTreatment && !sourceEdgeHit) {
+            if (faceAnchor?.generatedTreatment && !sourceEdgeHit && !hasDistinctVertexPriority(vertexAnchor, faceAnchor)) {
                 this.hoverGeometry = null;
                 this.hoverFaceAnchor = faceAnchor;
             } else if (vertexAnchor) {
@@ -824,7 +870,7 @@ export class InteractionController {
             const point = this.sketchOperationPoint(event, { edgeStart });
             if (point && this.shapeDrag.moved) this.callbacks.onSketchDrag(this.shapeDrag.start, point, 'end');
             else if (point && this.shouldCloseSketchPath(event)) this.callbacks.onSketchClosePath();
-            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            else if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1, false); }
             this.clearSketchReferences();
             this.shapeDrag = null;
             return;
@@ -854,7 +900,7 @@ export class InteractionController {
                 return;
             }
             const point = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
-            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1); }
+            if (point) { this.callbacks.onSketchPoint(point); this.callbacks.onSketchSelect(-1, false); }
             this.clearSketchReferences();
             return;
         }
@@ -885,9 +931,10 @@ export class InteractionController {
             this.callbacks.onGeometrySelect(hits[0].object.userData.entityId, 'face', normal, hits[0].point.toArray() as Vec3, event.metaKey || event.ctrlKey, intersection.profilePoints);
             return;
         }
+        const vertexAnchor = vertexHit ? this.geometrySelector.createVertexAnchor(vertexHit) : null;
         if (hit) {
             const anchor = this.createGeometryAnchor(hit);
-            if (anchor.generatedTreatment && !isVertexRoundingProxyHit(edgeHit)) {
+            if (anchor.generatedTreatment && !hasSourceEdgePriority(edgeHit) && !hasDistinctVertexPriority(vertexAnchor, anchor)) {
                 this.geometryAnchor = anchor;
                 this.hoverFaceAnchor = null;
                 this.callbacks.onGeometrySelect(anchor.id, anchor.type, anchor.normal, anchor.point, additive);
@@ -895,15 +942,14 @@ export class InteractionController {
             }
         }
         if (vertexHit && (vertexHit.object.userData.vertexRoundingProxy || !hit || vertexHit.distance <= hit.distance + 2)) {
-            const anchor = this.geometrySelector.createVertexAnchor(vertexHit);
-            if (anchor) {
-                this.geometryAnchor = anchor;
+            if (vertexAnchor) {
+                this.geometryAnchor = vertexAnchor;
                 this.hoverFaceAnchor = null;
-                this.callbacks.onGeometrySelect(anchor.id, 'vertex', anchor.normal, anchor.point, additive);
+                this.callbacks.onGeometrySelect(vertexAnchor.id, 'vertex', vertexAnchor.normal, vertexAnchor.point, additive);
                 return;
             }
         }
-        if (edgeHit && (isVertexRoundingProxyHit(edgeHit) || !hit || edgeHit.distance <= hit.distance + 2)) {
+        if (edgeHit && (hasSourceEdgePriority(edgeHit) || !hit || edgeHit.distance <= hit.distance + 2)) {
             this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);

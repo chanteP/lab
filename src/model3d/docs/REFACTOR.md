@@ -63,8 +63,15 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 - `GeometryAnchor` 在视口层保存 owner、矩阵快照和代理来源；`GuideRenderer.updateAnimation` 在矩阵变化时刷新 active 与粗箭头，`GeometrySelector.rebindAnchor` 在场景重建后按来源和带符号法向重取当前面，并对所有 `generatedTreatment` 生效，不再只处理 `type=face`。`applyMeshEdgeTreatments` 随 mesh 发布 resolved treatments，保证面编辑后的圆角曲面分类、选择和 active 使用相同坐标。`Viewport.sync` 统一执行重绑，Transform 和 Face Extrude 不再依赖 blur 或独立世界坐标补偿。
 - 3D 草图通过单个命中即可解析独立 `profileFace`，选择状态明确为 `face`；只有 Ctrl/Command 累加，开放线无封闭面时不回退到整个草图或边选择。草图编辑 active 面由 `SketchRenderer.refreshFaces()` 按最新 document 重建。
+- `engine/sketchConstraintSolver` 使用全局 Gauss-Newton 联合求解约束，替代逐边顺序覆盖；`sketchConstraintChain` 只保留调用入口和变更计数，UI 候选优先级、固定点及回滚契约不变。参考规则只表达双向关联，不再长期优先保护参考物。
+- `sketchGuides` 统一操作点参考匹配，`InteractionController.sketchSelectionAnchor` 计算选中内容中心，`sketchDragEdgeStart` 提供线段另一端方向锚点；`computeSketchFaces` 与 `buildSketchRegionPreviews` 用回归保证约束后的面一致。
+- `engine/importers.ts` 使用 Three.js 官方 STL/OBJ/GLTF loaders，导入结果转为带法线的 baked `meshGeometry`，不依赖服务端或外部纹理。`useProjectLibrary` 分离 3D 网格导入和 YAML 项目导入，工具栏不再提供搜索/工具入口。
+- `tsconfig.model3d.json` 与 `scripts/git-hooks/pre-commit` 将 `noUncheckedIndexedAccess` 检查固定到提交流程，空候选等索引问题必须在 commit 前处理。
 
 ## Changelog
+- 2026-11-09：修复立方体圆角后选择冲突，真实曲面映射原角，其他角点优先，普通相邻面恢复独立选择；补圆角 hover、另一角和普通面回归，160 项通过。
+- 2026-11-07：修复空参考候选导致的草图创建崩溃，model3d 严格索引类型检查接入 pre-commit；工具栏改为构造平面/草图/插入/导入并支持 STL/OBJ/GLB 网格导入，159 项回归通过。
+- 2026-11-06：独立分支重构草图约束和参考线：全局联合求解支持正交等长、正多边形及多 line 关联，操作点/中心磁吸与平行参考从底层修复；圆角区域优先选择生成曲面，155 项回归通过。
 - 2026-11-06：倒角/圆角生成面全部参与 active 重绑，resolved treatment 坐标随 mesh 发布以修复面推拉后的圆角选择；边倒角上限放宽到完整截面并形成直角三棱柱，边圆角保持安全半径，145 项回归通过。
 - 2026-11-06：统一 Transform 与粗箭头推拉的 active 实时同步，增加矩阵跟随和拓扑面重绑；3D 草图改为单击独立面、Ctrl/Command 累加并移除边/整形状回退，141 项回归及浏览器推拉/Transform 验证通过。
 - 2026-11-06：恢复圆角后的原角点与入射边选择，基础代理按 treatment 限定可拾取几何并调整角/边/生成面优先级；保留原角编辑箭头及入射边连续处理能力，137 项回归和浏览器点击验证通过。
@@ -222,3 +229,4 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - 2026-11-04：修复贝塞尔拆分区域拉伸箭头重复计入深度、失效锚点二次拖拽报错和倒角数值不同步；边处理改为负向内拖增大切削，补箭头贴面、空锚点、冻结 treatment ID 与负向手势回归并完成浏览器验证。
 - 2026-11-05：贝塞尔控制链移除长度输入；左下统计支持所选实体/多选/面的三角形与包围盒尺寸；剖视新增 stencil 实心封口；工具栏上下分组释放中间画布事件，3D 命令改为左侧关闭式弹层并新增圆锥/圆环，实体树统一 cube 图标。
 - 2026-11-05：草图边锁按语义边与尺寸配对，矩形宽/高及线段锁嵌入尺寸框单位后，独立边锁回到边中点，消除锁与输入重叠及缩放后的额外偏移；新增覆盖层配对与浏览器缩放回归。
+- 2026-11-09：草图尺寸写回抽为 `sketchDimension`，求解器增加一次性精确操作意图并移除旧逐边/矩形重建副本；新增 23 个形状×约束×尺寸组合 spec，修复等长正方形单边编辑旋转、缩值和溢出，正多边形派生边改为整形状缩放；约束创建不再因几何已满足而跳过规则保存。

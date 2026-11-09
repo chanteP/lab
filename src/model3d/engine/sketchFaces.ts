@@ -143,5 +143,5 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
         }, 0) / 2;
         if (area > 0.0001) faces.push({ points });
     });
-    return [...compoundFaces, ...faces];
+    return [...compoundFaces, ...faces].map((face) => ({ points: face.points.map((point) => [...point] as Point2) }));
 }

@@ -2,9 +2,11 @@ import type { ComputedRef, Ref } from 'vue';
 import * as THREE from 'three';
 import { useMessage } from 'naive-ui';
 import type { EditPhase, SketchDimension, Viewport, ViewTool } from '../../engine/Viewport';
-import { profileArcCenter, profileEllipseAngle, type ProfileType } from '../../engine/profiles';
+import { profileEllipseAngle, profilePoints, type ProfileType } from '../../engine/profiles';
 import { INTERACTION } from '../../config/const';
 import { uid } from '../../utils/id';
+import { editRegularEdgeDimension, editSketchDimension } from '../../engine/sketchDimension';
+import type { SketchConstraintOperation } from '../../engine/sketchConstraintChain';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
 import {
     createEntity, type LengthUnit, type ModelDocument, type ModelEntity,
@@ -220,34 +222,35 @@ export function useSketchSession(options: SketchSessionOptions) {
     }
     function onSketchDimension(target: SketchDimension, value: number) {
         if (!Number.isFinite(value) || value <= 0) return;
-        if (editingSketchId.value) pushHistory();
-        const points = sketchPoints.value;
-        const setRadius = (center: Point2, edge: Point2, radius: number) => {
-            const angle = Math.atan2(edge[1] - center[1], edge[0] - center[0]);
-            return [center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius] as Point2;
-        };
-        if (target.kind === 'angle') sketchSectorAngle.value = Math.min(360, value);
-        else if (target.kind === 'segment' && target.index !== undefined) {
-            const a = points[target.index], b = points[(target.index + 1) % points.length];
-            if (a && b) points[(target.index + 1) % points.length] = setRadius(a, b, value);
-        } else if ((target.kind === 'width' || target.kind === 'height') && points.length === 4) {
-            const axis = target.kind === 'width' ? 0 : 1;
-            const center = (points[0][axis] + points[2][axis]) / 2;
-            points.forEach((point) => point[axis] = center + (point[axis] < center ? -value / 2 : value / 2));
-        } else if (target.kind === 'radius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
-        else if (target.kind === 'regularRadius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
-        else if (target.kind === 'radiusX' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
-        else if (target.kind === 'radiusY' && points[0] && points[2]) points[2] = setRadius(points[0], points[2], value);
-        else if (target.kind === 'control' && target.index !== undefined && target.handle) {
-            const curve = sketchCurves.value[target.index];
-            const anchor = target.handle === 1 ? points[target.index] : points[(target.index + 1) % points.length];
-            const key = target.handle === 1 ? 'c1' : 'c2';
-            if (curve && anchor) curve[key] = setRadius(anchor, curve[key], value);
-        } else if (target.kind === 'arcRadius') {
-            const center = profileArcCenter(points);
-            if (center) points.forEach((point, index) => points[index] = setRadius(center, point, value));
+        const entity = document.value.entities.find((item) => item.id === editingSketchId.value);
+        if (entity?.profileType === 'regular' && trimmedSelection.value && target.kind === 'segment') {
+            if (Object.keys(entity.edgeConstraints || {}).length || entity.lockedPoints?.length) {
+                message.warning('正多边形的展开边不支持附加约束，请使用整形状半径编辑');
+                return;
+            }
+            pushHistory();
+            const sides = entity.sides || sketchSides.value;
+            const edit = editRegularEdgeDimension(entity.points!, sides, value);
+            entity.points = edit.points;
+            const perimeter = profilePoints('regular', edit.points, 64, undefined, sides);
+            const index = trimmedSelection.value.index;
+            sketchPoints.value = [[...perimeter[index]], [...perimeter[(index + 1) % sides]]];
+            sketchCurves.value = {};
+            persistSketchProgress(false);
+            refreshSketch();
+            return;
         }
-        syncEditingSketch();
+        if (editingSketchId.value) pushHistory();
+        const edit = editSketchDimension(sketchPoints.value, sketchCurves.value, sketchSectorAngle.value, target, value);
+        sketchPoints.value = edit.points;
+        sketchCurves.value = edit.curves;
+        sketchSectorAngle.value = edit.sectorAngle;
+        const operation: SketchConstraintOperation | undefined = editingSketchId.value && edit.operation ? {
+            ...edit.operation,
+            entityId: editingSketchId.value,
+            index: edit.operation.index + (trimmedSelection.value?.index || 0),
+        } : undefined;
+        syncEditingSketch(operation);
         persistSketchProgress(false);
         refreshSketch();
     }
