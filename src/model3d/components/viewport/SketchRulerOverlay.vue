@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import type { EditPhase, ViewportCallbacks } from '../../engine/Viewport';
-import { guideFromRuler, rulerTicks, snapGuideOffsetToRuler, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
+import { guidePointerOutsideViewport, guideFromRuler, rulerScaleTicks, snapGuideOffsetToRuler, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
 import type { SketchReferenceGuide, SketchRulerSide } from '../../types';
 import { uid } from '../../utils/id';
 import { INTERACTION } from '../../config/const';
@@ -24,8 +24,8 @@ type PendingDrag = {
 };
 let pending: PendingDrag | null = null;
 
-const topTicks = computed(() => props.frame ? rulerTicks(props.frame.origin.x, props.frame.unitsPerPixel, props.frame.width) : []);
-const leftTicks = computed(() => props.frame ? rulerTicks(props.frame.origin.y, props.frame.unitsPerPixel, props.frame.height) : []);
+const topTicks = computed(() => props.frame ? rulerScaleTicks(props.frame.origin.x, props.frame.unitsPerPixel, props.frame.width) : []);
+const leftTicks = computed(() => props.frame ? rulerScaleTicks(props.frame.origin.y, props.frame.unitsPerPixel, props.frame.height) : []);
 
 function point(event: PointerEvent): ScreenPoint {
     const rect = root.value!.getBoundingClientRect();
@@ -87,7 +87,9 @@ function end(event: PointerEvent) {
     if (!pending || event.pointerId !== pending.pointerId) return;
     if (pending.started) {
         move(event);
-        emit(pending.guide, 'end');
+        const position = point(event);
+        if (guidePointerOutsideViewport(pending.guide.axis, position, props.frame!)) props.callbacks.onSketchGuideDelete(pending.guide.id);
+        else emit(pending.guide, 'end');
     }
     pending = null;
 }
@@ -135,7 +137,7 @@ useEventListener(window, 'pointercancel', cancel);
                 <line
                     :x1="guide.axis === 'u' ? guide.x : 0" :y1="guide.axis === 'u' ? 0 : guide.y"
                     :x2="guide.axis === 'u' ? guide.x : frame.width" :y2="guide.axis === 'u' ? frame.height : guide.y"
-                    class="sketch-guide-hit" role="button" tabindex="0" aria-label="选择参考线"
+                    class="sketch-guide-hit" :class="guide.axis === 'u' ? 'vertical' : 'horizontal'" role="button" tabindex="0" aria-label="选择参考线"
                     @pointerdown="begin($event, undefined, guide)"
                     @keydown.enter.prevent="callbacks.onSketchGuideSelect(guide.id)"
                     @keydown.delete.prevent="callbacks.onSketchGuideDelete(guide.id)"
@@ -151,15 +153,15 @@ useEventListener(window, 'pointercancel', cancel);
         <svg class="sketch-ruler top" :width="frame.width" :height="RULER_SIZE" @pointerdown="begin($event, 'top')">
             <rect :width="frame.width" :height="RULER_SIZE" />
             <g v-for="tick in topTicks" :key="tick.value">
-                <line :x1="tick.position" :x2="tick.position" :y1="RULER_SIZE" y2="0" />
-                <text :x="tick.position + 3" y="8">{{ tickLabel(tick.value) }}</text>
+                <line :x1="tick.position" :x2="tick.position" :y1="RULER_SIZE" :y2="tick.kind === 'major' ? 0 : tick.kind === 'medium' ? 4 : 7" :class="`tick-${tick.kind}`" />
+                <text v-if="tick.kind === 'major'" :x="tick.position + 3" y="8">{{ tickLabel(tick.value) }}</text>
             </g>
         </svg>
         <svg class="sketch-ruler left" :width="RULER_SIZE" :height="frame.height" @pointerdown="begin($event, 'left')">
             <rect :width="RULER_SIZE" :height="frame.height" />
             <g v-for="tick in leftTicks" :key="tick.value">
-                <line :x1="RULER_SIZE" x2="0" :y1="tick.position" :y2="tick.position" />
-                <text :transform="`rotate(-90 9 ${tick.position - 3})`" x="9" :y="tick.position - 3">{{ tickLabel(tick.value) }}</text>
+                <line :x1="RULER_SIZE" :x2="tick.kind === 'major' ? 0 : tick.kind === 'medium' ? 4 : 7" :class="`tick-${tick.kind}`" :y1="tick.position" :y2="tick.position" />
+                <text v-if="tick.kind === 'major'" :transform="`rotate(-90 9 ${tick.position - 3})`" x="9" :y="tick.position - 3">{{ tickLabel(tick.value) }}</text>
             </g>
         </svg>
         <div class="sketch-ruler-corner" />
@@ -168,9 +170,10 @@ useEventListener(window, 'pointercancel', cancel);
             <div
                 v-if="selectedId === guide.id"
                 class="sketch-guide-input" :class="guide.axis === 'u' ? 'on-top' : 'on-left'"
-                :style="guide.axis === 'u' ? { left: `${guide.rulerPosition + 40}px`, top: `${RULER_CENTER}px` } : { left: `${RULER_CENTER}px`, top: `${guide.rulerPosition + 40}px` }"
+                :style="guide.axis === 'u' ? { left: `${guide.rulerPosition}px`, top: `${RULER_SIZE + 18}px` } : { left: `${RULER_SIZE + 18}px`, top: `${guide.rulerPosition}px` }"
                 @pointerdown.stop
             >
+                <span class="guide-kind">参考</span>
                 <input
                     type="number" step="1" :value="guideValue(guide)" aria-label="参考线位置"
                     @input="drafts.set(guide.id, ($event.currentTarget as HTMLInputElement).value)"
@@ -202,10 +205,13 @@ useEventListener(window, 'pointercancel', cancel);
     overflow: visible;
 }
 .sketch-guide-hit {
-    stroke: transparent;
+    stroke: rgb(0 0 0 / 1%);
     stroke-width: 12;
     pointer-events: stroke;
-    cursor: move;
+    &.vertical { cursor: col-resize; }
+    &.horizontal { cursor: row-resize; }
+    &:active { cursor: grabbing; }
+    &:hover + .sketch-guide-line { stroke: var(--primary-color, #18a058); stroke-width: 1.5; }
 }
 .sketch-guide-line {
     stroke: #78a6c4;
@@ -239,19 +245,22 @@ useEventListener(window, 'pointercancel', cancel);
 }
 .sketch-guide-input {
     position: absolute;
-    z-index: 3;
+    z-index: 10;
     display: flex;
     align-items: center;
-    gap: 2px;
-    padding: 1px 3px;
-    background: white;
-    border: 1px solid #b8bec7;
-    border-radius: 3px;
+    gap: 3px;
+    padding: 2px 5px;
+    background: #e8f6ee;
+    border: 1px solid #67bd8d;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+    color: #107342;
     pointer-events: auto;
     transform: translate(-50%, -50%);
-    input { width: 48px; height: 16px; padding: 0; border: 0; outline: 0; font-size: 10px; text-align: right; }
+    input { width: 48px; height: 16px; padding: 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 10px; font-weight: 600; text-align: right; }
     span { font-size: 9px; }
-    &.on-left { transform: translate(-50%, -50%) rotate(90deg); }
+    .guide-kind { padding-right: 3px; border-right: 1px solid #9ed4b5; white-space: nowrap; }
+    &.on-left { transform: translate(-50%, -50%) rotate(-90deg); }
 }
 .sketch-guide-delete {
     position: absolute;

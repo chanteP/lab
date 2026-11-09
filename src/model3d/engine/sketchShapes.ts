@@ -22,6 +22,7 @@ export function convertSemanticShapeToConstrainedPolygon(entity: ModelEntity) {
     if (points.length < 3) return;
 
     entity.points = points;
+    entity.standardShape = type as 'rectangle' | 'regular';
     entity.profileType = 'polygon';
     entity.open = false;
     delete entity.sides;

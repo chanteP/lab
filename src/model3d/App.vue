@@ -611,8 +611,18 @@ function onSketchGuideInput(id: string, offset: number) {
 function onSketchGuideDelete(id: string) {
     const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
     if (!plane?.guides?.some((item) => item.id === id)) return;
-    pushHistory();
-    plane.guides = plane.guides.filter((item) => item.id !== id);
+    if (guideDragBefore) {
+        const previousPlane = guideDragBefore.planes.find((item) => item.id === plane.id);
+        // A new guide dragged straight back to a ruler is a no-op; an existing guide keeps one undo step.
+        if (!previousPlane?.guides?.some((item) => item.id === id)) popHistory();
+        plane.guides = plane.guides.filter((item) => item.id !== id);
+        guideDragBefore = null;
+        transforming = false;
+        viewport.sync(document.value);
+    } else {
+        pushHistory();
+        plane.guides = plane.guides.filter((item) => item.id !== id);
+    }
     selectedSketchGuideId.value = null;
     refreshSketch();
 }

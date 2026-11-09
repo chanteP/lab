@@ -20,6 +20,7 @@ import { DirectDragController } from './DirectDragController';
 import { GizmoDragController } from './GizmoDragController';
 import { SketchAssetDragController } from './SketchAssetDragController';
 import { SketchGuideController, type SketchGuideOptions } from './SketchGuideController';
+import { isStandardClosedShape, snapWholeShapeTranslation, wholeShapeControlPoints } from '../sketchWholeShapeSnap';
 import type { InteractionOptions } from './InteractionOptions';
 
 function isVertexRoundingProxyHit(hit: THREE.Intersection | null) {
@@ -41,7 +42,7 @@ export function hasDistinctVertexPriority(vertex: GeometryAnchor | null, generat
 export class InteractionController {
     geometryAnchor: GeometryAnchor | null = null;
     hoverFaceAnchor: GeometryAnchor | null = null;
-    sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; startX: number; startY: number; startPoint: Point2; rawStart: Point2; anchor: Point2; moved: boolean } | null = null;
+    sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; wholeShape?: boolean; wholePoints?: Point2[]; startX: number; startY: number; startPoint: Point2; rawStart: Point2; anchor: Point2; moved: boolean } | null = null;
     measureMode = false;
 
     private readonly container: HTMLElement;
@@ -424,6 +425,12 @@ export class InteractionController {
         const raw = this.sketchPoint(event);
         if (!raw) return null;
         const delta = [raw[0] - this.sketchDrag.rawStart[0], raw[1] - this.sketchDrag.rawStart[1]] as Point2;
+        if (this.sketchDrag.wholeShape) {
+            const snappedDelta = snapWholeShapeTranslation(this.sketchDrag.wholePoints || [], delta, (point) => this.guideController.operation(point, {
+                excludeEntityIds: this.editingSketchId ? [this.editingSketchId] : [],
+            }) || point);
+            return [raw[0] + snappedDelta[0] - delta[0], raw[1] + snappedDelta[1] - delta[1]] as Point2;
+        }
         const operationPoint: Point2 = [this.sketchDrag.anchor[0] + delta[0], this.sketchDrag.anchor[1] + delta[1]];
         const snapped = this.guideController.operation(operationPoint, {
             disabled: this.sketchDrag.sector,
@@ -472,6 +479,16 @@ export class InteractionController {
     private releasePointer(event: PointerEvent) {
         try { if (this.renderer.domElement.hasPointerCapture(event.pointerId)) this.renderer.domElement.releasePointerCapture(event.pointerId); } catch { /* No active capture. */ }
     }
+    private standardSketchFaceEntity(event: PointerEvent) {
+        if (!this.sketchSelectionTool) return null;
+        this.setPointer(event);
+        const hit = this.raycaster.intersectObjects(this.sketchRenderer.faces.children.filter((object) => object.userData.sketchFace !== undefined), false)[0];
+        const ids = hit?.object.userData.sketchFaceEntityIds as string[] | undefined;
+        if (ids?.length !== 1) return null;
+        const entity = this.document?.entities.find((item) => item.id === ids[0]);
+        return entity && isStandardClosedShape(entity) ? entity : null;
+    }
+
     private onPointerDown(event: PointerEvent) {
         this.cameraController.cancelTransitions();
         this.pointerStart.set(event.clientX, event.clientY);
@@ -592,6 +609,22 @@ export class InteractionController {
                 event.preventDefault(); event.stopImmediatePropagation();
                 this.sketchSegmentHandled = true;
                 this.callbacks.onSketchSegment(segmentHit.object.userData.segmentIndex, event.shiftKey || event.metaKey || event.ctrlKey);
+                return;
+            }
+            const standardEntity = this.standardSketchFaceEntity(event);
+            if (standardEntity) {
+                event.preventDefault(); event.stopImmediatePropagation();
+                const start = this.sketchPoint(event);
+                if (!start) return;
+                this.callbacks.onSketchEntitySelect(standardEntity.id, false);
+                const selected = this.document?.entities.find((item) => item.id === standardEntity.id) || standardEntity;
+                this.sketchDrag = {
+                    index: -1, center: true, wholeShape: true, wholePoints: wholeShapeControlPoints(selected),
+                    startX: event.clientX, startY: event.clientY, startPoint: [...start], rawStart: [...start], anchor: [...start], moved: false,
+                };
+                this.container.classList.add('is-handle-dragging');
+                this.controls.enabled = false;
+                this.capturePointer(event);
                 return;
             }
             const start = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
@@ -981,8 +1014,9 @@ export class InteractionController {
         else if (event.altKey) this.updateAltBorder(event);
         else this.clearAltBorder();
         this.container.classList.toggle('is-delete-point', this.altDeletePoint >= 0 || !!this.altBorderDelete);
-        this.container.classList.toggle('is-handle-hover', !!marker && this.altDeletePoint < 0);
         const border = this.raycaster.intersectObjects(this.sketchRenderer.borderTargets(), false)[0];
+        const standardFace = !marker && !border ? this.standardSketchFaceEntity(event) : null;
+        this.container.classList.toggle('is-handle-hover', (!!marker || !!standardFace) && this.altDeletePoint < 0);
         this.hoverBorder = border ? { entityId: border.object.userData.borderEntityId, index: border.object.userData.borderSegmentIndex } : null;
         if (!event.altKey) this.applyBorderHoverColors();
         const segment = this.raycaster.intersectObjects(this.sketch.children.filter((item) => item.userData.segmentIndex !== undefined), false)[0];
@@ -1006,6 +1040,12 @@ export class InteractionController {
     private addSketchMeasurePoint(point: Point2) { this.measurementRenderer.addSketchPoint(this.sketchRenderer.world(point, 0.4)); }
     private onDoubleClick(event: MouseEvent) {
         if (this.measureMode) return;
+        if (this.gizmo.contains(event as unknown as PointerEvent)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            this.cameraController.resetDefaultView(this.sketchMode ? this.activePlane : null, this.transform, new THREE.Box3().setFromObject(this.model));
+            return;
+        }
         if (this.sketchMode) {
             event.preventDefault();
             this.setPointer(event as unknown as PointerEvent);

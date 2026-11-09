@@ -88,6 +88,8 @@ export interface ModelEntity {
     parts?: SketchProfilePart[];
     controlPoints?: number[];
     trimmed?: boolean;
+    /** Standard toolbar origin used only for whole-face selection/dragging, never for geometry solving. */
+    standardShape?: 'rectangle' | 'regular';
     constraintEdges?: number[];
     edgeConstraints?: Record<number, SketchEdgeConstraint | SketchEdgeConstraint[]>;
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';

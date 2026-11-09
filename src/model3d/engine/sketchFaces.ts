@@ -3,10 +3,11 @@ import type { ModelEntity, Point2 } from '../types';
 
 export interface SketchFace {
     points: Point2[];
+    entityIds: string[];
 }
 
-type Edge = { a: Point2; b: Point2; points: Point2[]; closed: boolean };
-type Directed = { edge: number; from: string; to: string; points: Point2[] };
+type Edge = { a: Point2; b: Point2; points: Point2[]; closed: boolean; entityId: string };
+type Directed = { edge: number; from: string; to: string; points: Point2[]; entityId: string };
 
 const key = (point: Point2) => `${Math.round(point[0] * 10)},${Math.round(point[1] * 10)}`;
 const sub = (a: Point2, b: Point2): Point2 => [a[0] - b[0], a[1] - b[1]];
@@ -36,7 +37,7 @@ function slice(edge: Edge, start: number, end: number): Edge {
     const first = Math.ceil(start * (edge.points.length - 1)), last = Math.floor(end * (edge.points.length - 1));
     for (let index = first; index <= last; index++) append(edge.points[index]);
     append(pointAt(edge, end));
-    return { a: points[0], b: points[points.length - 1], points, closed: false };
+    return { a: points[0], b: points[points.length - 1], points, closed: false, entityId: edge.entityId };
 }
 
 function splitEdges(source: Edge[]) {
@@ -63,10 +64,10 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
     // Compound radial copies are independent whole shapes. Do not run pairwise intersection/restitching
     // between every copied segment; that quadratic work previously froze high-count symmetry completion.
     const compoundFaces = sketches.filter((entity) => entity.parts?.length).flatMap((entity) =>
-        entity.parts!.filter((part) => part.closed && part.points.length >= 3).map((part) => ({ points: part.points.map((point) => [...point]) })),
+        entity.parts!.filter((part) => part.closed && part.points.length >= 3).map((part) => ({ points: part.points.map((point) => [...point]), entityIds: [entity.id] })),
     );
     const source = sketches.filter((entity) => !entity.parts?.length).flatMap((entity) => borderSegments(entity).map((segment) => ({
-        a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points, closed: segment.closed,
+        a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points, closed: segment.closed, entityId: entity.id,
     })));
     const split = splitEdges(source);
     const nodes = new Map<string, { point: Point2; count: number }>();
@@ -90,11 +91,11 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
             const next = index === 0 ? canonical(edge.a) : index === edge.points.length - 1 ? canonical(edge.b) : point;
             if (!points.length || distance(points[points.length - 1], next) > 1e-8) points.push([...next]);
         });
-        return { a: points[0], b: points[points.length - 1], points, closed: edge.closed };
+        return { a: points[0], b: points[points.length - 1], points, closed: edge.closed, entityId: edge.entityId };
     }).filter((edge) => edge.points.length > 1);
     const directed: Directed[] = edges.flatMap((edge, index) => [
-        { edge: index, from: key(edge.a), to: key(edge.b), points: edge.points },
-        { edge: index, from: key(edge.b), to: key(edge.a), points: [...edge.points].reverse() },
+        { edge: index, from: key(edge.a), to: key(edge.b), points: edge.points, entityId: edge.entityId },
+        { edge: index, from: key(edge.b), to: key(edge.a), points: [...edge.points].reverse(), entityId: edge.entityId },
     ]);
     const adjacency = new Map<string, number[]>();
     directed.forEach((item, index) => adjacency.set(item.from, [...adjacency.get(item.from) || [], index]));
@@ -116,7 +117,7 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
                 const next = points[(index + 1) % points.length];
                 return sum + point[0] * next[1] - next[0] * point[1];
             }, 0) / 2;
-            if (Math.abs(area) > 0.0001) faces.push({ points });
+            if (Math.abs(area) > 0.0001) faces.push({ points, entityIds: [directed[start].entityId] });
             visited.add(start);
             visited.add(start ^ 1);
             return;
@@ -141,7 +142,7 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
             const next = points[(index + 1) % points.length];
             return sum + point[0] * next[1] - next[0] * point[1];
         }, 0) / 2;
-        if (area > 0.0001) faces.push({ points });
+        if (area > 0.0001) faces.push({ points, entityIds: [...new Set(walk.map((index) => directed[index].entityId))] });
     });
-    return [...compoundFaces, ...faces].map((face) => ({ points: face.points.map((point) => [...point] as Point2) }));
+    return [...compoundFaces, ...faces].map((face) => ({ points: face.points.map((point) => [...point] as Point2), entityIds: [...face.entityIds] }));
 }

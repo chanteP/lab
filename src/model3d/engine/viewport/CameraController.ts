@@ -8,6 +8,7 @@ import type { LengthUnit, SketchPlane } from '../../types';
 import type { ViewportEngine } from './ViewportEngine';
 import { gizmoAxisDirection } from './gizmoOrbit';
 import { gridStepForUnitsPerPixel, scaleBarForGrid } from './gridScale';
+import { DEFAULT_3D_VIEW_DIRECTION, defaultViewFitMetrics } from './defaultView';
 
 export type CameraView = 'perspective' | 'front' | 'top' | 'right';
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -244,11 +245,26 @@ export class CameraController {
         this.controls.update();
     }
 
-    fitBox(box: THREE.Box3, animate = true) {
-        if (box.isEmpty()) return;
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const radius = Math.max(size.length() / 2, 5);
+    resetDefaultView(plane: SketchPlane | null, transform: TransformControls, box: THREE.Box3) {
+        this.cancelTransitions();
+        const target = plane ? new THREE.Vector3(...plane.origin) : new THREE.Vector3();
+        const direction = plane ? new THREE.Vector3(...plane.normal).normalize() : DEFAULT_3D_VIEW_DIRECTION.clone();
+        const up = plane ? new THREE.Vector3(...plane.v).normalize() : new THREE.Vector3(0, 1, 0);
+        this.setProjection(plane ? 'orthographic' : 'perspective', transform);
+        this.camera.up.copy(up);
+        this.orthographicCamera.zoom = 1;
+        this.orthographicCamera.updateProjectionMatrix();
+        const distance = Math.max(5, this.camera.position.distanceTo(this.controls.target));
+        this.controls.target.copy(target);
+        this.camera.position.copy(target).add(direction.multiplyScalar(distance));
+        this.camera.lookAt(target);
+        this.controls.update();
+        this.fitBox(box, true, target);
+    }
+
+    fitBox(box: THREE.Box3, animate = true, target?: THREE.Vector3) {
+        if (box.isEmpty() && !target) return;
+        const { center, radius } = defaultViewFitMetrics(box, target);
         const direction = this.camera.position.clone().sub(this.controls.target).normalize();
         if (this.camera instanceof THREE.OrthographicCamera) {
             this.orthoHeight = Math.max(10, radius * 2.4);

@@ -323,6 +323,7 @@ export class SketchRenderer {
             fill.position.add(new THREE.Vector3(...activePlane.normal).multiplyScalar(0.04));
             fill.renderOrder = 1;
             fill.userData.sketchFace = index;
+            fill.userData.sketchFaceEntityIds = [...face.entityIds];
             const hatch = new THREE.Mesh(geometry.clone(), this.hatchMaterial());
             hatch.position.copy(fill.position);
             hatch.renderOrder = 2;
