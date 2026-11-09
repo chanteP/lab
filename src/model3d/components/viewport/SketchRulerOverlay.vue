@@ -2,12 +2,14 @@
 import { computed, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import type { EditPhase, ViewportCallbacks } from '../../engine/Viewport';
-import { guideFromRuler, rulerTicks, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
+import { guideFromRuler, rulerTicks, snapGuideOffsetToRuler, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
 import type { SketchReferenceGuide, SketchRulerSide } from '../../types';
 import { uid } from '../../utils/id';
+import { INTERACTION } from '../../config/const';
 
-const RULER_SIZE = 24;
-const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; callbacks: ViewportCallbacks }>();
+const RULER_SIZE = 12;
+const RULER_CENTER = RULER_SIZE / 2;
+const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; guideSnapEnabled?: boolean; callbacks: ViewportCallbacks }>();
 const root = ref<HTMLElement>();
 const drafts = new Map<string, string>();
 
@@ -39,6 +41,13 @@ function offsetFor(guide: SketchReferenceGuide, position: ScreenPoint) {
         ? (position.x - frame.origin.x) * frame.unitsPerPixel
         : (frame.origin.y - position.y) * frame.unitsPerPixel;
 }
+function snappedOffset(guide: SketchReferenceGuide, raw: number) {
+    // Reference matching still renders while disabled; the controller returns the raw offset in that state.
+    const reference = props.callbacks.onSketchGuideSnap(guide, raw);
+    if (props.guideSnapEnabled === false || !props.frame) return raw;
+    const tick = snapGuideOffsetToRuler(guide, raw, props.frame, INTERACTION.sketchGuideSnapPx);
+    return Math.abs(tick - raw) <= Math.abs(reference - raw) ? tick : reference;
+}
 function begin(event: PointerEvent, side?: SketchRulerSide, guide?: SketchReferenceGuide) {
     if (event.button !== 0 || !props.frame) return;
     event.preventDefault();
@@ -61,16 +70,17 @@ function move(event: PointerEvent) {
         if (!enteredCanvas || distance < 2) return;
         pending.created = true;
         pending.started = true;
-        pending.guide.offset = offsetAt(pending.side, position);
-        emit(pending.guide, 'start');
         props.callbacks.onSketchGuideSelect(pending.guide.id);
+        pending.guide.offset = snappedOffset(pending.guide, offsetAt(pending.side, position));
+        emit(pending.guide, 'start');
     } else if (!pending.side && !pending.started) {
         if (distance < 2) return;
         pending.started = true;
         emit(pending.guide, 'start');
     }
     if (!pending.started) return;
-    pending.guide.offset = pending.side ? offsetAt(pending.side, position) : offsetFor(pending.guide, position);
+    const raw = pending.side ? offsetAt(pending.side, position) : offsetFor(pending.guide, position);
+    pending.guide.offset = snappedOffset(pending.guide, raw);
     emit(pending.guide, 'move');
 }
 function end(event: PointerEvent) {
@@ -141,14 +151,14 @@ useEventListener(window, 'pointercancel', cancel);
         <svg class="sketch-ruler top" :width="frame.width" :height="RULER_SIZE" @pointerdown="begin($event, 'top')">
             <rect :width="frame.width" :height="RULER_SIZE" />
             <g v-for="tick in topTicks" :key="tick.value">
-                <line :x1="tick.position" :x2="tick.position" y1="24" :y2="tick.value === 0 ? 10 : 16" />
-                <text :x="tick.position + 3" y="9">{{ tickLabel(tick.value) }}</text>
+                <line :x1="tick.position" :x2="tick.position" :y1="RULER_SIZE" y2="0" />
+                <text :x="tick.position + 3" y="8">{{ tickLabel(tick.value) }}</text>
             </g>
         </svg>
         <svg class="sketch-ruler left" :width="RULER_SIZE" :height="frame.height" @pointerdown="begin($event, 'left')">
             <rect :width="RULER_SIZE" :height="frame.height" />
             <g v-for="tick in leftTicks" :key="tick.value">
-                <line x1="24" :x2="tick.value === 0 ? 10 : 16" :y1="tick.position" :y2="tick.position" />
+                <line :x1="RULER_SIZE" x2="0" :y1="tick.position" :y2="tick.position" />
                 <text :transform="`rotate(-90 9 ${tick.position - 3})`" x="9" :y="tick.position - 3">{{ tickLabel(tick.value) }}</text>
             </g>
         </svg>
@@ -158,7 +168,7 @@ useEventListener(window, 'pointercancel', cancel);
             <div
                 v-if="selectedId === guide.id"
                 class="sketch-guide-input" :class="guide.axis === 'u' ? 'on-top' : 'on-left'"
-                :style="guide.axis === 'u' ? { left: `${guide.rulerPosition + 46}px`, top: '12px' } : { left: '12px', top: `${guide.rulerPosition + 46}px` }"
+                :style="guide.axis === 'u' ? { left: `${guide.rulerPosition + 40}px`, top: `${RULER_CENTER}px` } : { left: `${RULER_CENTER}px`, top: `${guide.rulerPosition + 40}px` }"
                 @pointerdown.stop
             >
                 <input
@@ -171,7 +181,7 @@ useEventListener(window, 'pointercancel', cancel);
             </div>
             <button
                 v-if="selectedId === guide.id"
-                class="sketch-guide-delete" :style="guide.axis === 'u' ? { left: `${guide.rulerPosition}px`, top: '12px' } : { left: '12px', top: `${guide.rulerPosition}px` }"
+                class="sketch-guide-delete" :style="guide.axis === 'u' ? { left: `${guide.rulerPosition}px`, top: `${RULER_CENTER}px` } : { left: `${RULER_CENTER}px`, top: `${guide.rulerPosition}px` }"
                 aria-label="删除参考线" @pointerdown.stop @click.stop="callbacks.onSketchGuideDelete(guide.id)"
             >×</button>
         </template>
@@ -212,7 +222,7 @@ useEventListener(window, 'pointercancel', cancel);
     color: #5d6570;
     rect { fill: rgb(250 250 250 / 94%); stroke: #d9dde3; stroke-width: 1; }
     line { stroke: #a5acb5; stroke-width: 1; }
-    text { fill: currentcolor; font-size: 8px; }
+    text { fill: currentcolor; font-size: 7px; }
     &.top { left: 0; top: 0; }
     &.left { left: 0; top: 0; }
 }
@@ -220,8 +230,8 @@ useEventListener(window, 'pointercancel', cancel);
     position: absolute;
     left: 0;
     top: 0;
-    width: 24px;
-    height: 24px;
+    width: 12px;
+    height: 12px;
     background: #fafafa;
     border-right: 1px solid #d9dde3;
     border-bottom: 1px solid #d9dde3;
@@ -246,14 +256,14 @@ useEventListener(window, 'pointercancel', cancel);
 .sketch-guide-delete {
     position: absolute;
     z-index: 4;
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     padding: 0;
     border: 0;
     border-radius: 50%;
     background: #d03050;
     color: white;
-    font: 11px/11px sans-serif;
+    font: 9px/9px sans-serif;
     pointer-events: auto;
     transform: translate(-50%, -50%);
     cursor: pointer;

@@ -60,6 +60,7 @@ export interface ViewportCallbacks {
     onSketchDragEnd: () => void;
     onSketchGuideSelect: (id: string | null) => void;
     onSketchGuideChange: (guide: SketchReferenceGuide, phase: EditPhase) => void;
+    onSketchGuideSnap: (guide: SketchReferenceGuide, offset: number) => number;
     onSketchGuideInput: (id: string, offset: number) => void;
     onSketchGuideDelete: (id: string) => void;
     onLengthUnitChange: (unit: LengthUnit) => void;
@@ -399,6 +400,7 @@ export class Viewport {
         return { x: (projected.x + 1) * canvas.clientWidth / 2, y: (1 - projected.y) * canvas.clientHeight / 2 };
     }
     snapSketchAssetPoint(id: string, point: Point2) { return this.interaction.snapSketchAssetPoint(id, point); }
+    snapSketchGuideOffset(guide: SketchReferenceGuide, offset: number) { return this.interaction.snapSketchGuideOffset(guide, offset); }
     sketchPointAt(clientX: number, clientY: number, precise = false) {
         return this.interaction.sketchPoint({ clientX, clientY } as PointerEvent, precise);
     }

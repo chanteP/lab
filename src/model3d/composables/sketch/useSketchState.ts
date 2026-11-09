@@ -89,7 +89,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
     }));
     const selectedConstraintRuleItems = computed<ConstraintRuleListItem[]>(() => {
         const items: ConstraintRuleListItem[] = [];
-        const labels: Record<SketchConstraintType, string> = { auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度' };
+        const labels: Record<SketchConstraintType, string> = { auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度', angle: '角度' };
         const addPoint = (entityId: string, index: number, covered?: Set<string>) => {
             const entity = document.value.entities.find((item) => item.id === entityId);
             if (!entity?.lockedPoints?.includes(index) || covered?.has(`${entityId}:${index}`)) return;

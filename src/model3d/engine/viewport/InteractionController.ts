@@ -3,7 +3,7 @@ import type { TransformControls } from 'three/addons/controls/TransformControls.
 import { sketchAssetExcludedIds } from '../sketchAssets';
 import { intersectionProfileAtPoint } from '../profileIntersection';
 import { INTERACTION } from '../../config/const';
-import type { ModelEntity, Point2, Vec3 } from '../../types';
+import type { ModelEntity, Point2, SketchReferenceGuide, Vec3 } from '../../types';
 import type { ViewTool, ViewportCallbacks } from '../Viewport';
 import type { CameraController } from './CameraController';
 import type { ViewportEngine } from './ViewportEngine';
@@ -404,6 +404,12 @@ export class InteractionController {
     setSketchGuideSnapEnabled(active: boolean) { this.guideController.setSnapEnabled(active); }
     setSelectThrough(active: boolean) { this.selectThrough = active; }
     setIncludeTangent(active: boolean) { this.includeTangent = active; }
+
+    snapSketchGuideOffset(guide: SketchReferenceGuide, offset: number) {
+        const point = this.guideController.operation(guide.axis === 'u' ? [offset, 0] : [0, offset], { excludeGuideId: guide.id });
+        if (!point) return offset;
+        return guide.axis === 'u' ? point[0] : point[1];
+    }
 
     snapSketchAssetPoint(id: string, point: Point2) {
         return this.guideController.operation(point, { excludeEntityIds: this.document ? sketchAssetExcludedIds(this.document, id) : [id] });

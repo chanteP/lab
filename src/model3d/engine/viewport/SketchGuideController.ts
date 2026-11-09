@@ -9,6 +9,7 @@ export type SketchGuideOptions = {
     excludeEntityId?: string;
     excludeEntityIds?: string[];
     excludePointIndex?: number;
+    excludeGuideId?: string;
     disabled?: boolean;
 };
 
@@ -39,7 +40,7 @@ export class SketchGuideController {
             entities: document.entities.filter((item) => ['sketch', 'image'].includes(item.kind) && item.planeId === activePlane.id),
             folders: document.folders.filter((item) => item.kind === 'svg' && item.planeId === activePlane.id),
             point: source,
-            guides: activePlane.guides || [],
+            guides: (activePlane.guides || []).filter((guide) => guide.id !== options.excludeGuideId),
             origins: [
                 { id: 'plane', point: [0, 0] },
                 { id: 'world', point: (() => {

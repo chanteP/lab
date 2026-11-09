@@ -33,5 +33,15 @@ export function convertSemanticShapeToConstrainedPolygon(entity: ModelEntity) {
         points.slice(1).forEach((_, index) => addRule(entity, index + 1, {
             type: 'equal', reference: { entityId: entity.id, index: 0 },
         }));
+        // Equal sides alone allow rhombi and other flexible polygons; a generic signed
+        // neighbor-angle rule fixes every exterior angle without shape-specific solving.
+        const area = points.reduce((sum, point, index) => {
+            const next = points[(index + 1) % points.length];
+            return sum + point[0] * next[1] - next[0] * point[1];
+        }, 0);
+        const angle = (area >= 0 ? 1 : -1) * Math.PI * 2 / points.length;
+        points.forEach((_, index) => addRule(entity, index, {
+            type: 'angle', angle, reference: { entityId: entity.id, index: (index + points.length - 1) % points.length },
+        }));
     }
 }

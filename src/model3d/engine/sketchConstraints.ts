@@ -1,7 +1,7 @@
 import type { ModelEntity, Point2, SketchEdgeConstraint } from '../types';
 import type { ProfileCurves } from './profiles';
 
-export type SketchConstraintType = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
+export type SketchConstraintType = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length' | 'angle';
 
 export interface SketchConstraintResult {
     points: Point2[];

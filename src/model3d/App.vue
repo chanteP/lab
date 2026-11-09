@@ -6,7 +6,7 @@ import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
     CloseOutline, EyeOutline, TrashOutline, ScanOutline,
 } from '@vicons/ionicons5';
-import { Viewport, type SketchDimension, type ViewTool, type ViewportCallbacks, type ViewportStats } from './engine/Viewport';
+import { Viewport, type EditPhase, type SketchDimension, type ViewTool, type ViewportCallbacks, type ViewportStats } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
 import EntityTree, { type OutlinerNode } from './components/entity/EntityTree.vue';
 import SvgIcon from './components/ui/SvgIcon.vue';
@@ -39,8 +39,8 @@ import { SIDEBAR_LAYOUT, STORAGE_KEYS } from './config/const';
 import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
 import {
-    createDocument,
-    type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type PrimitiveKind, type SelectionKind,
+    cloneDocument, createDocument,
+    type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type PrimitiveKind, type SelectionKind, type SketchReferenceGuide,
 } from './types';
 
 const message = useMessage();
@@ -598,6 +598,9 @@ function onSketchGuideChange(guide: SketchReferenceGuide, phase: EditPhase) {
         refreshSketch();
     }
 }
+function onSketchGuideSnap(guide: SketchReferenceGuide, offset: number) {
+    return viewport?.snapSketchGuideOffset(guide, offset) ?? offset;
+}
 function onSketchGuideInput(id: string, offset: number) {
     const guide = document.value.planes.find((item) => item.id === activePlaneId.value)?.guides?.find((item) => item.id === id);
     if (!guide || !Number.isFinite(offset) || Math.abs(guide.offset - offset) < 1e-9) return;
@@ -668,6 +671,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchDragEnd: refreshSketch,
         onSketchGuideSelect,
         onSketchGuideChange,
+        onSketchGuideSnap,
         onSketchGuideInput,
         onSketchGuideDelete,
         onLengthUnitChange: setLengthUnit,
@@ -737,7 +741,7 @@ onBeforeUnmount(() => {
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
-                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :guide-snap-enabled="sketchGuideSnapEnabled" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"

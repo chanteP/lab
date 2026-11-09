@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchSketchGuide } from './sketchGuides';
-import { guideFromRuler, guideScreenPosition, rulerTickStep } from './sketchRulers';
+import { guideFromRuler, guideScreenPosition, rulerTickStep, snapGuideOffsetToRuler } from './sketchRulers';
 
 test('top and left rulers create perpendicular persistent guides in plane coordinates', () => {
     assert.deepEqual(guideFromRuler('top', [130, 80], [100, 100], 2), { axis: 'v', offset: 40 });
@@ -24,4 +24,13 @@ test('persistent ruler axes participate in guide snapping and intersections', ()
     });
     assert.deepEqual(intersection?.point, [10, 20]);
     assert.equal(intersection?.matches.length, 2);
+});
+
+test('guide dragging snaps to the nearest visible ruler tick within screen tolerance', () => {
+    const frame = {
+        width: 600, height: 400, origin: { x: 100, y: 100 }, unitsPerPixel: 0.4, unit: 'mm' as const, guides: [],
+    };
+    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 21 }, 21, frame), 20);
+    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'v', offset: 19 }, 19, frame), 20);
+    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 40 }, 40, frame), 40);
 });

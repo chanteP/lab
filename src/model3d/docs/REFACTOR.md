@@ -26,7 +26,6 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `useProjectLibrary` 负责项目记录、自动保存和导入导出；`utils/projectYaml.ts` 统一紧凑 YAML 编解码，IndexedDB 保存完整 ProjectRecord 对应的 YAML 文本，规则见 `docs/PROJECT_YAML.md`；`useDocumentEntities` 负责实体、文件夹、平面和实体树操作。
 - `useModelingOperations` 持有拉伸/布尔操作草稿，处理直接编辑与历史回改。
 - `composables/sketch/useSketchState` 持有草图草稿、选择与派生状态；`useSketchSession` 负责草图生命周期、持久化和尺寸操作；`useSketchEditing` 负责点边选择、拖拽、裁剪和控制柄。
-- `engine/sketchSemanticSplit` 将贝塞尔编辑后的矩形/正多边形按语义周长边拆成独立 line，保留曲线并移除形状级约束；`useSketchEditing` 只在实际控制柄拖拽后于选择收尾时执行。
 - `useSketchConstraints` 负责约束交互、历史与回滚；`engine/sketchConstraintChain` 只负责无 Vue 依赖的关联约束求解。
 - `useSketchAssets` 负责图片/SVG 导入、资产选择、比例锁、尺寸和整体缩放；`useEdgeTreatmentOperations` 负责圆角/倒角事务、重复编辑与取消。
 - `useSketchAdvanced` 负责三步对称临时状态和草图二维变换；`engine/sketchAdvanced` 负责扇区裁剪、径向变换和复合轮廓几何，`SketchAdvancedOverlay.vue` 只负责画布与操作条。
@@ -70,7 +69,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
-- 2026-11-09：新增 `sketchShapes` 统一矩形/正多边形到边约束的转换，`sketchRulers` 与 `SketchRulerOverlay` 提供平面持久参考线；求解器按选择点/选择边/约束链分级并保持贝塞尔控制柄，更新草图契约与回归。
+- 2026-11-09：新增 `sketchShapes` 统一矩形/正多边形到边长与邻边夹角约束的转换，`sketchRulers` 与 `SketchRulerOverlay` 提供 12px 标尺和可磁吸持久参考线；求解器按选择点/选择边/约束链分级并保持贝塞尔控制柄，修复参考线拖拽导入，更新草图契约与回归。
 - 2026-11-09：修复立方体圆角后选择冲突，真实曲面映射原角，其他角点优先，普通相邻面恢复独立选择；补圆角 hover、另一角和普通面回归，160 项通过。
 - 2026-11-07：修复空参考候选导致的草图创建崩溃，model3d 严格索引类型检查接入 pre-commit；工具栏改为构造平面/草图/插入/导入并支持 STL/OBJ/GLB 网格导入，159 项回归通过。
 - 2026-11-06：独立分支重构草图约束和参考线：全局联合求解支持正交等长、正多边形及多 line 关联，操作点/中心磁吸与平行参考从底层修复；圆角区域优先选择生成曲面，155 项回归通过。

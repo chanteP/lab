@@ -53,6 +53,11 @@ function residual(rule: Rule, document: ModelDocument) {
     const rx = other.dx / other.length, ry = other.dy / other.length;
     if (type === 'parallel') return cx * ry - cy * rx;
     if (type === 'perpendicular') return cx * rx + cy * ry;
+    if (type === 'angle') {
+        const currentAngle = Math.atan2(current.dy, current.dx);
+        const targetAngle = Math.atan2(other.dy, other.dx) + (rule.rule.angle || 0);
+        return Math.atan2(Math.sin(currentAngle - targetAngle), Math.cos(currentAngle - targetAngle));
+    }
     return null;
 }
 
