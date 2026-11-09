@@ -9,11 +9,22 @@ export function isStandardClosedShape(entity: ModelEntity) {
     return !!entity.standardShape && (entity.profileType || 'polygon') === 'polygon';
 }
 
+export function standardShapeCenter(entity: ModelEntity): Point2 | null {
+    if (entity.trimmed || entity.parts?.length || !entity.points?.length) return null;
+    const type = entity.standardShape || (['rectangle', 'regular'].includes(entity.profileType || '') ? entity.profileType : null);
+    if (!type) return null;
+    if (type === 'regular' && !entity.standardShape) return [...entity.points[0]];
+    const center = entity.points.reduce((sum, point) => [sum[0] + point[0] / entity.points!.length, sum[1] + point[1] / entity.points!.length], [0, 0] as Point2);
+    return center;
+}
+
 export function wholeShapeControlPoints(entity: ModelEntity): Point2[] {
     const points = (entity.points || []).map((point) => [...point] as Point2);
     Object.values(entity.curves || {}).forEach((curve) => {
         points.push([...curve.c1], [...curve.c2]);
     });
+    const center = standardShapeCenter(entity);
+    if (center) points.push(center);
     return points;
 }
 

@@ -10,6 +10,7 @@ import type { LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, 
 import type { SketchDimension } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
 import { sketchDimensionEdgeKey, type OverlayController } from './OverlayController';
+import { standardShapeCenter } from '../sketchWholeShapeSnap';
 
 type SketchDragState = { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; moved: boolean } | null;
 
@@ -499,6 +500,9 @@ export class SketchRenderer {
                 this.addDimension(midpoint(center, points[0]), { kind: 'arcRadius' }, Math.hypot(points[0][0] - center[0], points[0][1] - center[1]), unit, [center, points[0]]);
             }
         }
+        const standardEntity = this.options.getDocument()?.entities.find((entity) => entity.id === editingSketchId);
+        const standardCenter = standardEntity ? standardShapeCenter(standardEntity) : null;
+        if (standardCenter) this.addMarker(standardCenter, -1, SKETCH_COLORS.pointActive, true);
         if (selectedSegment >= 0 && curves[selectedSegment]) {
             const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
             [[a, curve.c1], [b, curve.c2]].forEach(([from, to]) => {

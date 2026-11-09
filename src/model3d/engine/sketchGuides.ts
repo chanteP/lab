@@ -1,4 +1,5 @@
 import { entityProfileClosed, profilePoints } from './profiles';
+import { standardShapeCenter } from './sketchWholeShapeSnap';
 import type { ModelEntity, ModelFolder, Point2, SketchReferenceGuide } from '../types';
 
 export type SketchGuideReference =
@@ -83,10 +84,8 @@ function references(entities: ModelEntity[], folders: ModelFolder[] = [], exclud
             const point = entity.points?.[index];
             if (point && (excludePoint?.entityId !== entity.id || excludePoint.index !== index)) points.push({ kind: 'point', entityId: entity.id, index, point });
         });
-        if ((entity.profileType || 'polygon') === 'rectangle' && (entity.points?.length || 0) === 4) {
-            const [a, , c] = entity.points!;
-            points.push({ kind: 'point', entityId: entity.id, index: -1, point: [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2] });
-        }
+        const center = standardShapeCenter(entity);
+        if (center) points.push({ kind: 'point', entityId: entity.id, index: -1, point: center });
         straightSegments(entity).forEach(({ index, a, b }) => lines.push({ kind: 'line', entityId: entity.id, index, a, b }));
     });
     folders.forEach((folder) => {

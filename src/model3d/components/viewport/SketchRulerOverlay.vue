@@ -5,7 +5,6 @@ import type { EditPhase, ViewportCallbacks } from '../../engine/Viewport';
 import { guidePointerOutsideViewport, guideFromRuler, rulerScaleTicks, snapGuideOffsetToRuler, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
 import type { SketchReferenceGuide, SketchRulerSide } from '../../types';
 import { uid } from '../../utils/id';
-import { INTERACTION } from '../../config/const';
 
 const RULER_SIZE = 12;
 const RULER_CENTER = RULER_SIZE / 2;
@@ -45,7 +44,7 @@ function snappedOffset(guide: SketchReferenceGuide, raw: number) {
     // Reference matching still renders while disabled; the controller returns the raw offset in that state.
     const reference = props.callbacks.onSketchGuideSnap(guide, raw);
     if (props.guideSnapEnabled === false || !props.frame) return raw;
-    const tick = snapGuideOffsetToRuler(guide, raw, props.frame, INTERACTION.sketchGuideSnapPx);
+    const tick = snapGuideOffsetToRuler(guide, raw, props.frame);
     return Math.abs(tick - raw) <= Math.abs(reference - raw) ? tick : reference;
 }
 function begin(event: PointerEvent, side?: SketchRulerSide, guide?: SketchReferenceGuide) {

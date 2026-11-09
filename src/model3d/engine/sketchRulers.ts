@@ -69,15 +69,15 @@ export function screenPointFromEvent(event: PointerEvent, element: HTMLElement):
 }
 
 /** Snap one guide offset to its corresponding visible ruler ticks; tolerance stays in CSS pixels. */
-export function snapGuideOffsetToRuler(guide: SketchReferenceGuide, offset: number, frame: SketchRulerFrame, thresholdPixels = 8) {
+export function snapGuideOffsetToRuler(guide: SketchReferenceGuide, offset: number, frame: SketchRulerFrame) {
     const horizontalAxis = guide.axis === 'u';
     const origin = horizontalAxis ? frame.origin.x : frame.origin.y;
     const size = horizontalAxis ? frame.width : frame.height;
-    const ticks = rulerScaleTicks(origin, frame.unitsPerPixel, size);
+    const ticks = rulerTicks(origin, frame.unitsPerPixel, size);
     const candidates = ticks.map((tick) => ({
         offset: tick.value,
         distance: Math.abs(tick.value - offset) / frame.unitsPerPixel,
-    })).filter((tick) => tick.distance <= thresholdPixels);
+    }));
     candidates.sort((a, b) => a.distance - b.distance);
     return candidates[0]?.offset ?? offset;
 }

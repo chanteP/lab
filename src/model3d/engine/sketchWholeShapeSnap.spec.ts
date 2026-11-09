@@ -30,3 +30,13 @@ test('whole-shape translation uses the best snap across semantic and Bezier cont
     assert.deepEqual(delta, [0, 0]);
     assert.deepEqual(snapWholeShapeTranslation(controls, [0.2, 0.2], (point) => point), [0.2, 0.2]);
 });
+
+test('standard shape center is a whole-drag snap control but trimmed shapes lose it', () => {
+    const rectangle = createEntity('sketch', 'rectangle');
+    rectangle.profileType = 'rectangle';
+    rectangle.points = [[0, 0], [20, 0], [20, 10], [0, 10]];
+    convertSemanticShapeToConstrainedPolygon(rectangle);
+    const controls = wholeShapeControlPoints(rectangle);
+    assert.deepEqual(controls[controls.length - 1], [10, 5]);
+    assert.equal(wholeShapeControlPoints({ ...rectangle, trimmed: true }).some((point) => point[0] === 10 && point[1] === 5), false);
+});

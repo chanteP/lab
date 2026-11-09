@@ -27,6 +27,7 @@ export function splitSemanticShapeToLines(source: ModelEntity, createId: () => s
         delete entity.lockedPoints;
         delete entity.controlPoints;
         delete entity.trimmed;
+        delete entity.standardShape;
         delete entity.profileStartAngle;
         return entity;
     });
