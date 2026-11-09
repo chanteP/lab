@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blendAdjustments, createDefaultAdjustments, mergeAdjustments } from './adjustments.ts';
+import { blendAdjustments, createDefaultAdjustments, hasSectionAdjustments, mergeAdjustments, resetAdjustmentSection, withAdjustmentSectionsReset } from './adjustments.ts';
 import { applyCurves, createCurveLut, evaluateCurve, normalizePoints } from './curve.ts';
 import { applyMixer, applyTone, calibrationMatrix, gradeFor, hslToRgb, opticsCoordinate, rgbToHsl, whiteBalance } from './color.ts';
 
@@ -10,6 +10,24 @@ test('default adjustment and partial nested merge are non-destructive', () => {
     const a = createDefaultAdjustments();
     const b = mergeAdjustments(a, { exposure: 1.5, mixer: { red: { hue: 20 } } } as never);
     near(b.exposure, 1.5); near(b.mixer.red.hue, 20); near(b.mixer.blue.hue, 0); near(a.exposure, 0);
+});
+
+test('panel reset only restores adjustments owned by that panel', () => {
+    const a = createDefaultAdjustments();
+    a.exposure = 2; a.effects.clarity = 40; a.mixer.red.hue = 30;
+    resetAdjustmentSection(a, 'basic');
+    assert.equal(a.exposure, 0); assert.equal(a.effects.clarity, 40); assert.equal(a.mixer.red.hue, 30);
+    resetAdjustmentSection(a, 'effects');
+    assert.equal(a.effects.clarity, 0); assert.equal(a.effects.vignetteMidpoint, 50); assert.equal(a.mixer.red.hue, 30);
+});
+
+test('temporary panel hiding returns a copy and preserves the source parameters', () => {
+    const a = createDefaultAdjustments();
+    a.exposure = 2; a.curves.rgb = [{ x: 0, y: 0 }, { x: .5, y: .8 }, { x: 1, y: 1 }]; a.optics.distortion = 30;
+    const result = withAdjustmentSectionsReset(a, ['basic', 'curve']);
+    assert.equal(result.exposure, 0); assert.deepEqual(result.curves, createDefaultAdjustments().curves); assert.equal(result.optics.distortion, 30);
+    assert.equal(a.exposure, 2); assert.equal(a.curves.rgb[1].y, .8);
+    assert.equal(hasSectionAdjustments(a, 'basic'), true); assert.equal(hasSectionAdjustments(result, 'basic'), false);
 });
 
 test('curve normalizes endpoints and stays finite and monotonic', () => {

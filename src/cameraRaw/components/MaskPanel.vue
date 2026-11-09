@@ -1,30 +1,45 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { NIcon } from 'naive-ui';
 import { AddOutline, BrushOutline, CopyOutline, EyeOffOutline, EyeOutline, RadioButtonOffOutline, RemoveOutline, TrashOutline } from '@vicons/ionicons5';
 import type { ImageMask, MaskShape, MaskTool } from '../engine/masks/types';
-import { createDefaultAdjustments } from '../engine/adjustments';
+import type { MaskAdjustmentSection } from '../engine/adjustments';
+import { ADJUSTMENT_SECTION_LABELS, MASK_ADJUSTMENT_SECTIONS } from '../engine/adjustments';
 import SliderField from './SliderField.vue';
-import CurveEditor from './CurveEditor.vue';
+import AdjustmentControls from './AdjustmentControls.vue';
 
-const props = withDefaults(defineProps<{ masks: ImageMask[]; activeMaskId?: string; tool?: MaskTool | ''; mode?: 'add' | 'subtract' }>(), { activeMaskId: undefined, tool: '', mode: 'add' });
+const props = withDefaults(defineProps<{ masks: ImageMask[]; activeMaskId?: string; tool?: MaskTool | ''; mode?: 'add' | 'subtract'; section?: MaskAdjustmentSection }>(), { activeMaskId: undefined, tool: '', mode: 'add', section: 'basic' });
 const emit = defineEmits<{
     tool: [tool: MaskTool];
     select: [id: string];
     'update-mask': [mask: ImageMask];
+    'update:section': [section: MaskAdjustmentSection];
     remove: [id: string];
     duplicate: [id: string];
     mode: [mode: 'add' | 'subtract'];
+    interaction: [active: boolean];
 }>();
-const section = ref<'basic' | 'curve' | 'effects'>('basic');
 const active = computed(() => props.masks.find((mask) => mask.id === props.activeMaskId));
 const tools: { id: MaskTool; label: string }[] = [{ id: 'brush', label: '画笔' }, { id: 'linear', label: '线性渐变' }, { id: 'radial', label: '径向渐变' }];
+let interacting = false;
 function patch(mask: ImageMask, values: Partial<ImageMask>) { emit('update-mask', { ...mask, ...values }); }
 function patchShape(shape: MaskShape, values: Record<string, unknown>) { if (active.value) emit('update-mask', { ...active.value, shapes: active.value.shapes.map((item) => item.id === shape.id ? { ...item, ...values } as MaskShape : item) }); }
+function startAdjustment(event: PointerEvent) {
+    if (event.button !== 0 || !(event.target as Element).closest('input[type="range"], .curve-grid, .color-wheel')) return;
+    interacting = true; emit('interaction', true);
+}
+function endAdjustment() {
+    if (!interacting) return;
+    interacting = false; emit('interaction', false);
+}
+useEventListener(window, 'pointerup', endAdjustment);
+useEventListener(window, 'pointercancel', endAdjustment);
+useEventListener(window, 'blur', endAdjustment);
 </script>
 
 <template>
-    <div class="mask-panel">
+    <div class="mask-panel" @pointerdown.capture="startAdjustment">
         <div class="new-mask"><span>新建蒙版</span><div class="mask-tools"><button v-for="item in tools" :key="item.id" type="button" :class="{ active: tool === item.id && mode === 'add' }" @click="emit('select', ''); emit('mode', 'add'); emit('tool', item.id)"><NIcon><BrushOutline v-if="item.id === 'brush'" /><RemoveOutline v-else-if="item.id === 'linear'" /><RadioButtonOffOutline v-else /></NIcon>{{ item.label }}</button></div><small>选择工具后在图像上拖动创建</small></div>
         <div v-if="masks.length" class="mask-list">
             <button v-for="mask in masks" :key="mask.id" type="button" class="mask-row" :class="{ active: mask.id === activeMaskId }" @click="emit('select', mask.id)">
@@ -52,11 +67,9 @@ function patchShape(shape: MaskShape, values: Record<string, unknown>) { if (act
                 </template>
             </div>
             <div class="local-adjustments">
-                <div class="local-head"><strong>蒙版内调整</strong><button type="button" @click="patch(active, { adjustments: createDefaultAdjustments() })">复位</button></div>
-                <div class="local-tabs"><button v-for="item in [{ id: 'basic', label: '基本' }, { id: 'curve', label: '曲线' }, { id: 'effects', label: '效果' }]" :key="item.id" type="button" :class="{ active: section === item.id }" @click="section = item.id as typeof section">{{ item.label }}</button></div>
-                <div v-if="section === 'basic'"><SliderField v-model="active.adjustments.temperature" label="色温" /><SliderField v-model="active.adjustments.tint" label="色调" /><SliderField v-model="active.adjustments.exposure" label="曝光" :min="-5" :max="5" :step=".05" /><SliderField v-model="active.adjustments.contrast" label="对比度" /><SliderField v-model="active.adjustments.highlights" label="高光" /><SliderField v-model="active.adjustments.shadows" label="阴影" /><SliderField v-model="active.adjustments.whites" label="白色" /><SliderField v-model="active.adjustments.blacks" label="黑色" /><SliderField v-model="active.adjustments.vibrance" label="自然饱和度" /><SliderField v-model="active.adjustments.saturation" label="饱和度" /></div>
-                <CurveEditor v-else-if="section === 'curve'" v-model="active.adjustments.curves" />
-                <div v-else><SliderField v-model="active.adjustments.effects.texture" label="纹理" /><SliderField v-model="active.adjustments.effects.clarity" label="清晰度" /><SliderField v-model="active.adjustments.effects.dehaze" label="去除薄雾" /><SliderField v-model="active.adjustments.effects.vignette" label="晕影" /><SliderField v-model="active.adjustments.effects.vignetteMidpoint" label="晕影中点" :min="0" /><SliderField v-model="active.adjustments.effects.grain" label="颗粒" :min="0" /></div>
+                <div class="local-head"><strong>蒙版内调整</strong></div>
+                <div class="local-tabs" role="tablist" aria-label="蒙版调整项目"><button v-for="item in MASK_ADJUSTMENT_SECTIONS" :key="item" type="button" role="tab" :aria-selected="section === item" :class="{ active: section === item }" @click="emit('update:section', item)">{{ ADJUSTMENT_SECTION_LABELS[item] }}</button></div>
+                <AdjustmentControls v-model="active.adjustments" :panel="section" local />
             </div>
         </template>
     </div>
@@ -76,7 +89,7 @@ function patchShape(shape: MaskShape, values: Record<string, unknown>) { if (act
 .mask-rename { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: #aaa; font-size: 11px; input { width: 160px; padding: 4px 6px; border: 1px solid #555; background: #292929; color: #ddd; } }
 .mask-checks { display: flex; gap: 18px; margin: 10px 0 16px; color: #aaa; font-size: 11px; label { display: flex; align-items: center; gap: 5px; } }
 .shape-settings { margin-top: 12px; padding-top: 8px; border-top: 1px solid #444; strong { display: block; margin-bottom: 8px; color: #888; font-size: 10px; font-weight: 400; } }
-.local-adjustments { margin: 16px -13px -22px; padding: 0 13px 22px; border-top: 1px solid #555; }
-.local-head { display: flex; align-items: center; justify-content: space-between; height: 42px; strong { font-size: 12px; font-weight: 500; } button { border: 0; background: transparent; color: #999; cursor: pointer; } }
-.local-tabs { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; button { height: 28px; border: 0; border-bottom: 1px solid #555; background: transparent; color: #888; cursor: pointer; &.active { border-bottom-color: #6bbbea; color: white; } } }
+.local-adjustments { margin: 16px -13px -22px; padding: 0 0 22px; border-top: 1px solid #555; }
+.local-head { display: flex; align-items: center; height: 42px; padding: 0 13px; strong { font-size: 12px; font-weight: 500; } }
+.local-tabs { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 13px 12px; button { height: 28px; border: 0; border-bottom: 1px solid #555; background: transparent; color: #888; cursor: pointer; &.active { border-bottom-color: #6bbbea; color: white; } } }
 </style>

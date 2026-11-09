@@ -14,7 +14,7 @@ test('pointer-centered zoom keeps the selected image position stationary', () =>
 });
 
 test('split comparison stays reachable at both edges', () => {
-    assert.equal(clampSplit(-2), .05); assert.equal(clampSplit(2), .95); assert.equal(clampSplit(.4), .4);
+    assert.equal(clampSplit(-2), 0); assert.equal(clampSplit(2), 1); assert.equal(clampSplit(.4), .4);
 });
 
 test('RGB curve view exposes read-only color reference channels only in composite mode', async () => {

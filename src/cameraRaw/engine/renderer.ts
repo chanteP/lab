@@ -17,6 +17,7 @@ export interface RenderOptions {
     profile?: DcpProfile;
     masks?: ImageMask[];
     activeMaskId?: string;
+    showMaskOverlay?: boolean;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string) {
@@ -177,7 +178,7 @@ export class RawRenderer {
             effective = combineMaskAdjustments(effective, mask.adjustments);
             this.draw(effective, options);
             this.copyCanvas(6, this.adjustedTexture);
-            this.blend(mask, mask.amount / 100, mask.overlay || mask.id === options.activeMaskId, options);
+            this.blend(mask, mask.amount / 100, Boolean(options.showMaskOverlay && (mask.overlay || mask.id === options.activeMaskId)), options);
             if (mask !== masks.at(-1)) this.copyCanvas(5, this.baseTexture);
         }
     }

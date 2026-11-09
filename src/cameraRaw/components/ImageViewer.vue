@@ -17,7 +17,8 @@ const props = withDefaults(defineProps<{
     maskTool?: MaskTool | '';
     maskMode?: 'add' | 'subtract';
     activeMask?: ImageMask;
-}>(), { asset: undefined, dcpProfile: undefined, maskTool: '', maskMode: 'add', activeMask: undefined });
+    showMaskOverlay?: boolean;
+}>(), { asset: undefined, dcpProfile: undefined, maskTool: '', maskMode: 'add', activeMask: undefined, showMaskOverlay: false });
 const emit = defineEmits<{
     histogram: [pixels: Uint8ClampedArray];
     'update:split': [value: number];
@@ -52,7 +53,7 @@ async function render(version: number) {
         renderer.render(asset.adjustments, {
             width: Math.min(asset.bitmap.width, Math.round(width * Math.min(devicePixelRatio, 2))),
             compare: props.compare, split: props.split, profile: props.dcpProfile,
-            masks: asset.masks, activeMaskId: props.activeMask?.id,
+            masks: asset.masks, activeMaskId: props.activeMask?.id, showMaskOverlay: props.showMaskOverlay,
         });
         const pixels = renderer.readPixels();
         presentCanvas.width = renderer.canvas.width; presentCanvas.height = renderer.canvas.height;
@@ -158,7 +159,7 @@ watch(() => props.asset?.adjustments, schedule, { deep: true });
 watch(() => props.asset?.masks, schedule, { deep: true });
 watch(() => props.activeMask, schedule, { deep: true });
 watch(() => props.dcpProfile, schedule);
-watch(() => [props.compare, props.split], schedule);
+watch(() => [props.compare, props.split, props.showMaskOverlay], schedule);
 watch(() => props.zoom, (value) => { if (value === 1) resetView(); schedule(); });
 onMounted(() => {
     resizeObserver = new ResizeObserver(schedule); if (container.value) resizeObserver.observe(container.value); schedule();
@@ -175,7 +176,7 @@ onBeforeUnmount(() => {
         <template v-if="asset?.bitmap">
             <div ref="stage" class="canvas-stage" :style="stageStyle" @pointerdown="maskStart" @pointermove="maskMove" @pointerup="maskEnd" @pointercancel="maskEnd" @click="maskClick">
                 <img ref="image" class="preview-image" draggable="false" :src="previewUrl" tabindex="0" aria-label="当前图片调整预览，选择蒙版工具后可按回车创建" @keyup="maskKeyboard" />
-                <svg v-if="activeMask || draft" class="mask-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+                <svg v-if="showMaskOverlay && (activeMask || draft)" class="mask-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
                     <template v-for="shape in activeMask?.shapes ?? []" :key="shape.id">
                         <g v-if="shape.type === 'linear'">
                             <line :x1="shape.start.x" :y1="shape.start.y" :x2="shape.end.x" :y2="shape.end.y" class="mask-guide" />

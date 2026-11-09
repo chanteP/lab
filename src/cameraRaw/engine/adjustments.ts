@@ -2,6 +2,15 @@ import type { Adjustments, Curves, MixerColor } from '../types';
 import { MIXER_COLORS } from '../types';
 import { evaluateCurve } from './curve';
 
+export const BASIC_ADJUSTMENT_KEYS = ['temperature', 'tint', 'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'vibrance', 'saturation'] as const;
+export type AdjustmentSection = 'basic' | 'curve' | 'effects' | 'grading' | 'mixer' | 'calibration' | 'optics';
+export type MaskAdjustmentSection = Exclude<AdjustmentSection, 'optics'>;
+export const ADJUSTMENT_SECTIONS: AdjustmentSection[] = ['basic', 'curve', 'effects', 'grading', 'mixer', 'calibration', 'optics'];
+export const MASK_ADJUSTMENT_SECTIONS: MaskAdjustmentSection[] = ['basic', 'curve', 'effects', 'grading', 'mixer', 'calibration'];
+export const ADJUSTMENT_SECTION_LABELS: Record<AdjustmentSection, string> = {
+    basic: '基本', curve: '曲线', effects: '效果', grading: '颜色分级', mixer: '混色器', calibration: '校准', optics: '光学',
+};
+
 export const defaultCurves = (): Curves => ({
     rgb: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
     r: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
@@ -55,6 +64,31 @@ export function mergeAdjustments(base: Adjustments, patch: Partial<Adjustments>)
 
 export function hasAdjustments(value: Adjustments): boolean {
     return JSON.stringify(value) !== JSON.stringify(createDefaultAdjustments());
+}
+
+export function resetAdjustmentSection(value: Adjustments, section: AdjustmentSection): Adjustments {
+    const defaults = createDefaultAdjustments();
+    if (section === 'basic') {
+        for (const key of BASIC_ADJUSTMENT_KEYS) value[key] = defaults[key];
+    } else if (section === 'curve') value.curves = defaults.curves;
+    else if (section === 'effects') value.effects = defaults.effects;
+    else if (section === 'grading') value.grading = defaults.grading;
+    else if (section === 'mixer') value.mixer = defaults.mixer;
+    else if (section === 'calibration') value.calibration = defaults.calibration;
+    else value.optics = defaults.optics;
+    return value;
+}
+
+export function withAdjustmentSectionsReset(value: Adjustments, sections: Iterable<AdjustmentSection>): Adjustments {
+    const result = cloneAdjustments(value);
+    for (const section of sections) resetAdjustmentSection(result, section);
+    return result;
+}
+
+export function hasSectionAdjustments(value: Adjustments, section: AdjustmentSection): boolean {
+    const defaults = createDefaultAdjustments();
+    if (section === 'basic') return BASIC_ADJUSTMENT_KEYS.some((key) => value[key] !== defaults[key]);
+    return JSON.stringify(value[section]) !== JSON.stringify(defaults[section]);
 }
 
 export function blendAdjustments(base: Adjustments, target: Adjustments, amount: number): Adjustments {
