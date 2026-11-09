@@ -209,3 +209,15 @@ export function solveSketchConstraints(
 export function constraintRules(value: NonNullable<ModelEntity['edgeConstraints']>[number] | undefined) {
     return Array.isArray(value) ? [...value] : value ? [value] : [];
 }
+
+/** Regular perimeter edges are derived from center/radius semantics and cannot own entity-indexed rules. */
+export function supportsSketchEdgeConstraints(entity: Pick<ModelEntity, 'profileType'>) {
+    return entity.profileType !== 'regular';
+}
+
+/** Persist a rule independently of whether the current geometry already satisfies it. */
+export function upsertSketchConstraintRule(entity: ModelEntity, index: number, next: SketchEdgeConstraint) {
+    const rules = constraintRules(entity.edgeConstraints?.[index]);
+    if (!rules.some((rule) => rule.type === next.type && rule.reference?.entityId === next.reference?.entityId && rule.reference?.index === next.reference?.index)) rules.push(next);
+    entity.edgeConstraints = { ...(entity.edgeConstraints || {}), [index]: rules };
+}

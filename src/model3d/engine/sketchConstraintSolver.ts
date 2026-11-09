@@ -1,5 +1,6 @@
 import { constraintRules, straightConstraintSegment } from './sketchConstraints';
 import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchElementRef } from '../types';
+import type { SketchDimensionOperation } from './sketchDimension';
 
 export const SKETCH_CONSTRAINT_TOLERANCE = 0.0001;
 
@@ -7,6 +8,8 @@ type Axis = 0 | 1;
 type Variable = { entityId: string; index: number; axis: Axis; initial: number };
 type Rule = { entity: ModelEntity; index: number; rule: SketchEdgeConstraint };
 type Derivative = { variable: Variable; value: number };
+type ConstraintRow = { residual: number; derivatives: Derivative[] };
+export type SketchConstraintOperation = SketchDimensionOperation & { entityId: string };
 
 const SOFT_ANCHOR_WEIGHT = 1000;
 const MAX_ITERATIONS = 80;
@@ -99,6 +102,34 @@ function derivatives(rule: Rule, document: ModelDocument): Derivative[] {
     return result;
 }
 
+function operationRows(document: ModelDocument, entities: Map<string, ModelEntity>, original: Map<string, Point2[]>, operation?: SketchConstraintOperation): ConstraintRow[] {
+    if (!operation) return [];
+    const entity = entities.get(operation.entityId);
+    if (!entity) return [{ residual: Number.POSITIVE_INFINITY, derivatives: [] }];
+    const current = vector(entity, operation.index);
+    if (!current) return [{ residual: Number.POSITIVE_INFINITY, derivatives: [] }];
+    const next = (operation.index + 1) % entity.points!.length;
+    const derivative = (axis: Axis): Derivative[] => [
+        { variable: { entityId: entity.id, index: operation.index, axis, initial: 0 }, value: -1 },
+        { variable: { entityId: entity.id, index: next, axis, initial: 0 }, value: 1 },
+    ];
+    const rows: ConstraintRow[] = [
+        { residual: current.dx - operation.direction[0] * operation.length, derivatives: derivative(0) },
+        { residual: current.dy - operation.direction[1] * operation.length, derivatives: derivative(1) },
+    ];
+    if (operation.preserve === 'center') {
+        const before = original.get(entity.id)!;
+        for (const axis of [0, 1] as Axis[]) {
+            const center = (entity.points![0][axis] + entity.points![2][axis]) / 2;
+            const initial = (before[0][axis] + before[2][axis]) / 2;
+            rows.push({ residual: center - initial, derivatives: [0, 2].map((index) => ({
+                variable: { entityId: entity.id, index, axis, initial: 0 }, value: 0.5,
+            })) });
+        }
+    }
+    return rows;
+}
+
 function solveLinear(matrix: number[][], vector: number[]) {
     const size = vector.length;
     const a = matrix.map((row, index) => [...row, vector[index]]);
@@ -154,13 +185,14 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
     return new Map([...all].filter(([id]) => included.has(id)));
 }
 
-/** Global Gauss-Newton solve; references are bidirectional associations, not privileged objects. */
-export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, softAnchors: SketchElementRef[], limit: number): 'ok' | 'limit' | 'conflict' {
+/** Global Gauss-Newton solve; a dimension operation is exact, while persistent references are associations. */
+export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, softAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument): 'ok' | 'limit' | 'conflict' {
     const grouped = relatedRules(document, rootId);
     if (grouped.size > limit) return 'limit';
     const rules = [...grouped.values()].flat();
-    if (!rules.length) return 'ok';
+    if (!rules.length && !operation) return 'ok';
     const included = new Set(grouped.keys());
+    if (operation) included.add(operation.entityId);
     rules.forEach((rule) => { if (rule.rule.reference) included.add(rule.rule.reference.entityId); });
     const entities = new Map(document.entities.filter((entity) => included.has(entity.id) && entity.points).map((entity) => [entity.id, entity]));
     const original = new Map([...entities].map(([id, entity]) => [id, entity.points!.map((point) => [...point] as Point2)]));
@@ -169,6 +201,7 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     const variableIndex = new Map<string, number>();
     entities.forEach((entity) => entity.points!.forEach((point, index) => [0, 1].forEach((axis) => {
         if ((entity.lockedPoints || []).includes(index)) return;
+        if (operation?.preserve === 'start' && operation.entityId === entity.id && operation.index === index) return;
         variableIndex.set(`${entity.id}:${index}:${axis}`, variables.length);
         variables.push({ entityId: entity.id, index, axis: axis as Axis, initial: point[axis as Axis] });
     })));
@@ -176,7 +209,7 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     const valueOf = (variable: Variable) => entities.get(variable.entityId)!.points![variable.index][variable.axis];
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-        const rows: { residual: number; derivatives: Derivative[] }[] = [];
+        const rows: ConstraintRow[] = operationRows(document, entities, original, operation);
         rules.forEach((rule) => {
             const value = residual(rule, document);
             if (value === null) return;
@@ -214,6 +247,20 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     for (const rule of rules) {
         const value = residual(rule, document);
         if (value === null || Math.abs(value) > SKETCH_CONSTRAINT_TOLERANCE * 2) { restore(); return 'conflict'; }
+    }
+    if (operationRows(document, entities, original, operation).some((row) => !Number.isFinite(row.residual) || Math.abs(row.residual) > SKETCH_CONSTRAINT_TOLERANCE * 2)) {
+        restore();
+        return 'conflict';
+    }
+    if (before && [...entities].some(([id, entity]) => {
+        const source = before.entities.find((item) => item.id === id);
+        return (entity.lockedPoints || []).some((index) => {
+            const point = entity.points![index], originalPoint = source?.points?.[index];
+            return originalPoint && Math.hypot(point[0] - originalPoint[0], point[1] - originalPoint[1]) > SKETCH_CONSTRAINT_TOLERANCE;
+        });
+    })) {
+        restore();
+        return 'conflict';
     }
     entities.forEach((entity, id) => {
         const before = original.get(id)!;
