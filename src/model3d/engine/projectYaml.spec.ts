@@ -35,3 +35,15 @@ test('compact project YAML rejects ambiguous unquoted strings and invalid struct
     assert.throws(() => parseProjectYaml('items:\n  - 1,2\n   - 3,4\n'), /缩进或结构无效/);
     assert.throws(() => stringifyProjectYaml({ bad: Number.NaN }), /有限数/);
 });
+
+test('sketch plane ruler guides survive project YAML round trips', () => {
+    const value = {
+        version: 1,
+        planes: [{ id: 'plane', visible: true, guides: [{ id: 'vertical', axis: 'u', offset: -12.5 }, { id: 'horizontal', axis: 'v', offset: 30 }] }],
+    };
+    expectRoundTrip(value);
+});
+
+function expectRoundTrip(value: unknown) {
+    assert.deepEqual(parseProjectYaml(stringifyProjectYaml(value)), value);
+}

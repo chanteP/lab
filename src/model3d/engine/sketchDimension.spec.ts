@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDocument, createEntity, type ModelEntity, type Point2 } from '../types';
-import { profileArcCenter, profilePoints } from './profiles';
-import { editRegularEdgeDimension, editSketchDimension, type SketchDimensionOperation } from './sketchDimension';
+import { profileArcCenter } from './profiles';
+import { editSketchDimension, type SketchDimensionOperation } from './sketchDimension';
 import { solveDocumentConstraints } from './sketchConstraintSolver';
-import { supportsSketchEdgeConstraints, upsertSketchConstraintRule } from './sketchConstraints';
+import { upsertSketchConstraintRule } from './sketchConstraints';
 
 const close = (actual: number, expected: number, message = '') => assert.ok(Math.abs(actual - expected) < 0.001, `${message}: expected ${expected}, got ${actual}`);
 const closePoint = (actual: Point2, expected: Point2) => {
@@ -18,9 +18,8 @@ const length = (points: Point2[], index: number) => {
 
 function rectangle(equal = false): ModelEntity {
     const entity = createEntity('sketch', 'rectangle');
-    entity.profileType = 'rectangle';
+    entity.profileType = 'polygon';
     entity.points = [[0, 0], [20, 0], [20, 10], [0, 10]];
-    entity.shapeConstraint = 'orthogonal';
     entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
         { type: 'perpendicular', reference: { entityId: entity.id, index: (index + 3) % 4 } },
         { type: index % 2 === 0 ? 'horizontal' : 'vertical' },
@@ -125,14 +124,6 @@ test('equal lines follow the edited line while retaining two endpoints each', ()
     closePoint(b.points[0], [0, 5]);
     assert.equal(a.points.length, 2);
     assert.equal(b.points.length, 2);
-});
-
-test('regular radius keeps center, rotation, side count and two semantic points', () => {
-    const points: Point2[] = [[3, 4], [13, 4]];
-    const edit = editSketchDimension(points, {}, 360, { kind: 'regularRadius' }, 15);
-    closePoint(edit.points[0], [3, 4]);
-    closePoint(edit.points[1], [18, 4]);
-    assert.equal(edit.points.length, 2);
 });
 
 test('circle sector angle changes only angle, not center, radius or point count', () => {
@@ -292,25 +283,6 @@ test('circle radius keeps center, direction and two semantic points', () => {
     const edit = editSketchDimension([[2, 3], [12, 3]], {}, 270, { kind: 'radius' }, 15);
     assert.deepEqual(edit.points, [[2, 3], [17, 3]]);
     assert.equal(edit.sectorAngle, 270);
-});
-
-test('regular derived edge length scales the whole shape without replacing semantic points', () => {
-    const points: Point2[] = [[3, 4], [13, 4]];
-    const sides = 6;
-    const edit = editRegularEdgeDimension(points, sides, 10);
-    closePoint(edit.points[0], [3, 4]);
-    closePoint(edit.points[1], [13, 4]);
-    assert.equal(edit.points.length, 2);
-    const perimeter = profilePoints('regular', edit.points, 64, undefined, sides);
-    assert.equal(perimeter.length, sides);
-    for (let index = 0; index < sides; index++) close(length(perimeter, index), 10);
-});
-
-test('regular derived edges reject entity-indexed constraints while semantic rectangles accept them', () => {
-    assert.equal(supportsSketchEdgeConstraints({ profileType: 'regular' }), false);
-    assert.equal(supportsSketchEdgeConstraints({ profileType: 'rectangle' }), true);
-    assert.equal(supportsSketchEdgeConstraints({ profileType: 'line' }), true);
-    assert.equal(supportsSketchEdgeConstraints({ profileType: 'polygon' }), true);
 });
 
 test('an already horizontal edge still records its new horizontal rule without a geometry change', () => {

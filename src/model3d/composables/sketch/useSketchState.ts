@@ -1,6 +1,6 @@
 import { computed, ref, type Ref } from 'vue';
 import { STORAGE_KEYS } from '../../config/const';
-import { constraintRules, straightConstraintSegment, type SketchConstraintType } from '../../engine/sketchConstraints';
+import { constraintRules, entityConstraintSegment, type SketchConstraintType } from '../../engine/sketchConstraints';
 import type { ProfileCurves, ProfileType } from '../../engine/profiles';
 import type {
     ConstraintRuleListItem, ModelDocument, Point2, SketchElementRef, TrimmedSelection,
@@ -31,6 +31,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
     const sketchAppendMode = ref(true);
     const sketchSelectionTool = ref(false);
     const sketchGuideSnapEnabled = ref(true);
+    const selectedSketchGuideId = ref<string | null>(null);
     // Transient drag/constraint data is deliberately non-reactive.
     const sketchGesture = {
         anchors: [] as SketchElementRef[],
@@ -53,7 +54,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
     const selectedPointLocked = computed(() => selectedSketchPoint.value >= 0 && sketchLockedPoints.value.includes(selectedSketchPoint.value));
     const constraintSegmentCount = computed(() => selectedEdges.value.filter(({ entityId, index }) => {
         const entity = document.value.entities.find((item) => item.id === entityId);
-        return entity?.points && straightConstraintSegment(entity.points, entity.curves || {}, index);
+        return entity?.points && entityConstraintSegment(entity, index);
     }).length);
     const selectionLocked = computed(() => {
         if (selectedPoints.value.length) return selectedPoints.value.every(({ entityId, index }) => {
@@ -128,7 +129,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
         selectedSketchSegments, selectedShapes, selectedEdges, selectedPoints, activeConstraintRule,
         activeConstraintRuleData, sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, constraintLimit,
-        sketchGuideSnapEnabled, sketchGesture, sketchClosed, selectedPointLocked, constraintSegmentCount,
+        sketchGuideSnapEnabled, selectedSketchGuideId, sketchGesture, sketchClosed, selectedPointLocked, constraintSegmentCount,
         selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
         autoConstraintActive, selectedConstraintRuleItems,
     };

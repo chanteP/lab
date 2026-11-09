@@ -58,14 +58,18 @@ function segmentIndices(index: number, count: number): [number, number] {
     return [index, (index + 1) % count];
 }
 
-export function straightConstraintSegment(points: Point2[], curves: ProfileCurves, index: number) {
+/** Every logical border owns a constraint chord; curve handles are deliberately excluded. */
+export function constraintEndpointSegment(points: Point2[], index: number) {
     const [aIndex, bIndex] = segmentIndices(index, points.length);
     const a = points[aIndex], b = points[bIndex];
-    if (!a || !b || distance(a, b) < EPSILON) return false;
-    const curve = curves[index];
-    if (!curve) return true;
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    return [curve.c1, curve.c2].every((point) => Math.abs(dx * (point[1] - a[1]) - dy * (point[0] - a[0])) < EPSILON);
+    return !!a && !!b && distance(a, b) >= EPSILON;
+}
+
+export function entityConstraintSegment(entity: Pick<ModelEntity, 'points' | 'profileType' | 'analyticCurves'>, index: number) {
+    if (!['polygon', 'rectangle', 'regular', 'line'].includes(entity.profileType || 'polygon')) return false;
+    // Standalone Arc stores start/mid/end; only polygon/line borders guarantee endpoint indexing.
+    if (entity.analyticCurves?.[index]?.kind === 'ellipse') return false;
+    return constraintEndpointSegment(entity.points || [], index);
 }
 
 function rotate(point: Point2, angle: number): Point2 {
@@ -86,7 +90,7 @@ export function solveSketchConstraints(
     type: SketchConstraintType,
     closed = false,
 ): SketchConstraintResult | null {
-    const selected = [...new Set(segments)].filter((index) => straightConstraintSegment(source, sourceCurves, index));
+    const selected = [...new Set(segments)].filter((index) => constraintEndpointSegment(source, index));
     if (!selected.length || selected.length !== new Set(segments).size) return null;
     if (['parallel', 'perpendicular', 'equal'].includes(type) && selected.length < 2) return null;
 
@@ -190,29 +194,12 @@ export function solveSketchConstraints(
     });
 
     const changed = points.some((point, index) => distance(point, source[index]) > EPSILON);
-    Object.entries(curves).forEach(([key, curve]) => {
-        const index = Number(key);
-        const [aIndex, bIndex] = segmentIndices(index, points.length);
-        if (selected.includes(index)) {
-            const a = points[aIndex], b = points[bIndex];
-            curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
-            curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
-        } else {
-            curve.c1 = [curve.c1[0] + points[aIndex][0] - source[aIndex][0], curve.c1[1] + points[aIndex][1] - source[aIndex][1]];
-            curve.c2 = [curve.c2[0] + points[bIndex][0] - source[bIndex][0], curve.c2[1] + points[bIndex][1] - source[bIndex][1]];
-        }
-    });
     return { points, curves, changed };
 }
 
 /** Normalizes legacy single-rule storage and current multi-rule storage for reads. */
 export function constraintRules(value: NonNullable<ModelEntity['edgeConstraints']>[number] | undefined) {
     return Array.isArray(value) ? [...value] : value ? [value] : [];
-}
-
-/** Regular perimeter edges are derived from center/radius semantics and cannot own entity-indexed rules. */
-export function supportsSketchEdgeConstraints(entity: Pick<ModelEntity, 'profileType'>) {
-    return entity.profileType !== 'regular';
 }
 
 /** Persist a rule independently of whether the current geometry already satisfies it. */

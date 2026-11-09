@@ -22,7 +22,6 @@ export function splitSemanticShapeToLines(source: ModelEntity, createId: () => s
         delete entity.parts;
         delete entity.sides;
         delete entity.sectorAngle;
-        delete entity.shapeConstraint;
         delete entity.constraintEdges;
         delete entity.edgeConstraints;
         delete entity.lockedPoints;

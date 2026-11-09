@@ -91,7 +91,7 @@ const sketchState = useSketchState(document);
 const {
     sketchMode, sketchType, sketchSides, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
     trimmedSelection, sketchContextMenu, selectedShapes, selectedEdges, selectedPoints,
-    activeConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled,
+    activeConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled, selectedSketchGuideId,
     sketchClosed, constraintSegmentCount,
     selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
     autoConstraintActive, selectedConstraintRuleItems,
@@ -329,8 +329,8 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
-function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); undo(); }
-function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); redo(); }
+function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
+function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
 
 function onMarqueeSelect(ids: string[], additive: boolean) {
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
@@ -477,7 +477,10 @@ function onKeyDown(event: KeyboardEvent) {
         else if (activeTool.value !== 'select') setTool('select');
         else { activePanel.value = null; selectEntity(null); }
     }
-    else if (event.code === 'Delete' || event.code === 'Backspace') { if (!symmetryActive.value) removeSelected(); }
+    else if (event.code === 'Delete' || event.code === 'Backspace') {
+        if (selectedSketchGuideId.value) onSketchGuideDelete(selectedSketchGuideId.value);
+        else if (!symmetryActive.value) removeSelected();
+    }
     else if (event.code === 'KeyV') sketchMode.value ? chooseSketchSelection() : setTool('select');
     else if (event.code === 'KeyG') sketchMode.value ? chooseSketchTransform('translate') : setTool('translate');
     else if (event.code === 'KeyR') sketchMode.value ? chooseSketchTransform('rotate') : setTool('rotate');
@@ -562,6 +565,55 @@ const handleDirectEdit: ViewportCallbacks['onDirectEdit'] = (id, normal, delta, 
     else onDirectEdit(id, normal, delta, phase, anchor);
 };
 
+let guideDragBefore: ModelDocument | null = null;
+function onSketchGuideSelect(id: string | null) {
+    if (id) clearSketchSelection();
+    selectedSketchGuideId.value = id;
+}
+function onSketchGuideChange(guide: SketchReferenceGuide, phase: EditPhase) {
+    const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
+    if (!plane) return;
+    if (phase === 'start') {
+        guideDragBefore = cloneDocument(document.value);
+        transforming = true;
+        pushHistory();
+        plane.guides ||= [];
+        if (!plane.guides.some((item) => item.id === guide.id)) plane.guides.push({ ...guide });
+    }
+    if (phase === 'cancel') {
+        if (guideDragBefore) document.value.planes = guideDragBefore.planes;
+        popHistory();
+        guideDragBefore = null;
+        transforming = false;
+        viewport.sync(document.value);
+        return;
+    }
+    const current = plane.guides?.find((item) => item.id === guide.id);
+    if (current) current.offset = guide.offset;
+    selectedSketchGuideId.value = guide.id;
+    if (phase === 'end') {
+        guideDragBefore = null;
+        transforming = false;
+        viewport.sync(document.value);
+        refreshSketch();
+    }
+}
+function onSketchGuideInput(id: string, offset: number) {
+    const guide = document.value.planes.find((item) => item.id === activePlaneId.value)?.guides?.find((item) => item.id === id);
+    if (!guide || !Number.isFinite(offset) || Math.abs(guide.offset - offset) < 1e-9) return;
+    pushHistory();
+    guide.offset = offset;
+    selectedSketchGuideId.value = id;
+}
+function onSketchGuideDelete(id: string) {
+    const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
+    if (!plane?.guides?.some((item) => item.id === id)) return;
+    pushHistory();
+    plane.guides = plane.guides.filter((item) => item.id !== id);
+    selectedSketchGuideId.value = null;
+    refreshSketch();
+}
+
 const viewportCallbacks: ViewportCallbacks = {
         onSelect: selectEntity,
         onGeometrySelect,
@@ -614,6 +666,10 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchSectorReset: resetSketchSector,
         onSketchDimension: (target: SketchDimension, value: number) => target.assetId ? onSketchAssetDimension(target, value) : onSketchDimension(target, value),
         onSketchDragEnd: refreshSketch,
+        onSketchGuideSelect,
+        onSketchGuideChange,
+        onSketchGuideInput,
+        onSketchGuideDelete,
         onLengthUnitChange: setLengthUnit,
         onDirectDistance: (value) => ['edge', 'vertex'].includes(selectionKind.value || '') ? updateEdgeTreatmentDistance(value) : updateFaceOffsetInput(value),
         onExtrudeDistance: updateExtrudeLength,
@@ -681,7 +737,7 @@ onBeforeUnmount(() => {
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
-                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"

@@ -1,10 +1,11 @@
 import { entityProfileClosed, profilePoints } from './profiles';
-import type { ModelEntity, ModelFolder, Point2 } from '../types';
+import type { ModelEntity, ModelFolder, Point2, SketchReferenceGuide } from '../types';
 
 export type SketchGuideReference =
     | { kind: 'point'; entityId: string; index: number; point: Point2 }
     | { kind: 'line'; entityId: string; index: number; a: Point2; b: Point2 }
-    | { kind: 'origin'; id: 'world' | 'plane'; point: Point2 };
+    | { kind: 'origin'; id: 'world' | 'plane'; point: Point2 }
+    | { kind: 'ruler'; id: string; axis: 'u' | 'v'; offset: number };
 
 export interface SketchGuideMatch {
     point: Point2;
@@ -28,6 +29,7 @@ export interface SketchGuideRequest {
     excludeEntityIds?: string[];
     excludePoint?: { entityId: string; index: number };
     origins?: { id: 'world' | 'plane'; point: Point2 }[];
+    guides?: SketchReferenceGuide[];
     threshold: number;
 }
 
@@ -110,6 +112,18 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
         candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]), axis: 'vertical', priority: 2 });
         const horizontal: Point2 = [point[0], reference.point[1]];
         candidates.push({ point: horizontal, a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: Math.abs(point[1] - reference.point[1]), axis: 'horizontal', priority: 2 });
+    });
+    (request.guides || []).forEach((guide) => {
+        const reference: SketchGuideReference = { kind: 'ruler', id: guide.id, axis: guide.axis, offset: guide.offset };
+        const vertical = guide.axis === 'u';
+        const projected: Point2 = vertical ? [guide.offset, point[1]] : [point[0], guide.offset];
+        const a: Point2 = vertical ? [guide.offset, 0] : [0, guide.offset];
+        const b: Point2 = vertical ? [guide.offset, 1] : [1, guide.offset];
+        candidates.push({
+            point: projected, a, b, reference,
+            distance: vertical ? Math.abs(point[0] - guide.offset) : Math.abs(point[1] - guide.offset),
+            axis: vertical ? 'vertical' : 'horizontal', priority: 1,
+        });
     });
     if (edgeStart) refs.lines.forEach((reference) => {
         const direction = normalize(subtract(reference.b, reference.a));

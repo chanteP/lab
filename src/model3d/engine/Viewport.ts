@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { ProfileType, ProfileCurves } from './profiles';
-import type { DisplayMode, LengthUnit, ModelDocument, OperationState, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef } from '../types';
+import type { DisplayMode, LengthUnit, ModelDocument, OperationState, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef, SketchReferenceGuide } from '../types';
 import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
@@ -16,13 +16,14 @@ import { OverlayController, type ProjectedViewportOverlay } from './viewport/Ove
 import { applyTransformControlColors } from './viewport/transformColors';
 import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
+import { guideScreenPosition, type SketchRulerFrame } from './sketchRulers';
 
 export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
 export type ViewportStats = { vertices: number; triangles: number; objects: number; selection: SelectionStats | null };
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
 export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
-export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'regularRadius' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
+export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 
 export interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
@@ -57,6 +58,10 @@ export interface ViewportCallbacks {
     onSketchSectorReset: () => void;
     onSketchDimension: (target: SketchDimension, value: number) => void;
     onSketchDragEnd: () => void;
+    onSketchGuideSelect: (id: string | null) => void;
+    onSketchGuideChange: (guide: SketchReferenceGuide, phase: EditPhase) => void;
+    onSketchGuideInput: (id: string, offset: number) => void;
+    onSketchGuideDelete: (id: string) => void;
     onLengthUnitChange: (unit: LengthUnit) => void;
     onDirectDistance: (value: number) => void;
     onExtrudeDistance: (value: number) => void;
@@ -75,6 +80,7 @@ export interface ViewportCallbacks {
 
 export interface ViewportOptions {
     onOverlaysChange?: (items: ProjectedViewportOverlay[]) => void;
+    onSketchRulersChange?: (frame: SketchRulerFrame | null) => void;
 }
 
 /** Public viewport facade. Specialized modules own rendering, camera and interaction state. */
@@ -233,6 +239,7 @@ export class Viewport {
         if (this.sketchMode) this.measurementRenderer.updateSketchMarkers(this.sketchRenderer.unitsPerPixel());
         this.engine.render(this.cameraController.camera, this.cameraController.viewHelper, this.cameraController.planeGizmo, this.sketchMode, this.cameraController.controls.target);
         this.options.onOverlaysChange?.(this.overlay.project(this.cameraController.camera, this.engine.renderer.domElement));
+        this.options.onSketchRulersChange?.(this.sketchRulerFrame());
     }
 
     private formatLength(value: number) {
@@ -282,7 +289,7 @@ export class Viewport {
         this.publishStats();
     }
     setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) { this.sketchRenderer.setSelectionState(edges, points); }
-    setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) { this.sketchRenderer.setActiveConstraintRule(selection, reference); }
+    setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null) { this.sketchRenderer.setActiveConstraintRule(selection); }
     clearGeometrySelection() {
         this.interaction.clearGeometrySelection();
         this.publishStats();
@@ -406,6 +413,26 @@ export class Viewport {
             height: units * canvas.clientHeight,
         };
     }
+    private sketchRulerFrame(): SketchRulerFrame | null {
+        const plane = this.sceneSynchronizer.activePlane;
+        const canvas = this.engine.renderer.domElement;
+        if (!this.sketchMode || !plane) return null;
+        const originPoint = this.sketchScreen([0, 0]);
+        const unitsPerPixel = this.sketchUnitsPerPixel();
+        const origin: Point2 = [originPoint.x, originPoint.y];
+        const guides = (plane.guides || []).map((guide) => {
+            const position = this.sketchScreen(guide.axis === 'u' ? [guide.offset, 0] : [0, guide.offset]);
+            return {
+                ...guide, x: position.x, y: position.y,
+                rulerPosition: guideScreenPosition(guide, origin, unitsPerPixel).position,
+            };
+        });
+        return {
+            width: canvas.clientWidth, height: canvas.clientHeight,
+            origin: originPoint, unitsPerPixel, unit: this.lengthUnit, guides,
+        };
+    }
+
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     forwardWheel(event: WheelEvent) {
         this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));

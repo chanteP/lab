@@ -5,7 +5,7 @@ import type { EditPhase, SketchDimension, Viewport, ViewTool } from '../../engin
 import { profileEllipseAngle, profilePoints, type ProfileType } from '../../engine/profiles';
 import { INTERACTION } from '../../config/const';
 import { uid } from '../../utils/id';
-import { editRegularEdgeDimension, editSketchDimension } from '../../engine/sketchDimension';
+import { editSketchDimension } from '../../engine/sketchDimension';
 import type { SketchConstraintOperation } from '../../engine/sketchConstraintChain';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
 import {
@@ -51,7 +51,7 @@ export function useSketchSession(options: SketchSessionOptions) {
     } = state;
     const { ensureShapeConstraints, syncEditingSketch } = constraints;
     const {
-        clearSketchDragState, activateSketchSelectionTool, beginSketchHandleDrag, finishSketchHandleDrag, flushSemanticBezierSplit,
+        clearSketchDragState, activateSketchSelectionTool, beginSketchHandleDrag, finishSketchHandleDrag,
     } = editing;
     let sketchRefreshFrame = 0;
     let visibilityBeforeSketch: { entityId: string; visible: boolean; planeId: string | null; planeVisible: boolean } | null = null;
@@ -134,6 +134,11 @@ export function useSketchSession(options: SketchSessionOptions) {
             entity.profileStartAngle = sketchProfileStartAngle.value;
             entity.visible = true;
             ensureShapeConstraints(entity);
+            // The toolbar semantics end at creation; subsequent edits only see line endpoints and rules.
+            sketchPoints.value = entity.points!.map((point) => [...point]);
+            sketchType.value = entity.profileType || 'polygon';
+            sketchOpen.value = !!entity.open;
+            sketchSides.value = entity.sides || 3;
         }
         if (resetAfter) {
             selectedIds.value = [id!];
@@ -163,7 +168,6 @@ export function useSketchSession(options: SketchSessionOptions) {
         viewport()?.updateSketch(sketchPoints.value, selectedSketchPoint.value, sketchType.value, sketchCurves.value, sketchSides.value, selectedSketchSegment.value, sketchLockedPoints.value, sketchSectorAngle.value, lengthUnit.value, sketchOpen.value, sketchProfileStartAngle.value, controlPoints, trimmed?.kind === 'curve');
     }
     function setSketchType(type: ProfileType) {
-        flushSemanticBezierSplit();
         viewport()?.setSketchEdgeEditing(null);
         selectedShapes.value = [];
         selectedEdges.value = [];
@@ -223,23 +227,6 @@ export function useSketchSession(options: SketchSessionOptions) {
     function onSketchDimension(target: SketchDimension, value: number) {
         if (!Number.isFinite(value) || value <= 0) return;
         const entity = document.value.entities.find((item) => item.id === editingSketchId.value);
-        if (entity?.profileType === 'regular' && trimmedSelection.value && target.kind === 'segment') {
-            if (Object.keys(entity.edgeConstraints || {}).length || entity.lockedPoints?.length) {
-                message.warning('正多边形的展开边不支持附加约束，请使用整形状半径编辑');
-                return;
-            }
-            pushHistory();
-            const sides = entity.sides || sketchSides.value;
-            const edit = editRegularEdgeDimension(entity.points!, sides, value);
-            entity.points = edit.points;
-            const perimeter = profilePoints('regular', edit.points, 64, undefined, sides);
-            const index = trimmedSelection.value.index;
-            sketchPoints.value = [[...perimeter[index]], [...perimeter[(index + 1) % sides]]];
-            sketchCurves.value = {};
-            persistSketchProgress(false);
-            refreshSketch();
-            return;
-        }
         if (editingSketchId.value) pushHistory();
         const edit = editSketchDimension(sketchPoints.value, sketchCurves.value, sketchSectorAngle.value, target, value);
         sketchPoints.value = edit.points;
@@ -295,6 +282,8 @@ export function useSketchSession(options: SketchSessionOptions) {
         }
         if (existing) existing.curves = JSON.parse(JSON.stringify(sketchCurves.value));
         else document.value.entities[document.value.entities.length - 1].curves = JSON.parse(JSON.stringify(sketchCurves.value));
+        const completed = document.value.entities.find((entity) => entity.id === id);
+        if (completed) ensureShapeConstraints(completed);
         cancelSketch();
         selectedIds.value = [id!];
         viewport()?.fitSelection();
@@ -304,7 +293,6 @@ export function useSketchSession(options: SketchSessionOptions) {
     }
     function cancelSketch() {
         finishSketchHandleDrag();
-        flushSemanticBezierSplit();
         if (visibilityBeforeSketch) {
             const entity = document.value.entities.find((item) => item.id === visibilityBeforeSketch!.entityId);
             if (entity) entity.visible = visibilityBeforeSketch.visible;

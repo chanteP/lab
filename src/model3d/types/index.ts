@@ -17,6 +17,9 @@ export interface SketchProfilePart {
     editor?: SketchProfileEditor;
 }
 export type SketchElementRef = { entityId: string; index: number };
+export type SketchRulerSide = 'top' | 'left';
+/** Persistent construction lines owned by a sketch plane; they never enter profile geometry. */
+export type SketchReferenceGuide = { id: string; axis: 'u' | 'v'; offset: number };
 export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length';
 export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number };
 export type LengthUnit = 'mm' | 'cm' | 'm';
@@ -47,6 +50,7 @@ export interface SketchPlane {
     u: Vec3;
     v: Vec3;
     visible: boolean;
+    guides?: SketchReferenceGuide[];
 }
 
 export type EdgeTreatment = {
@@ -84,7 +88,6 @@ export interface ModelEntity {
     parts?: SketchProfilePart[];
     controlPoints?: number[];
     trimmed?: boolean;
-    shapeConstraint?: 'orthogonal' | 'equal';
     constraintEdges?: number[];
     edgeConstraints?: Record<number, SketchEdgeConstraint | SketchEdgeConstraint[]>;
     profileType?: 'polygon' | 'rectangle' | 'circle' | 'ellipse' | 'regular' | 'arc' | 'line';

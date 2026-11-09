@@ -51,7 +51,6 @@ export function editSketchDimension(source: Point2[], sourceCurves: ProfileCurve
             points.forEach((point) => point[axis] = center + (point[axis] < center ? -value / 2 : value / 2));
         }
     } else if (target.kind === 'radius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
-    else if (target.kind === 'regularRadius' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
     else if (target.kind === 'radiusX' && points[0] && points[1]) points[1] = setRadius(points[0], points[1], value);
     else if (target.kind === 'radiusY' && points[0] && points[2]) points[2] = setRadius(points[0], points[2], value);
     else if (target.kind === 'control' && target.index !== undefined && target.handle) {
@@ -64,10 +63,4 @@ export function editSketchDimension(source: Point2[], sourceCurves: ProfileCurve
         if (center) points.forEach((point, index) => points[index] = setRadius(center, point, value));
     }
     return { points, curves, sectorAngle, operation };
-}
-
-/** A regular polygon edge is a derived edge: editing it scales the semantic radius, never replaces center/radius points. */
-export function editRegularEdgeDimension(source: Point2[], sides: number, value: number) {
-    const radius = value / (2 * Math.sin(Math.PI / sides));
-    return editSketchDimension(source, {}, 360, { kind: 'regularRadius' }, radius);
 }

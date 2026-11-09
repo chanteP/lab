@@ -1,4 +1,4 @@
-import { constraintRules, straightConstraintSegment } from './sketchConstraints';
+import { constraintRules, entityConstraintSegment } from './sketchConstraints';
 import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchElementRef } from '../types';
 import type { SketchDimensionOperation } from './sketchDimension';
 
@@ -11,7 +11,6 @@ type Derivative = { variable: Variable; value: number };
 type ConstraintRow = { residual: number; derivatives: Derivative[] };
 export type SketchConstraintOperation = SketchDimensionOperation & { entityId: string };
 
-const SOFT_ANCHOR_WEIGHT = 1000;
 const MAX_ITERATIONS = 80;
 
 function segment(entity: ModelEntity, index: number) {
@@ -154,22 +153,13 @@ function solveLinear(matrix: number[][], vector: number[]) {
 
 function relatedRules(document: ModelDocument, rootId: string | null) {
     const all = new Map<string, Rule[]>();
-    const related = new Set<string>();
     document.entities.forEach((entity) => {
         const rules: Rule[] = [];
         Object.entries(entity.edgeConstraints || {}).forEach(([key, value]) => constraintRules(value).forEach((rule) => {
             const index = Number(key);
-            if (straightConstraintSegment(entity.points || [], entity.curves || {}, index)) rules.push({ entity, index, rule });
-            if (rule.reference) related.add(rule.reference.entityId);
+            if (entityConstraintSegment(entity, index)) rules.push({ entity, index, rule });
         }));
-        if (entity.shapeConstraint === 'orthogonal') {
-            for (let index = 0; index < 4; index++) rules.push({ entity, index, rule: { type: 'perpendicular', reference: { entityId: entity.id, index: (index + 3) % 4 } } });
-        }
-        if (entity.shapeConstraint === 'equal') {
-            for (let index = 1; index < (entity.points?.length || 0); index++) rules.push({ entity, index, rule: { type: 'equal', reference: { entityId: entity.id, index: 0 } } });
-        }
         if (rules.length) all.set(entity.id, rules);
-        if (entity.shapeConstraint) related.add(entity.id);
     });
     if (!rootId) return all;
     const included = new Set<string>(), queue = [rootId];
@@ -186,7 +176,7 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
 }
 
 /** Global Gauss-Newton solve; a dimension operation is exact, while persistent references are associations. */
-export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, softAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument): 'ok' | 'limit' | 'conflict' {
+export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument): 'ok' | 'limit' | 'conflict' {
     const grouped = relatedRules(document, rootId);
     if (grouped.size > limit) return 'limit';
     const rules = [...grouped.values()].flat();
@@ -201,12 +191,12 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     const variableIndex = new Map<string, number>();
     entities.forEach((entity) => entity.points!.forEach((point, index) => [0, 1].forEach((axis) => {
         if ((entity.lockedPoints || []).includes(index)) return;
+        // Preservation levels are hard for one solve attempt; the caller can retry with a lower priority.
+        if (preservedAnchors.some((anchor) => anchor.entityId === entity.id && anchor.index === index)) return;
         if (operation?.preserve === 'start' && operation.entityId === entity.id && operation.index === index) return;
         variableIndex.set(`${entity.id}:${index}:${axis}`, variables.length);
         variables.push({ entityId: entity.id, index, axis: axis as Axis, initial: point[axis as Axis] });
     })));
-    const anchorIndex = new Map(softAnchors.map((anchor) => [`${anchor.entityId}:${anchor.index}`, true]));
-    const valueOf = (variable: Variable) => entities.get(variable.entityId)!.points![variable.index][variable.axis];
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
         const rows: ConstraintRow[] = operationRows(document, entities, original, operation);
@@ -214,13 +204,6 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
             const value = residual(rule, document);
             if (value === null) return;
             rows.push({ residual: value, derivatives: derivatives(rule, document) });
-        });
-        variables.forEach((variable) => {
-            if (!anchorIndex.has(`${variable.entityId}:${variable.index}`)) return;
-            rows.push({
-                residual: (valueOf(variable) - variable.initial) * SOFT_ANCHOR_WEIGHT,
-                derivatives: [{ variable, value: SOFT_ANCHOR_WEIGHT }],
-            });
         });
         if (rows.every((row) => Math.abs(row.residual) <= SKETCH_CONSTRAINT_TOLERANCE) && iteration > 0) break;
         const matrix = Array.from({ length: variables.length }, () => Array.from({ length: variables.length }, () => 0));
@@ -267,12 +250,13 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
         (entity.lockedPoints || []).forEach((index) => {
             if (Math.hypot(entity.points![index][0] - before[index][0], entity.points![index][1] - before[index][1]) > SKETCH_CONSTRAINT_TOLERANCE) entity.points![index] = before[index];
         });
-        Object.entries(entity.curves || {}).forEach(([key, curve]) => {
-            const index = Number(key);
-            if (!straightConstraintSegment(before, entity.curves || {}, index)) return;
-            const { a, b } = segment(entity, index);
-            curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
-            curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
+        Object.entries(entity.analyticCurves || {}).forEach(([key, curve]) => {
+            if (curve.kind === 'ellipse') return;
+            const { a, b } = segment(entity, Number(key));
+            if (!a || !b) return;
+            // Constraint chords own endpoints only; cubic control handles never become solver variables.
+            curve.a = [...a];
+            curve.b = [...b];
         });
     });
     return 'ok';

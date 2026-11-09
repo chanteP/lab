@@ -40,7 +40,6 @@ export class SketchRenderer {
     selectedEdgeRefs: SketchElementRef[] = [];
     selectedPointRefs: SketchElementRef[] = [];
     activeConstraintRule: { entityId: string; index: number; ruleId: string } | null = null;
-    activeConstraintReference: SketchElementRef | null = null;
     hoverSketchFace: THREE.Mesh | null = null;
     selectedSketchPoint = -1;
     activeSketchSegment = -1;
@@ -132,9 +131,8 @@ export class SketchRenderer {
         this.refreshSelectionFeedback();
     }
 
-    setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null, reference: SketchElementRef | null = null) {
+    setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null) {
         this.activeConstraintRule = selection;
-        this.activeConstraintReference = reference;
         this.refreshSelectionFeedback();
     }
 
@@ -166,7 +164,7 @@ export class SketchRenderer {
             if (!segment) return;
             const line = this.createFatLine(segment.points.map((point) => this.world(point, 0.25)), segment.closed);
             const material = line.material as LineMaterial;
-            material.color.set(order === 0 && this.selectedEdgeRefs.length > 1 ? SKETCH_COLORS.referenceActive : SKETCH_COLORS.active);
+            material.color.set(SKETCH_COLORS.active);
             material.opacity = 1;
             line.renderOrder = 1005;
             this.selectionFeedback.add(line);
@@ -190,7 +188,7 @@ export class SketchRenderer {
 
     private addLockBadge(point: Point2, entityId: string, index: number, edge: boolean, rule?: SketchEdgeConstraint, order = 0) {
         const active = !!rule && this.activeConstraintRule?.ruleId === rule.id;
-        const linked = !!(rule && this.activeConstraintRule && this.activeConstraintRule.ruleId !== rule.id && this.activeConstraintReference?.entityId === entityId && this.activeConstraintReference.index === index);
+        const linked = false;
         this.options.overlay.set({
             id: `sketch-lock:${rule?.id || `${entityId}:${edge ? 'edge' : 'point'}:${index}`}`,
             kind: 'lock',
@@ -203,7 +201,7 @@ export class SketchRenderer {
             active,
             linked,
             edgeKey: edge ? `${entityId}:${index}` : undefined,
-            color: active ? SKETCH_COLORS.active : linked ? SKETCH_COLORS.referenceActive : SKETCH_COLORS.pointLocked,
+            color: active ? SKETCH_COLORS.active : SKETCH_COLORS.pointLocked,
         });
     }
 
@@ -461,27 +459,22 @@ export class SketchRenderer {
             line.userData.borderSegmentIndex = 0;
             this.group.add(line);
         }
-        if (profileType === 'rectangle' && points.length === 4 && editingSketchId) {
-            this.addDimension(midpoint(points[0], points[1]), { kind: 'width', index: 0 }, Math.abs(points[1][0] - points[0][0]), unit, [points[0], points[1]]);
-            this.addDimension(midpoint(points[1], points[2]), { kind: 'height', index: 1 }, Math.abs(points[2][1] - points[1][1]), unit, [points[1], points[2]]);
-            this.addMarker(midpoint(points[0], points[2]), -1, SKETCH_COLORS.pointActive, true);
-        }
         if (profileType === 'line' && points.length >= 2 && editingSketchId) this.addDimension(midpoint(points[0], points[1]), { kind: 'segment', index: 0 }, Math.hypot(points[1][0] - points[0][0], points[1][1] - points[0][1]), unit, [points[0], points[1]]);
-        if (['circle', 'ellipse', 'regular'].includes(profileType) && points.length >= 2) {
+        if (['circle', 'ellipse'].includes(profileType) && points.length >= 2) {
             const [center, edge] = points;
             const radius = Math.hypot(edge[0] - center[0], edge[1] - center[1]);
             const start = startAngle ?? (profileType === 'ellipse' ? 0 : Math.atan2(edge[1] - center[1], edge[0] - center[0]));
-            const full = !open && (sectorAngle >= 359.999 || profileType === 'regular');
+            const full = !open && sectorAngle >= 359.999;
             if (full) this.addGuide(center, edge);
             if (editingSketchId) {
-                const kind = profileType === 'regular' ? 'regularRadius' : profileType === 'circle' ? 'radius' : 'radiusX';
+                const kind = profileType === 'circle' ? 'radius' : 'radiusX';
                 this.addDimension(midpoint(center, edge), { kind }, radius, unit, [center, edge]);
                 if (profileType === 'ellipse' && points[2]) {
                     if (full) this.addGuide(center, points[2]);
                     this.addDimension(midpoint(center, points[2]), { kind: 'radiusY' }, Math.hypot(points[2][0] - center[0], points[2][1] - center[1]), unit, [center, points[2]]);
                 }
             }
-            if (profileType !== 'regular' && editingSketchId) {
+            if (editingSketchId) {
                 const angle = start + sectorAngle * Math.PI / 180;
                 const sectorPoint = profileType === 'circle' ? [center[0] + Math.cos(angle) * radius * 0.82, center[1] + Math.sin(angle) * radius * 0.82] as Point2 : profileEllipsePoint(center, edge, points[2], angle, 0.82);
                 const handle = new THREE.Mesh(new THREE.SphereGeometry(SKETCH_STYLE.sectorHandleRadius, 16, 12), new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.sectorHandle, depthTest: false, depthWrite: false }));
@@ -505,10 +498,6 @@ export class SketchRenderer {
                 this.addDimension(midpoint(center, points[0]), { kind: 'arcRadius' }, Math.hypot(points[0][0] - center[0], points[0][1] - center[1]), unit, [center, points[0]]);
             }
         }
-        if (profileType === 'regular' && points.length >= 2 && editingSketchId) {
-            const color = selectedIndex === 1 ? SKETCH_COLORS.pointActive : lockedPoints.includes(1) ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point;
-            profilePoints('regular', points, 64, undefined, sides).slice(1).forEach((point) => this.addMarker(point, 1, color, false, lockedPoints.includes(1)));
-        }
         if (selectedSegment >= 0 && curves[selectedSegment]) {
             const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
             [[a, curve.c1], [b, curve.c2]].forEach(([from, to]) => {
@@ -527,7 +516,7 @@ export class SketchRenderer {
         points.forEach((point, index) => {
             if (!controls.has(index)) return;
             const color = index === selectedIndex ? SKETCH_COLORS.pointActive : lockedPoints.includes(index) ? SKETCH_COLORS.pointLocked : SKETCH_COLORS.point;
-            const center = index === 0 && ['circle', 'ellipse', 'regular'].includes(profileType);
+            const center = index === 0 && ['circle', 'ellipse'].includes(profileType);
             this.addMarker(point, index, color, center, lockedPoints.includes(index));
         });
         this.updateMarkerColors();

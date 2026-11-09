@@ -5,6 +5,6 @@ export { SKETCH_CONSTRAINT_TOLERANCE };
 export type { SketchConstraintOperation };
 
 /** Single entry point for sketch constraint propagation; viewport and Vue state stay outside the solver. */
-export function runConstraintChain(document: ModelDocument, rootId: string | null, softAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument) {
-    return solveDocumentConstraints(document, rootId, softAnchors, limit, operation, before);
+export function runConstraintChain(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument) {
+    return solveDocumentConstraints(document, rootId, preservedAnchors, limit, operation, before);
 }

@@ -131,7 +131,6 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
             if (entity.id === entityId) {
                 entity.edgeConstraints = {};
                 entity.constraintEdges = [];
-                delete entity.shapeConstraint;
             } else if (entity.edgeConstraints) {
                 Object.entries(entity.edgeConstraints).forEach(([key, rules]) => {
                     if (!Array.isArray(rules) && rules.reference?.entityId === entityId) delete entity.edgeConstraints![Number(key)];

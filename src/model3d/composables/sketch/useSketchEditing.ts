@@ -6,7 +6,6 @@ import { borderEditingPoints, borderSegments, sliceBorder, sliceBorderCurve, spl
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { detachFeatureReferences } from '../../engine/modeling/FeatureReferences';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
-import { splitSemanticShapeToLines } from '../../engine/sketchSemanticSplit';
 import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
@@ -45,7 +44,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         sketchType, sketchCurves, sketchSides, selectedSketchSegment, sketchPoints, selectedSketchPoint,
         editingSketchId, trimmedSelection, sketchContextMenu, selectedSketchSegments, selectedShapes,
         selectedEdges, selectedPoints, activeConstraintRule, sketchLockedPoints, sketchSectorAngle,
-        sketchOpen, sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, sketchGesture,
+        sketchOpen, sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, selectedSketchGuideId, sketchGesture,
     } = state;
     const {
         ensureShapeConstraints, absoluteSketchPointIndex,
@@ -54,7 +53,6 @@ export function useSketchEditing(options: SketchEditingOptions) {
     let sketchCenterDrag: { start: Point2; points: Point2[]; curves: ProfileCurves } | null = null;
     let trimmedCurveDrag: { start: Point2; points: Point2[] } | null = null;
     let multiPointDrag: { start: Point2; points: Map<string, Point2[]>; curves: Map<string, ProfileCurves> } | null = null;
-    let semanticBezierEditId: string | null = null;
 
     function clearSketchDragState() {
         trimmedCurveDrag = null;
@@ -64,28 +62,9 @@ export function useSketchEditing(options: SketchEditingOptions) {
         sketchAppendMode.value = false;
         viewport()?.setSketchSelectionTool(true);
     }
-    function flushSemanticBezierSplit() {
-        const id = semanticBezierEditId;
-        semanticBezierEditId = null;
-        if (!id) return;
-        const index = document.value.entities.findIndex((entity) => entity.id === id);
-        const source = document.value.entities[index];
-        const lines = source ? splitSemanticShapeToLines(source, uid) : [];
-        if (!lines.length) return;
-        const created: ModelEntity[] = [];
-        lines.forEach((line) => {
-            line.name = uniqueSketchName(document.value, 'line', false, created);
-            created.push(line);
-        });
-        removeConstraintsForEntity(id);
-        detachFeatureReferences(document.value, [id]);
-        // The Bezier gesture already owns the history snapshot; splitting is part of the same undo step.
-        document.value.entities.splice(index, 1, ...created);
-    }
-
     function clearSketchSelection() {
+        selectedSketchGuideId.value = null;
         finishSketchHandleDrag();
-        flushSemanticBezierSplit();
         activeConstraintRule.value = null;
         viewport()?.setActiveConstraintRule(null);
         viewport()?.setSketchEdgeEditing(null);
@@ -112,7 +91,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         activateSketchSelectionTool();
     }
     function selectTrimmedBorder(entityId: string, index: number, additive = false) {
-        if (semanticBezierEditId && semanticBezierEditId !== entityId) flushSemanticBezierSplit();
+        selectedSketchGuideId.value = null;
         activeConstraintRule.value = null;
         viewport()?.setActiveConstraintRule(null);
         const entity = document.value.entities.find((item) => item.id === entityId);
@@ -149,7 +128,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         refreshSketch();
     }
     function selectSketchEntity(id: string, additive = false) {
-        if (semanticBezierEditId && semanticBezierEditId !== id) flushSemanticBezierSplit();
+        selectedSketchGuideId.value = null;
         const entity = document.value.entities.find((item) => item.id === id && ['sketch', 'image'].includes(item.kind));
         if (!entity) return;
         if (entity.kind === 'image') {
@@ -294,13 +273,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             const otherAngle = (index === 1 ? angle + sign * Math.PI / 2 : angle - sign * Math.PI / 2);
             const otherIndex = index === 1 ? 2 : 1;
             sketchPoints.value[otherIndex] = [center[0] + Math.cos(otherAngle) * otherLength, center[1] + Math.sin(otherAngle) * otherLength];
-        } else if (sketchType.value === 'rectangle' && sketchPoints.value.length === 4) {
-            const opposite = sketchPoints.value[(index + 2) % 4];
-            sketchPoints.value = [point, [opposite[0], point[1]], opposite, [point[0], opposite[1]]];
-            if (index === 1) sketchPoints.value = [[opposite[0], point[1]], point, [point[0], opposite[1]], opposite];
-            else if (index === 2) sketchPoints.value = [opposite, [point[0], opposite[1]], point, [opposite[0], point[1]]];
-            else if (index === 3) sketchPoints.value = [[point[0], opposite[1]], opposite, [opposite[0], point[1]], point];
-        } else if (index === 0 && ['circle', 'ellipse', 'regular'].includes(sketchType.value)) {
+        } else if (index === 0 && ['circle', 'ellipse'].includes(sketchType.value)) {
             sketchPoints.value = sketchPoints.value.map((source) => [source[0] + delta[0], source[1] + delta[1]]);
         } else sketchPoints.value[index] = point;
         const previousSegment = index === 0 && profileClosed(sketchType.value) && !sketchOpen.value ? sketchPoints.value.length - 1 : index - 1;
@@ -596,10 +569,6 @@ export function useSketchEditing(options: SketchEditingOptions) {
         refreshSketch();
     }
     function moveSketchHandle(segment: number, handle: 1 | 2, point: Point2, phase: EditPhase) {
-        if (phase !== 'start') {
-            const entity = document.value.entities.find((item) => item.id === editingSketchId.value);
-            if (entity && ['rectangle', 'regular'].includes(entity.profileType || '')) semanticBezierEditId = entity.id;
-        }
         if (phase === 'start') {
             beginSketchHandleDrag();
             return;
@@ -744,7 +713,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
     }
 
     return {
-        clearSketchDragState, activateSketchSelectionTool, clearSketchSelection, flushSemanticBezierSplit, selectTrimmedBorder, selectSketchEntity,
+        clearSketchDragState, activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
         openSketchContext, deleteSketchFromContext, deleteViewportSketch, addSketchPoint,
         moveSketchPoint, beginSketchHandleDrag, finishSketchHandleDrag, moveSelectedPoints,
         moveTrimmedCurve, moveSketchCenter, deleteSketchPoint, deleteSketchBorder, recloseProfiles,

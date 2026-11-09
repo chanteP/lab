@@ -11,13 +11,12 @@ test('a Bezier-edited rectangle splits into four independent lines with curves o
     rectangle.profileType = 'rectangle';
     rectangle.points = [[0, 0], [20, 0], [20, 10], [0, 10]];
     rectangle.curves = { 1: { c1: [20, 3], c2: [22, 7] } };
-    rectangle.shapeConstraint = 'orthogonal';
     const lines = splitSemanticShapeToLines(rectangle, id);
     assert.equal(lines.length, 4);
     assert.ok(lines.every((line) => line.profileType === 'line' && line.open && line.points?.length === 2));
     assert.deepEqual(lines[1].points, [[20, 0], [20, 10]]);
     assert.deepEqual(lines[1].curves?.[0], { c1: [20, 3], c2: [22, 7] });
-    assert.ok(lines.every((line) => !line.shapeConstraint && !line.edgeConstraints));
+    assert.ok(lines.every((line) => !line.edgeConstraints));
     assert.equal(new Set(lines.map((line) => line.id)).size, 4);
     assert.equal(rectangle.profileType, 'rectangle');
 });

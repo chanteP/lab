@@ -25,7 +25,6 @@ test('orthogonal rectangle becomes a square through adjacent equal edges and sta
     rectangle.profileType = 'rectangle';
     rectangle.points = [[0, 0], [20, 0], [20, 10], [0, 10]];
     rectangle.open = true;
-    rectangle.shapeConstraint = 'orthogonal';
     rectangle.edgeConstraints = {
         0: { type: 'perpendicular', reference: { entityId: rectangle.id, index: 3 } },
         1: { type: 'perpendicular', reference: { entityId: rectangle.id, index: 0 } },
@@ -48,13 +47,15 @@ test('orthogonal rectangle becomes a square through adjacent equal edges and sta
 test('regular pentagon satisfies one horizontal edge without losing equal lengths', () => {
     const document = createDocument();
     const pentagon = createEntity('sketch', 'regular');
-    pentagon.profileType = 'regular';
+    pentagon.profileType = 'polygon';
     pentagon.points = Array.from({ length: 5 }, (_, index) => {
         const angle = index / 5 * Math.PI * 2;
         return [Math.cos(angle) * 10, Math.sin(angle) * 10] as Point2;
     });
-    pentagon.shapeConstraint = 'equal';
-    pentagon.edgeConstraints = { 0: { type: 'horizontal' } };
+    pentagon.edgeConstraints = Object.fromEntries([
+        [0, [{ type: 'horizontal' as const }]],
+        ...Array.from({ length: 4 }, (_, index) => [index + 1, [{ type: 'equal' as const, reference: { entityId: pentagon.id, index: 0 } }]]),
+    ]);
     document.entities.push(pentagon);
     stable(document, pentagon.id);
     assert.ok(Math.abs(pentagon.points![1][1] - pentagon.points![0][1]) < 0.001);
@@ -113,4 +114,33 @@ test('constrained profiles produce the same editing and 3D preview faces', () =>
     assert.equal(editingFaces.length, 1);
     assert.equal(previews.length, 1);
     assert.deepEqual(previews[0].userData.profilePoints, editingFaces[0].points);
+});
+
+test('curved line constraints use the endpoint chord without moving Bezier controls', () => {
+    const document = createDocument();
+    const line = createEntity('sketch', 'curved');
+    line.profileType = 'line';
+    line.points = [[0, 0], [10, 0]];
+    line.curves = { 0: { c1: [2, 4], c2: [8, -4] } };
+    line.analyticCurves = { 0: { kind: 'cubic', a: [0, 0], c1: [2, 4], c2: [8, -4], b: [10, 0] } };
+    line.edgeConstraints = { 0: { type: 'length', length: 20 } };
+    document.entities.push(line);
+    assert.equal(solveDocumentConstraints(document, line.id, [], 100), 'ok');
+    assert.ok(Math.abs(Math.hypot(line.points![1][0] - line.points![0][0], line.points![1][1] - line.points![0][1]) - 20) < 0.001);
+    assert.deepEqual(line.curves, { 0: { c1: [2, 4], c2: [8, -4] } });
+    assert.equal(line.analyticCurves?.[0].kind, 'cubic');
+    assert.deepEqual(line.analyticCurves?.[0].a, line.points![0]);
+    assert.deepEqual(line.analyticCurves?.[0].b, line.points![1]);
+    assert.deepEqual(line.analyticCurves?.[0].c1, [2, 4]);
+    assert.deepEqual(line.analyticCurves?.[0].c2, [8, -4]);
+});
+
+test('selected points have priority over selected edges and the remaining constraint chain', () => {
+    const document = createDocument();
+    const line = createEntity('sketch', 'line');
+    line.points = [[0, 0], [10, 0]];
+    line.edgeConstraints = { 0: { type: 'length', length: 20 } };
+    document.entities.push(line);
+    assert.equal(solveDocumentConstraints(document, line.id, [{ entityId: line.id, index: 0 }, { entityId: line.id, index: 1 }], 100), 'conflict');
+    assert.deepEqual(line.points, [[0, 0], [10, 0]]);
 });
