@@ -163,6 +163,7 @@ export class Viewport {
             getDocument: () => this.sceneSynchronizer.document,
             getActivePlane: () => this.sceneSynchronizer.activePlane,
             getEditingSketchId: () => this.sceneSynchronizer.editingSketchId,
+            getEditingBorderIndex: () => this.sceneSynchronizer.editingBorderIndex,
             getModel: () => this.sceneSynchronizer.model,
             getSketchDrag: () => this.interaction?.sketchDrag || null,
             isSketchMode: () => this.sketchMode,
@@ -442,6 +443,7 @@ export class Viewport {
     }
 
     hasSketchContentAt(event: PointerEvent) { return this.interaction.hasSketchContentAt(event); }
+    cancelSketchGesture() { this.interaction.cancelSketchGesture(); }
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
     forwardWheel(event: WheelEvent) {
         this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));

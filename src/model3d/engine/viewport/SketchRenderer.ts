@@ -23,6 +23,7 @@ interface SketchRendererOptions {
     getDocument: () => ModelDocument | null;
     getActivePlane: () => SketchPlane | null;
     getEditingSketchId: () => string | null;
+    getEditingBorderIndex?: () => number | null;
     getModel: () => THREE.Group;
     getSketchDrag: () => SketchDragState;
     isSketchMode: () => boolean;
@@ -305,13 +306,14 @@ export class SketchRenderer {
         });
     }
 
-    refreshFaces() {
+    refreshFaces(draft?: ModelEntity) {
         clearGroup(this.faces);
         this.hoverSketchFace = null;
         const document = this.options.getDocument();
         const activePlane = this.options.getActivePlane();
         if (!this.options.isSketchMode() || !document || !activePlane) return;
-        const faces = computeSketchFaces(document.entities, activePlane.id);
+        const entities = draft ? document.entities.map((entity) => entity.id === draft.id ? draft : entity) : document.entities;
+        const faces = computeSketchFaces(entities, activePlane.id);
         faces.forEach((face: SketchFace, index) => {
             const shape = new THREE.Shape();
             shape.moveTo(...face.points[0]);
@@ -500,8 +502,9 @@ export class SketchRenderer {
                 this.addDimension(midpoint(center, points[0]), { kind: 'arcRadius' }, Math.hypot(points[0][0] - center[0], points[0][1] - center[1]), unit, [center, points[0]]);
             }
         }
-        const standardEntity = this.options.getDocument()?.entities.find((entity) => entity.id === editingSketchId);
-        const standardCenter = standardEntity ? standardShapeCenter(standardEntity) : null;
+        const editingBorder = this.options.getEditingBorderIndex?.() !== null && this.options.getEditingBorderIndex?.() !== undefined;
+        const draftEntity = !editingBorder ? this.options.getDocument()?.entities.find((entity) => entity.id === editingSketchId) : null;
+        const standardCenter = draftEntity ? standardShapeCenter({ ...draftEntity, points }) : null;
         if (standardCenter) this.addMarker(standardCenter, -1, SKETCH_COLORS.pointActive, true);
         if (selectedSegment >= 0 && curves[selectedSegment]) {
             const a = points[selectedSegment], b = points[(selectedSegment + 1) % points.length], curve = curves[selectedSegment];
@@ -526,6 +529,12 @@ export class SketchRenderer {
         });
         this.updateMarkerColors();
         this.updateSegmentColors();
+        if (draftEntity) {
+            this.refreshFaces({
+                ...draftEntity, points: points.map((point) => [...point]), profileType, curves,
+                sides, sectorAngle, open, profileStartAngle: startAngle,
+            });
+        }
     }
 
     dispose() {

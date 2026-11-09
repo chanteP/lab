@@ -23,7 +23,6 @@ function analyticProfileCurve(entity: ModelEntity): SketchCurve | null {
     const type = entity.profileType || 'polygon';
     const source = entity.points || [];
     const sectorAngle = entity.sectorAngle ?? 360;
-    if (sectorAngle < 359.999 && !entity.open && type !== 'arc') return null;
     if ((type === 'circle' || type === 'ellipse') && source.length >= 2) {
         const [center, edge] = source;
         const dx = edge[0] - center[0], dy = edge[1] - center[1];
@@ -69,6 +68,18 @@ export function borderSegments(entity: ModelEntity): BorderSegment[] {
     const type = entity.profileType || 'polygon';
     const source = entity.points || [];
     const closed = entityProfileClosed(entity) && (entity.sectorAngle ?? 360) >= 359.999;
+    if (['circle', 'ellipse'].includes(type) && !entity.open && (entity.sectorAngle ?? 360) < 359.999) {
+        const curve = analyticProfileCurve(entity);
+        if (curve) {
+            const arcPoints = curvePoints(curve, 0, 1, 64);
+            const center = source[0], start = arcPoints[0], end = arcPoints[arcPoints.length - 1];
+            return [
+                { entityId: entity.id, index: 0, sourceCount: 1, points: [[...center], [...start]], closed: false },
+                { entityId: entity.id, index: 1, sourceCount: 1, points: arcPoints, closed: false, curve },
+                { entityId: entity.id, index: 2, sourceCount: 1, points: [[...end], [...center]], closed: false },
+            ];
+        }
+    }
     if (['polygon', 'rectangle', 'regular'].includes(type)) {
         const points = type === 'regular' ? profilePoints(type, source, 64, undefined, entity.sides) : source;
         if (points.length < 2) return [];

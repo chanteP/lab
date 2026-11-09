@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { borderEditingPoints as borderEditingPointsForTest, borderInterval, borderSegments, sliceBorder, sliceBorderCurve } from './sketchBorders';
 import { curvePoint } from './sketchCurves';
+import type { BorderSegment } from './sketchBorders';
 import { restitchSketchEdges } from './sketchRestitch';
+import { computeSketchFaces } from './sketchFaces';
 import type { ModelEntity, Point2, SketchCurve } from '../types';
 
 function sketch(profileType: ModelEntity['profileType'], points: Point2[]): ModelEntity {
@@ -89,4 +91,33 @@ test('cubic editing drafts use semantic endpoints instead of render samples', ()
     assert.equal(segment.points.length, 65);
     // Using samples[1] as the endpoint collapses the curve during handle writeback.
     assert.deepEqual(borderEditingPointsForTest(segment), [a, b]);
+});
+
+test('closed circle sectors use two independent radii and one analytic arc around a closed face', () => {
+    const sector = sketch('circle', [[0, 0], [10, 0]]);
+    sector.sectorAngle = 90;
+    sector.open = false;
+    sector.planeId = 'plane';
+    const segments = borderSegments(sector);
+    assert.equal(segments.length, 3);
+    assert.equal(segments[0].curve, undefined);
+    assert.equal(segments[1].curve?.kind, 'ellipse');
+    assert.equal(segments[2].curve, undefined);
+    assert.deepEqual(segments[0].points[0], [0, 0]);
+    assert.deepEqual(segments[2].points[1], [0, 0]);
+    assert.equal(computeSketchFaces([sector], 'plane').length, 1);
+});
+
+test('a sector radius intersection does not mark the outer arc for deletion', () => {
+    const sector = sketch('circle', [[0, 0], [10, 0]]);
+    sector.sectorAngle = 90;
+    sector.open = false;
+    const [startRadius, arc, endRadius] = borderSegments(sector);
+    const cutter: BorderSegment = { entityId: 'cutter', index: 0, sourceCount: 1, closed: false, points: [[5, -1], [5, 1]] };
+    const all = [startRadius, arc, endRadius, cutter];
+    const radiusInterval = borderInterval(startRadius, all, [2, 0]);
+    const arcInterval = borderInterval(arc, all, [10 * Math.SQRT1_2, 10 * Math.SQRT1_2]);
+    assert.ok(radiusInterval.end < 1 || radiusInterval.start > 0);
+    assert.equal(arcInterval.start, 0);
+    assert.equal(arcInterval.end, 1);
 });

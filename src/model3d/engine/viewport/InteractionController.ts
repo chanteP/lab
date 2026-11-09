@@ -1109,6 +1109,13 @@ export class InteractionController {
         this.assetEditor.reset();
         this.shapeDrag = null;
     }
+    cancelSketchGesture() {
+        this.resetSketchGesture();
+        this.sketchSelectionGuardPointerUp = true;
+        this.controls.enabled = true;
+        this.container.classList.remove('is-handle-dragging');
+        this.sketchRenderer.clearReferences();
+    }
     clearSurfaceCache() {
         this.geometrySelector.clear();
     }

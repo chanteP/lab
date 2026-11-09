@@ -37,3 +37,21 @@ test('multi-point translation uses the selected content center as its operation 
 
     assert.deepEqual(controller.sketchSelectionAnchor([100, 100]), [5, 5]);
 });
+
+test('undo cancellation clears sketch gestures and consumes the remaining pointerup', () => {
+    const controller = Object.create(InteractionController.prototype) as any;
+    let reset = false, cleared = false;
+    controller.sketchDrag = { moved: true };
+    controller.shapeDrag = { moved: true };
+    controller.assetEditor = { reset: () => reset = true };
+    controller.cameraController = { controls: { enabled: false } };
+    controller.container = { classList: { remove: () => undefined } };
+    controller.sketchRenderer = { clearReferences: () => cleared = true };
+    controller.cancelSketchGesture();
+    assert.equal(controller.sketchDrag, null);
+    assert.equal(controller.shapeDrag, null);
+    assert.equal(controller.sketchSelectionGuardPointerUp, true);
+    assert.equal(controller.controls.enabled, true);
+    assert.equal(reset, true);
+    assert.equal(cleared, true);
+});

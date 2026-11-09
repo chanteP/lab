@@ -455,7 +455,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         removeConstraintsForEdge(entityId, index);
         const type = entity.profileType || 'polygon';
         pushHistory();
-        if (type === 'circle' || type === 'ellipse') {
+        if ((type === 'circle' || type === 'ellipse') && !entity.open && (entity.sectorAngle ?? 360) >= 359.999) {
             if (start <= 0 && end >= 1) {
                 detachFeatureReferences(document.value, [entityId]);
                 document.value.entities = document.value.entities.filter((item) => item.id !== entityId);

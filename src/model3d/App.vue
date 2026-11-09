@@ -329,8 +329,8 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
-function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
-function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
+function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
+function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
 
 function onMarqueeSelect(ids: string[], additive: boolean) {
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;

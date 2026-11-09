@@ -58,3 +58,40 @@ test('sketch editing active faces rebuild from the latest profile geometry', () 
     next.geometry.computeBoundingBox();
     assert.equal(next.geometry.boundingBox!.max.x, 20);
 });
+
+test('whole-shape drag preview moves closed faces and the computed center with draft points', () => {
+    const document = createDocument();
+    const plane = { id: 'plane', name: 'XZ', kind: 'XZ' as const, origin: [0, 0, 0] as [number, number, number], normal: [0, 1, 0] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 0, -1] as [number, number, number], visible: true };
+    document.planes.push(plane);
+    const sketch = createEntity('sketch', 'sketch');
+    sketch.planeId = plane.id;
+    sketch.profileType = 'polygon';
+    sketch.standardShape = 'rectangle';
+    sketch.open = false;
+    sketch.points = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    document.entities.push(sketch);
+    const renderer = new SketchRenderer({
+        container: {} as HTMLElement, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as any,
+        overlay: { set: () => undefined, clear: () => undefined } as any,
+        getCamera: () => new THREE.OrthographicCamera(-100, 100, 100, -100), getTarget: () => new THREE.Vector3(), getDocument: () => document,
+        getActivePlane: () => plane, getEditingSketchId: () => sketch.id, getEditingBorderIndex: () => null,
+        getModel: () => new THREE.Group(), getSketchDrag: () => ({ moved: true, index: -1 }),
+        isSketchMode: () => true, planeMatrix: (value) => new THREE.Matrix4().makeBasis(new THREE.Vector3(...value.u), new THREE.Vector3(...value.v), new THREE.Vector3(...value.normal)).setPosition(new THREE.Vector3(...value.origin)),
+        raycast: () => [], raycastPoint: () => null,
+    });
+    renderer.update(sketch.points!, -1, 'polygon');
+    let face = renderer.faces.children[0] as THREE.Mesh;
+    face.geometry.computeBoundingBox();
+    assert.equal(face.geometry.boundingBox!.max.x, 10);
+    let center = renderer.markers().find((marker) => marker.userData.centerHandle)!;
+    assert.equal(center.position.x, 5);
+
+    const dragged = sketch.points!.map((point) => [point[0] + 10, point[1]] as [number, number]);
+    renderer.update(dragged, -1, 'polygon');
+    face = renderer.faces.children[0] as THREE.Mesh;
+    face.geometry.computeBoundingBox();
+    assert.equal(face.geometry.boundingBox!.max.x, 20);
+    center = renderer.markers().find((marker) => marker.userData.centerHandle)!;
+    assert.equal(center.position.x, 15);
+    assert.equal(sketch.points![1][0], 10, 'document stays unchanged during preview');
+});

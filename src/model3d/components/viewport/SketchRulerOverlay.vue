@@ -43,10 +43,10 @@ function offsetFor(guide: SketchReferenceGuide, position: ScreenPoint) {
 }
 function snappedOffset(guide: SketchReferenceGuide, raw: number) {
     // Reference matching still renders while disabled; the controller returns the raw offset in that state.
-    const reference = props.callbacks.onSketchGuideSnap(guide, raw);
+    props.callbacks.onSketchGuideSnap(guide, raw);
     if (props.guideSnapEnabled === false || !props.frame) return raw;
     const tick = snapGuideOffsetToRuler(guide, raw, props.frame);
-    return Math.abs(tick - raw) <= Math.abs(reference - raw) ? tick : reference;
+    return tick;
 }
 function hoverGuide(event: PointerEvent, id: string) {
     hoverThrough.value = props.callbacks.onSketchGuidePointer(event, 'move') ? id : null;
