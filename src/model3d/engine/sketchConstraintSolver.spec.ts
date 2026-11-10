@@ -116,7 +116,7 @@ test('constrained profiles produce the same editing and 3D preview faces', () =>
     assert.deepEqual(previews[0].userData.profilePoints, editingFaces[0].points);
 });
 
-test('curved line constraints use the endpoint chord without moving Bezier controls', () => {
+test('curved line constraints rebase Bezier controls with the endpoint chord', () => {
     const document = createDocument();
     const line = createEntity('sketch', 'curved');
     line.profileType = 'line';
@@ -125,14 +125,15 @@ test('curved line constraints use the endpoint chord without moving Bezier contr
     line.analyticCurves = { 0: { kind: 'cubic', a: [0, 0], c1: [2, 4], c2: [8, -4], b: [10, 0] } };
     line.edgeConstraints = { 0: { type: 'length', length: 20 } };
     document.entities.push(line);
-    assert.equal(solveDocumentConstraints(document, line.id, [], 100), 'ok');
+    assert.equal(solveDocumentConstraints(document, line.id, [{ entityId: line.id, index: 0 }], 100), 'ok');
     assert.ok(Math.abs(Math.hypot(line.points![1][0] - line.points![0][0], line.points![1][1] - line.points![0][1]) - 20) < 0.001);
-    assert.deepEqual(line.curves, { 0: { c1: [2, 4], c2: [8, -4] } });
+    assert.ok(Math.abs(line.curves![0].c1[0] - 4) < 0.001 && Math.abs(line.curves![0].c1[1] - 8) < 0.001);
+    assert.ok(Math.abs(line.curves![0].c2[0] - 16) < 0.001 && Math.abs(line.curves![0].c2[1] + 8) < 0.001);
     assert.equal(line.analyticCurves?.[0].kind, 'cubic');
     assert.deepEqual(line.analyticCurves?.[0].a, line.points![0]);
     assert.deepEqual(line.analyticCurves?.[0].b, line.points![1]);
-    assert.deepEqual(line.analyticCurves?.[0].c1, [2, 4]);
-    assert.deepEqual(line.analyticCurves?.[0].c2, [8, -4]);
+    assert.ok(Math.abs(line.analyticCurves![0].c1[0] - 4) < 0.001 && Math.abs(line.analyticCurves![0].c1[1] - 8) < 0.001);
+    assert.ok(Math.abs(line.analyticCurves![0].c2[0] - 16) < 0.001 && Math.abs(line.analyticCurves![0].c2[1] + 8) < 0.001);
 });
 
 test('selected points have priority over selected edges and the remaining constraint chain', () => {

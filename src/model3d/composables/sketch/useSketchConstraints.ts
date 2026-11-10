@@ -1,6 +1,6 @@
 import { useMessage } from 'naive-ui';
 import type { Viewport } from '../../engine/Viewport';
-import { runConstraintChain, type SketchConstraintOperation } from '../../engine/sketchConstraintChain';
+import { sketchConstraintAnchorLevels, solveWithSketchConstraintCandidates, type SketchConstraintOperation } from '../../engine/sketchConstraintChain';
 import {
     constraintRules, entityConstraintSegment, upsertSketchConstraintRule, type SketchConstraintType,
 } from '../../engine/sketchConstraints';
@@ -71,33 +71,12 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         const selection = trimmedSelection.value;
         return selection ? selection.index + (index ? selection.sourceCount : 0) : index;
     }
-    function constraintAnchorLevels(): SketchElementRef[][] {
-        const points = currentConstraintAnchors();
-        const edges: SketchElementRef[] = [];
-        selectedEdges.value.forEach(({ entityId, index }) => {
-            const entity = document.value.entities.find((item) => item.id === entityId);
-            if (!entity?.points) return;
-            edges.push({ entityId, index }, { entityId, index: (index + 1) % entity.points.length });
-        });
-        const unique = (anchors: SketchElementRef[]) => [...new Map(anchors.map((anchor) => [`${anchor.entityId}:${anchor.index}`, anchor])).values()];
-        // Current points outrank selected borders; the last attempt lets the constraint chain move freely.
-        if (points.length) return edges.length ? [unique([...points, ...edges]), unique(points), []] : [unique(points), []];
-        if (edges.length) return [unique(edges), []];
-        return [[]];
-    }
     function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void, operation?: SketchConstraintOperation) {
         const attempted = cloneDocument(document.value);
-        let failure: 'limit' | 'conflict' = 'conflict';
-
-        // Try stronger preservation first; an explicit dimension operation remains exact at every level.
-        for (const anchors of constraintAnchorLevels()) {
-            document.value.entities = cloneDocument(attempted).entities;
-            const result = runConstraintChain(document.value, rootId, anchors, constraintLimit.value, operation, before);
-            if (result === 'limit') {
-                failure = 'limit';
-                break;
-            }
-            if (result !== 'ok') continue;
+        const levels = sketchConstraintAnchorLevels(attempted, currentConstraintAnchors(), selectedEdges.value, trimmedSelection.value);
+        const solved = solveWithSketchConstraintCandidates(attempted, before, rootId, levels, constraintLimit.value, operation);
+        if (solved.result === 'ok') {
+            document.value.entities = solved.document.entities;
             syncLocalSketchFromDocument();
             return true;
         }
@@ -106,7 +85,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         onRollback?.();
         syncLocalSketchFromDocument();
         sketchGesture.rolledBack = isTransforming();
-        message.warning(failure === 'limit' ? `约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚` : '约束链无法同时满足固定元素，本次操作已回滚');
+        message.warning(solved.result === 'limit' ? `约束关联超过 ${constraintLimit.value} 个元素，本次操作已回滚` : '约束链无法同时满足固定元素，本次操作已回滚');
         return false;
     }
     function syncEditingSketch(operation?: SketchConstraintOperation) {

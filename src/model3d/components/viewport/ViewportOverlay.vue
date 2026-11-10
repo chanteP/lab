@@ -4,11 +4,12 @@ import type { ProjectedViewportOverlay } from '../../engine/viewport/OverlayCont
 import type { ViewportCallbacks } from '../../engine/Viewport';
 import { integerStep } from '../../utils/number';
 import SvgIcon from '../ui/SvgIcon.vue';
-import { claimDimensionCommit, resetDimensionCommit } from './dimensionCommit';
+import { claimDimensionCommit, reconcileDimensionDrafts, resetDimensionCommit } from './dimensionCommit';
 
 const props = defineProps<{ items: ProjectedViewportOverlay[]; callbacks: ViewportCallbacks }>();
 const wheelTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const dimensionDrafts = new Map<string, string>();
+const dimensionValues = new Map<string, number>();
 
 type DimensionOverlay = Extract<ProjectedViewportOverlay, { kind: 'dimension' }>;
 
@@ -94,10 +95,7 @@ function changeUnit(unit: 'mm' | 'cm' | 'm') {
     window.setTimeout(() => props.callbacks.onLengthUnitChange(unit), 0);
 }
 
-watch(() => props.items, (items) => {
-    const ids = new Set(items.map((item) => item.id));
-    dimensionDrafts.forEach((_, id) => { if (!ids.has(id)) dimensionDrafts.delete(id); });
-});
+watch(() => props.items, (items) => reconcileDimensionDrafts(items, dimensionDrafts, dimensionValues), { flush: 'post', immediate: true });
 onMounted(() => window.addEventListener('pointerdown', clearCanvasDrafts));
 onBeforeUnmount(() => {
     wheelTimers.forEach(clearTimeout);

@@ -32,3 +32,14 @@ test('standard polygon centers are registered as magnetic reference points', () 
     assert.equal(result?.matches[0].reference.kind, 'point');
     assert.equal(result?.matches[0].reference.kind === 'point' && result.matches[0].reference.index, -1);
 });
+
+test('circle and ellipse centers remain magnetic even when semantic controls exclude the center', () => {
+    for (const profileType of ['circle', 'ellipse'] as const) {
+        const curved = createEntity('sketch', profileType);
+        curved.profileType = profileType;
+        curved.points = profileType === 'circle' ? [[10, 20], [15, 20]] : [[10, 20], [15, 20], [10, 24]];
+        curved.controlPoints = [1];
+        const result = matchSketchGuide({ entities: [curved], point: [10.1, 20.1], threshold: 0.5 });
+        assert.deepEqual(result?.point, [10, 20]);
+    }
+});

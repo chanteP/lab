@@ -1,6 +1,7 @@
 import { profileArcCenter, type ProfileCurves } from './profiles';
 import type { Point2 } from '../types';
 import type { SketchDimension } from './Viewport';
+import { rebaseProfileCubicCurves } from './sketchCurves';
 
 export type SketchDimensionOperation = {
     index: number;
@@ -62,5 +63,6 @@ export function editSketchDimension(source: Point2[], sourceCurves: ProfileCurve
         const center = profileArcCenter(points);
         if (center) points.forEach((point, index) => points[index] = setRadius(center, point, value));
     }
+    rebaseProfileCubicCurves(curves, source, points);
     return { points, curves, sectorAngle, operation };
 }

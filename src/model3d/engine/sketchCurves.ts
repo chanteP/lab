@@ -1,5 +1,5 @@
 import { INTERACTION } from '../config/const';
-import type { Point2, SketchCurve } from '../types';
+import type { ModelEntity, Point2, SketchCurve } from '../types';
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 type Range = { curve: SketchCurve; start: number; end: number };
@@ -214,4 +214,57 @@ export function cubicCurveFromHandles(a: Point2, b: Point2, handles?: { c1: Poin
     return handles
         ? { kind: 'cubic', a: [...a], b: [...b], c1: [...handles.c1], c2: [...handles.c2] }
         : collinearCubicCurve(a, b);
+}
+
+/**
+ * Rebase cubic handles in the endpoint chord's normalized frame.
+ * Endpoint motion cannot change relative curvature; only direct handle edits can do that.
+ */
+export function rebaseCubicCurve(curve: Extract<SketchCurve, { kind: 'cubic' }>, sourceA: Point2, sourceB: Point2, targetA: Point2, targetB: Point2): Extract<SketchCurve, { kind: 'cubic' }> {
+    const sourceX = sourceB[0] - sourceA[0], sourceY = sourceB[1] - sourceA[1];
+    const targetX = targetB[0] - targetA[0], targetY = targetB[1] - targetA[1];
+    const sourceLength = Math.hypot(sourceX, sourceY), targetLength = Math.hypot(targetX, targetY);
+    if (sourceLength < 1e-12 || targetLength < 1e-12) return { ...curve, a: [...targetA], b: [...targetB], c1: [...targetA], c2: [...targetA] };
+    const ux = sourceX / sourceLength, uy = sourceY / sourceLength;
+    const tx = targetX / targetLength, ty = targetY / targetLength;
+    const transform = (control: Point2): Point2 => {
+        const dx = control[0] - sourceA[0], dy = control[1] - sourceA[1];
+        const along = (dx * ux + dy * uy) / sourceLength;
+        const normal = (-dx * uy + dy * ux) / sourceLength;
+        return [
+            targetA[0] + (along * tx - normal * ty) * targetLength,
+            targetA[1] + (along * ty + normal * tx) * targetLength,
+        ];
+    };
+    return { kind: 'cubic', a: [...targetA], b: [...targetB], c1: transform(curve.c1), c2: transform(curve.c2) };
+}
+
+/** Keep legacy and analytic cubic handles in sync after their semantic endpoints move. */
+export function rebaseEntityCubicCurves(entity: ModelEntity, sourcePoints: Point2[]) {
+    if (!entity.points) return;
+    const indices = new Set([...Object.keys(entity.curves || {}), ...Object.keys(entity.analyticCurves || {})].map(Number));
+    indices.forEach((index) => {
+        const sourceA = sourcePoints[index], sourceB = sourcePoints[(index + 1) % sourcePoints.length];
+        const targetA = entity.points![index], targetB = entity.points![(index + 1) % entity.points!.length];
+        if (!sourceA || !sourceB || !targetA || !targetB) return;
+        const analytic = entity.analyticCurves?.[index];
+        if (analytic && analytic.kind !== 'cubic') return;
+        const handles = entity.curves?.[index] || (analytic?.kind === 'cubic' ? { c1: analytic.c1, c2: analytic.c2 } : undefined);
+        if (!handles) return;
+        const rebased = rebaseCubicCurve({ kind: 'cubic', a: [...sourceA], b: [...sourceB], c1: [...handles.c1], c2: [...handles.c2] }, sourceA, sourceB, targetA, targetB);
+        if (entity.curves?.[index]) entity.curves[index] = { c1: [...rebased.c1], c2: [...rebased.c2] };
+        if (analytic?.kind === 'cubic') entity.analyticCurves![index] = rebased;
+    });
+}
+
+export function rebaseProfileCubicCurves(curves: Record<number, { c1: Point2; c2: Point2 }>, sourcePoints: Point2[], targetPoints: Point2[]) {
+    Object.entries(curves).forEach(([key, curve]) => {
+        const index = Number(key);
+        const sourceA = sourcePoints[index], sourceB = sourcePoints[(index + 1) % sourcePoints.length];
+        const targetA = targetPoints[index], targetB = targetPoints[(index + 1) % targetPoints.length];
+        if (!sourceA || !sourceB || !targetA || !targetB) return;
+        const rebased = rebaseCubicCurve({ kind: 'cubic', a: [...sourceA], b: [...sourceB], c1: [...curve.c1], c2: [...curve.c2] }, sourceA, sourceB, targetA, targetB);
+        curve.c1 = [...rebased.c1];
+        curve.c2 = [...rebased.c2];
+    });
 }

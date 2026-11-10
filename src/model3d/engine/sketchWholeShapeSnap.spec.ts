@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { convertSemanticShapeToConstrainedPolygon } from './sketchShapes';
-import { isStandardClosedShape, snapWholeShapeTranslation, wholeShapeControlPoints } from './sketchWholeShapeSnap';
-import { createEntity, type Point2 } from '../types';
+import { isStandardClosedShape, snapWholeShapeTranslation, standardShapeEntityFromFaces, wholeShapeControlPoints } from './sketchWholeShapeSnap';
+import { computeSketchFaces } from './sketchFaces';
+import { createDocument, createEntity, type Point2 } from '../types';
 
 test('only standard closed shapes opt into whole-face dragging', () => {
     const rectangle = createEntity('sketch', 'rectangle');
@@ -39,4 +40,21 @@ test('standard shape center is a whole-drag snap control but trimmed shapes lose
     const controls = wholeShapeControlPoints(rectangle);
     assert.deepEqual(controls[controls.length - 1], [10, 5]);
     assert.equal(wholeShapeControlPoints({ ...rectangle, trimmed: true }).some((point) => point[0] === 10 && point[1] === 5), false);
+});
+
+test('overlapping standard shapes remain whole-selectable until their edges are fused', () => {
+    const document = createDocument();
+    const a = createEntity('sketch', 'a'), b = createEntity('sketch', 'b');
+    a.profileType = b.profileType = 'rectangle';
+    a.points = [[0, 0], [20, 0], [20, 20], [0, 20]];
+    b.points = [[10, 0], [30, 0], [30, 20], [10, 20]];
+    convertSemanticShapeToConstrainedPolygon(a);
+    convertSemanticShapeToConstrainedPolygon(b);
+    a.planeId = b.planeId = 'plane';
+    document.entities.push(a, b);
+    const faces = computeSketchFaces(document.entities, 'plane');
+    assert.ok(faces.some((face) => face.entityIds.length > 1));
+    assert.ok(standardShapeEntityFromFaces(document, faces));
+    a.trimmed = b.trimmed = true;
+    assert.equal(standardShapeEntityFromFaces(document, faces), null);
 });

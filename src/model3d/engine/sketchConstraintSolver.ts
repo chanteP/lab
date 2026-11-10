@@ -1,6 +1,7 @@
 import { constraintRules, entityConstraintSegment } from './sketchConstraints';
 import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchElementRef } from '../types';
 import type { SketchDimensionOperation } from './sketchDimension';
+import { rebaseEntityCubicCurves } from './sketchCurves';
 
 export const SKETCH_CONSTRAINT_TOLERANCE = 0.0001;
 
@@ -255,14 +256,8 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
         (entity.lockedPoints || []).forEach((index) => {
             if (Math.hypot(entity.points![index][0] - before[index][0], entity.points![index][1] - before[index][1]) > SKETCH_CONSTRAINT_TOLERANCE) entity.points![index] = before[index];
         });
-        Object.entries(entity.analyticCurves || {}).forEach(([key, curve]) => {
-            if (curve.kind === 'ellipse') return;
-            const { a, b } = segment(entity, Number(key));
-            if (!a || !b) return;
-            // Constraint chords own endpoints only; cubic control handles never become solver variables.
-            curve.a = [...a];
-            curve.b = [...b];
-        });
+        // Endpoint changes rebase both analytic and legacy cubic handles in the same normalized chord frame.
+        rebaseEntityCubicCurves(entity, before);
     });
     return 'ok';
 }
