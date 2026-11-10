@@ -32,6 +32,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
     const {
         sketchType, sketchCurves, sketchSides, sketchPoints, selectedSketchPoint, editingSketchId,
         trimmedSelection, selectedShapes, selectedEdges, selectedPoints, activeConstraintRule,
+        constraintAnchorSelection, rememberConstraintEdges,
         sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, selectedConstraintRuleItems, constraintLimit, sketchGesture,
     } = state;
@@ -73,7 +74,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
     }
     function enforceSketchConstraints(rootId = editingSketchId.value, before = cloneDocument(document.value), onRollback?: () => void, operation?: SketchConstraintOperation) {
         const attempted = cloneDocument(document.value);
-        const levels = sketchConstraintAnchorLevels(attempted, currentConstraintAnchors(), selectedEdges.value, trimmedSelection.value);
+        const levels = sketchConstraintAnchorLevels(attempted, currentConstraintAnchors(), constraintAnchorSelection.edges, trimmedSelection.value, constraintAnchorSelection.shapeIds);
         const solved = solveWithSketchConstraintCandidates(attempted, before, rootId, levels, constraintLimit.value, operation);
         if (solved.result === 'ok') {
             document.value.entities = solved.document.entities;
@@ -108,6 +109,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         selectedPoints.value = [];
         selectedShapes.value = [];
         selectedEdges.value = [{ entityId, index }];
+        rememberConstraintEdges(selectedEdges.value);
         selectedIds.value = [entityId];
         viewport()?.setActiveConstraintRule(activeConstraintRule.value);
         refreshSketch();

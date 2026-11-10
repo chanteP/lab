@@ -45,6 +45,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         editingSketchId, trimmedSelection, sketchContextMenu, selectedSketchSegments, selectedShapes,
         selectedEdges, selectedPoints, activeConstraintRule, sketchLockedPoints, sketchSectorAngle,
         sketchOpen, sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, selectedSketchGuideId, sketchGesture,
+        rememberConstraintEdges, rememberConstraintShapes,
     } = state;
     const {
         ensureShapeConstraints, absoluteSketchPointIndex,
@@ -105,6 +106,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             ? exists ? selectedEdges.value.filter((edge) => !(edge.entityId === entityId && edge.index === index)) : [...selectedEdges.value, item]
             : [item];
         if (!selectedEdges.value.length) return clearSketchSelection();
+        rememberConstraintEdges(selectedEdges.value);
         const a = segment.points[0], b = segment.points[segment.points.length - 1];
         const dx = b[0] - a[0], dy = b[1] - a[1];
         const straight = segment.points.every((point) => Math.abs(dx * (point[1] - a[1]) - dy * (point[0] - a[0])) < 0.0001);
@@ -158,6 +160,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             ? selectedShapes.value.includes(id) ? selectedShapes.value.filter((item) => item !== id) : [...selectedShapes.value, id]
             : [id];
         if (!selectedShapes.value.length) return clearSketchSelection();
+        rememberConstraintShapes(selectedShapes.value);
         if (entity.planeId && entity.planeId !== activePlaneId.value) {
             activePlaneId.value = entity.planeId;
             viewport()?.setActivePlane(activePlane.value);

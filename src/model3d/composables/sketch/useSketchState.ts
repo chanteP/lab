@@ -1,4 +1,5 @@
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref, watch, type Ref } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { STORAGE_KEYS } from '../../config/const';
 import { constraintRules, entityConstraintSegment, type SketchConstraintType } from '../../engine/sketchConstraints';
 import type { ProfileCurves, ProfileType } from '../../engine/profiles';
@@ -38,6 +39,29 @@ export function useSketchState(document: Ref<ModelDocument>) {
         rolledBack: false,
         before: null as ModelDocument | null,
     };
+    // Constraint ownership survives handle selection; only blur or deleting its owner clears it.
+    const constraintAnchorSelection = { edges: [] as SketchElementRef[], shapeIds: [] as string[] };
+    function rememberConstraintEdges(edges: SketchElementRef[]) {
+        constraintAnchorSelection.edges = edges.map((edge) => ({ ...edge }));
+        constraintAnchorSelection.shapeIds = [];
+    }
+    function rememberConstraintShapes(shapeIds: string[]) {
+        constraintAnchorSelection.shapeIds = [...shapeIds];
+        constraintAnchorSelection.edges = [];
+    }
+    function clearConstraintAnchorSelection() {
+        constraintAnchorSelection.edges = [];
+        constraintAnchorSelection.shapeIds = [];
+    }
+    useEventListener(window, 'blur', clearConstraintAnchorSelection);
+    watch(() => document.value.entities, (entities) => {
+        const ids = new Set(entities.map((entity) => entity.id));
+        constraintAnchorSelection.shapeIds = constraintAnchorSelection.shapeIds.filter((id) => ids.has(id));
+        constraintAnchorSelection.edges = constraintAnchorSelection.edges.filter((edge) => {
+            const entity = entities.find((item) => item.id === edge.entityId);
+            return !!entity?.points && edge.index >= 0 && edge.index < entity.points.length;
+        });
+    });
 
     const activeConstraintRuleData = computed(() => {
         const selection = activeConstraintRule.value;
@@ -130,6 +154,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
         activeConstraintRuleData, sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, constraintLimit,
         sketchGuideSnapEnabled, selectedSketchGuideId, sketchGesture, sketchClosed, selectedPointLocked, constraintSegmentCount,
+        constraintAnchorSelection, rememberConstraintEdges, rememberConstraintShapes, clearConstraintAnchorSelection,
         selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
         autoConstraintActive, selectedConstraintRuleItems,
     };

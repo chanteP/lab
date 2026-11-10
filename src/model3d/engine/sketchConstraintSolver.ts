@@ -12,6 +12,7 @@ type Rule = { entity: ModelEntity; index: number; rule: SketchEdgeConstraint };
 type Derivative = { variable: Variable; value: number };
 type ConstraintRow = { residual: number; derivatives: Derivative[] };
 export type SketchConstraintOperation = SketchDimensionOperation & { entityId: string };
+export type SketchConstraintAxisAnchor = SketchElementRef & { axis: Axis };
 
 const MAX_ITERATIONS = 80;
 
@@ -154,6 +155,17 @@ function centerRows(entities: Map<string, ModelEntity>, original: Map<string, Po
     });
 }
 
+function axisRows(entities: Map<string, ModelEntity>, original: Map<string, Point2[]>, preservedAxes: SketchConstraintAxisAnchor[]): ConstraintRow[] {
+    return preservedAxes.flatMap((anchor) => {
+        const entity = entities.get(anchor.entityId), point = original.get(anchor.entityId)?.[anchor.index];
+        if (!entity || !point) return [];
+        return [{
+            residual: entity.points![anchor.index][anchor.axis] - point[anchor.axis],
+            derivatives: [{ variable: { entityId: anchor.entityId, index: anchor.index, axis: anchor.axis, initial: 0 }, value: 1 }],
+        }];
+    });
+}
+
 function solveLinear(matrix: number[][], vector: number[]) {
     const size = vector.length;
     const a = matrix.map((row, index) => [...row, vector[index]]);
@@ -201,14 +213,15 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
 }
 
 /** Global Gauss-Newton solve; a dimension operation is exact, while persistent references are associations. */
-export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = []): 'ok' | 'limit' | 'conflict' {
+export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = [], preservedAxes: SketchConstraintAxisAnchor[] = []): 'ok' | 'limit' | 'conflict' {
     const grouped = relatedRules(document, rootId);
     if (grouped.size > limit) return 'limit';
     const rules = [...grouped.values()].flat();
-    if (!rules.length && !operation && !preservedCenters.length) return 'ok';
+    if (!rules.length && !operation && !preservedCenters.length && !preservedAxes.length) return 'ok';
     const included = new Set(grouped.keys());
     if (operation) included.add(operation.entityId);
     preservedCenters.forEach((entityId) => included.add(entityId));
+    preservedAxes.forEach((anchor) => included.add(anchor.entityId));
     rules.forEach((rule) => { if (rule.rule.reference) included.add(rule.rule.reference.entityId); });
     const entities = new Map(document.entities.filter((entity) => included.has(entity.id) && entity.points).map((entity) => [entity.id, entity]));
     const original = new Map([...entities].map(([id, entity]) => [id, entity.points!.map((point) => [...point] as Point2)]));
@@ -225,7 +238,11 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     })));
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-        const rows: ConstraintRow[] = [...operationRows(document, entities, original, operation), ...centerRows(entities, original, preservedCenters, before)];
+        const rows: ConstraintRow[] = [
+            ...operationRows(document, entities, original, operation),
+            ...centerRows(entities, original, preservedCenters, before),
+            ...axisRows(entities, original, preservedAxes),
+        ];
         rules.forEach((rule) => {
             const value = residual(rule, document);
             if (value === null) return;
@@ -262,6 +279,10 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
         return 'conflict';
     }
     if (centerRows(entities, original, preservedCenters, before).some((row) => Math.abs(row.residual) > SKETCH_CONSTRAINT_TOLERANCE * 2)) {
+        restore();
+        return 'conflict';
+    }
+    if (axisRows(entities, original, preservedAxes).some((row) => Math.abs(row.residual) > SKETCH_CONSTRAINT_TOLERANCE * 2)) {
         restore();
         return 'conflict';
     }
