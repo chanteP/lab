@@ -33,7 +33,7 @@ test('single rectangle edge dimension preserves height instead of accepting a sm
     [[0, 0], [40, 0], [40, 20], [0, 20]].forEach((point, index) => closePoint(points[index], point as Point2));
 });
 
-test('default rectangle corner drag keeps both adjacent corners and moves only the opposite corner', () => {
+test('default rectangle corner drag preserves the center and every orthogonal constraint', () => {
     const { document, entity } = rectangle();
     const before = cloneDocument(document);
     entity.points![0] = [-5, -5];
@@ -42,10 +42,15 @@ test('default rectangle corner drag keeps both adjacent corners and moves only t
     assert.equal(solved.result, 'ok');
     const points = solved.document.entities[0].points!;
     closePoint(points[0], [-5, -5]);
-    closePoint(points[1], [20, 0]);
-    closePoint(points[2], [25, 25]);
-    closePoint(points[3], [0, 20]);
     closePoint(points.reduce((center, point) => [center[0] + point[0] / 4, center[1] + point[1] / 4], [0, 0] as Point2), [10, 10]);
+    points.forEach((point, index) => {
+        const next = points[(index + 1) % points.length];
+        const following = points[(index + 2) % points.length];
+        const a = [next[0] - point[0], next[1] - point[1]];
+        const b = [following[0] - next[0], following[1] - next[1]];
+        const cosine = (a[0] * b[0] + a[1] * b[1]) / (Math.hypot(...a as Point2) * Math.hypot(...b as Point2));
+        assert.ok(Math.abs(cosine) < 0.001, `corner ${index} is not orthogonal: ${JSON.stringify(points)}`);
+    });
 });
 
 test('explicit horizontal and vertical rectangle constraints remain hard during a corner drag', () => {
