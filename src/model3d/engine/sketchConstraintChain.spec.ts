@@ -33,7 +33,22 @@ test('single rectangle edge dimension preserves height instead of accepting a sm
     [[0, 0], [40, 0], [40, 20], [0, 20]].forEach((point, index) => closePoint(points[index], point as Point2));
 });
 
-test('rectangle corner drag preserves its center before the opposite and adjacent corners', () => {
+test('default rectangle corner drag keeps both adjacent corners and moves only the opposite corner', () => {
+    const { document, entity } = rectangle();
+    const before = cloneDocument(document);
+    entity.points![0] = [-5, -5];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    closePoint(points[0], [-5, -5]);
+    closePoint(points[1], [20, 0]);
+    closePoint(points[2], [25, 25]);
+    closePoint(points[3], [0, 20]);
+    closePoint(points.reduce((center, point) => [center[0] + point[0] / 4, center[1] + point[1] / 4], [0, 0] as Point2), [10, 10]);
+});
+
+test('explicit horizontal and vertical rectangle constraints remain hard during a corner drag', () => {
     const { document, entity } = rectangle();
     entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
         ...entity.edgeConstraints![index] as any[],
@@ -54,6 +69,10 @@ test('rectangle corner drag preserves its center before the opposite and adjacen
 
 test('selected edge endpoints have priority over the current shape center', () => {
     const { document, entity } = rectangle();
+    entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
+        ...entity.edgeConstraints![index] as any[],
+        { type: index % 2 === 0 ? 'horizontal' : 'vertical' },
+    ]]));
     const before = cloneDocument(document);
     entity.points![0] = [-5, 0];
     const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [{ entityId: entity.id, index: 1 }], null);

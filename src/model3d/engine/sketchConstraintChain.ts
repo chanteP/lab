@@ -13,11 +13,12 @@ export type SketchConstraintAnchorLevel = {
     current: SketchElementRef[];
     edges: SketchElementRef[];
     adjacent: SketchElementRef[];
+    relaxedShapes: string[];
 };
 
 /** Single entry point for sketch constraint propagation; viewport and Vue state stay outside the solver. */
-export function runConstraintChain(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = []) {
-    return solveDocumentConstraints(document, rootId, preservedAnchors, limit, operation, before, preservedCenters);
+export function runConstraintChain(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = [], relaxedShapes: string[] = []) {
+    return solveDocumentConstraints(document, rootId, preservedAnchors, limit, operation, before, preservedCenters, relaxedShapes);
 }
 
 function anchorKey(anchor: SketchElementRef) {
@@ -122,7 +123,7 @@ export function sketchConstraintAnchorLevels(document: ModelDocument, current: S
     const distanceLayers = [...new Set([...distances.values()].filter((distance) => distance > 0))].sort((a, b) => a - b);
     const levels: SketchConstraintAnchorLevel[] = [];
     const add = (anchors: SketchElementRef[], preservedCenters: string[]) => levels.push({
-        anchors: uniqueAnchors(anchors), centers: preservedCenters, current, edges: edgeAnchors, adjacent,
+        anchors: uniqueAnchors(anchors), centers: preservedCenters, current, edges: edgeAnchors, adjacent, relaxedShapes: [],
     });
     const edgeChoices = edgeAnchors.length ? [edgeAnchors, []] : [[]];
     const centerChoices = centers.length ? [centers, []] : [[]];
@@ -148,9 +149,13 @@ export function sketchConstraintAnchorLevels(document: ModelDocument, current: S
         });
         add(base, centerChoice);
     }));
-    if (!current.length && !edgeAnchors.length) return [{ anchors: [], centers: [], current: [], edges: [], adjacent: [] }];
+    const implicitShapes = [...new Set([...shape.values()].map((anchor) => anchor.entityId).filter((entityId) => {
+        return !!document.entities.find((entity) => entity.id === entityId)?.standardShape;
+    }))];
+    if (implicitShapes.length) levels.push(...levels.map((level) => ({ ...level, relaxedShapes: implicitShapes })));
+    if (!current.length && !edgeAnchors.length) return [{ anchors: [], centers: [], current: [], edges: [], adjacent: [], relaxedShapes: [] }];
     return [...new Map(levels.map((level) => [
-        `${level.anchors.map(anchorKey).sort().join('|')}::${level.centers.sort().join('|')}`, level,
+        `${level.anchors.map(anchorKey).sort().join('|')}::${level.centers.sort().join('|')}::${level.relaxedShapes.sort().join('|')}`, level,
     ])).values()];
 }
 
@@ -196,7 +201,7 @@ export function solveWithSketchConstraintCandidates(document: ModelDocument, bef
 
     for (const level of levels) {
         const candidate = cloneDocument(document);
-        const result = runConstraintChain(candidate, rootId, level.anchors, limit, operation, before, level.centers);
+        const result = runConstraintChain(candidate, rootId, level.anchors, limit, operation, before, level.centers, level.relaxedShapes);
         if (result === 'limit') return { result, document: candidate } as const;
         if (result !== 'ok') continue;
         if (changedAnchors(document, candidate, strongest)) continue;
@@ -213,6 +218,7 @@ export function solveWithSketchConstraintCandidates(document: ModelDocument, bef
             centerMovement(before, candidate, centers),
             changedAnchors(document, candidate, adjacent),
             ...recursiveChanges,
+            level.relaxedShapes.length,
             changed,
         ];
         if (!best || comparePriority(priority, best.priority) < 0) best = { document: candidate, changed, priority };

@@ -200,11 +200,17 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
     return new Map([...all].filter(([id]) => included.has(id)));
 }
 
+function implicitShapeRule(rule: Rule) {
+    const type = rule.entity.standardShape;
+    if (!type || rule.rule.reference?.entityId !== rule.entity.id) return false;
+    return type === 'rectangle' ? rule.rule.type === 'perpendicular' : rule.rule.type === 'equal' || rule.rule.type === 'angle';
+}
+
 /** Global Gauss-Newton solve; a dimension operation is exact, while persistent references are associations. */
-export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = []): 'ok' | 'limit' | 'conflict' {
+export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = [], relaxedShapes: string[] = []): 'ok' | 'limit' | 'conflict' {
     const grouped = relatedRules(document, rootId);
     if (grouped.size > limit) return 'limit';
-    const rules = [...grouped.values()].flat();
+    const rules = [...grouped.values()].flat().filter((rule) => !relaxedShapes.includes(rule.entity.id) || !implicitShapeRule(rule));
     if (!rules.length && !operation && !preservedCenters.length) return 'ok';
     const included = new Set(grouped.keys());
     if (operation) included.add(operation.entityId);
