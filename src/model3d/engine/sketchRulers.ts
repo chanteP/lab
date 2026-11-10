@@ -34,17 +34,6 @@ export function rulerTickStep(unitsPerPixel: number, targetPixels = 50) {
     return (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * power;
 }
 
-export function rulerTicks(originPixels: number, unitsPerPixel: number, pixelSize: number, targetPixels = 50) {
-    const step = rulerTickStep(unitsPerPixel, targetPixels);
-    const stepPixels = step / unitsPerPixel;
-    const first = Math.floor((-originPixels) / stepPixels) - 1;
-    const last = Math.ceil((pixelSize - originPixels) / stepPixels) + 1;
-    return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => {
-        const value = (first + index) * step;
-        return { value, position: originPixels + value / unitsPerPixel };
-    }).filter((tick) => tick.position >= 0 && tick.position <= pixelSize);
-}
-
 export type RulerScaleTick = { value: number; position: number; kind: 'major' | 'medium' | 'minor' };
 
 /** Ten subdivisions produce a conventional long/medium/short ruler scale. */
@@ -68,20 +57,6 @@ export function rulerScaleTicks(originPixels: number, unitsPerPixel: number, pix
 export function screenPointFromEvent(event: PointerEvent, element: HTMLElement): ScreenPoint {
     const rect = element.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-}
-
-/** Snap one guide offset to its corresponding visible ruler ticks; tolerance stays in CSS pixels. */
-export function snapGuideOffsetToRuler(guide: SketchReferenceGuide, offset: number, frame: SketchRulerFrame) {
-    const horizontalAxis = guide.axis === 'u';
-    const origin = horizontalAxis ? frame.origin.x : frame.origin.y;
-    const size = horizontalAxis ? frame.width : frame.height;
-    const ticks = rulerTicks(origin, frame.unitsPerPixel, size);
-    const candidates = ticks.map((tick) => ({
-        offset: tick.value,
-        distance: Math.abs(tick.value - offset) / frame.unitsPerPixel,
-    }));
-    candidates.sort((a, b) => a.distance - b.distance);
-    return candidates[0]?.offset ?? offset;
 }
 
 export function guidePointerOutsideViewport(axis: 'u' | 'v', point: ScreenPoint, frame: SketchRulerFrame, rulerSize = 12) {

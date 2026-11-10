@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchSketchGuide } from './sketchGuides';
-import { guidePointerOutsideViewport, guideFromRuler, guideScreenPosition, rulerScaleTicks, rulerTickStep, snapGuideOffsetToRuler } from './sketchRulers';
+import { guidePointerOutsideViewport, guideFromRuler, guideScreenPosition, rulerScaleTicks, rulerTickStep } from './sketchRulers';
 
 test('top and left rulers create perpendicular persistent guides in plane coordinates', () => {
     assert.deepEqual(guideFromRuler('top', [130, 80], [100, 100], 2), { axis: 'v', offset: 40 });
@@ -26,24 +26,11 @@ test('persistent ruler axes participate in guide snapping and intersections', ()
     assert.equal(intersection?.matches.length, 2);
 });
 
-test('guide dragging snaps to the nearest visible ruler tick within screen tolerance', () => {
-    const frame = {
-        width: 600, height: 400, origin: { x: 100, y: 100 }, unitsPerPixel: 0.4, unit: 'mm' as const, guides: [],
-    };
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 21 }, 21, frame), 20);
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'v', offset: 19 }, 19, frame), 20);
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 40 }, 40, frame), 40);
-});
-
-test('ruler scale exposes long, medium and short ticks while snapping stays on major values', () => {
+test('ruler scale exposes long, medium and short display ticks', () => {
     const ticks = rulerScaleTicks(100, 0.4, 400);
     assert.ok(ticks.some((tick) => tick.kind === 'major'));
     assert.ok(ticks.some((tick) => tick.kind === 'medium'));
     assert.ok(ticks.some((tick) => tick.kind === 'minor'));
-    const frame = {
-        width: 600, height: 400, origin: { x: 100, y: 100 }, unitsPerPixel: 0.4, unit: 'mm' as const, guides: [],
-    };
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 22.8 }, 22.8, frame), 20);
 });
 
 test('dragging a guide back to a ruler or outside the viewport dismisses it', () => {
@@ -57,11 +44,6 @@ test('dragging a guide back to a ruler or outside the viewport dismisses it', ()
     assert.equal(guidePointerOutsideViewport('u', { x: 100, y: 100 }, frame), false);
 });
 
-test('a 1mm labeled ruler snaps to integer millimeters instead of minor subdivisions', () => {
-    const frame = {
-        width: 600, height: 400, origin: { x: 100, y: 100 }, unitsPerPixel: 0.02, unit: 'mm' as const, guides: [],
-    };
-    assert.equal(rulerTickStep(frame.unitsPerPixel), 1);
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 1.4 }, 1.4, frame), 1);
-    assert.equal(snapGuideOffsetToRuler({ id: 'g', axis: 'u', offset: 1.6 }, 1.6, frame), 2);
+test('a 1mm labeled ruler keeps its display scale independent from guide snapping', () => {
+    assert.equal(rulerTickStep(0.02), 1);
 });

@@ -2,13 +2,13 @@
 import { computed, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import type { EditPhase, ViewportCallbacks } from '../../engine/Viewport';
-import { guidePointerOutsideViewport, guideFromRuler, rulerScaleTicks, snapGuideOffsetToRuler, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
+import { guidePointerOutsideViewport, guideFromRuler, rulerScaleTicks, type SketchRulerFrame, type ScreenPoint } from '../../engine/sketchRulers';
 import type { SketchReferenceGuide, SketchRulerSide } from '../../types';
 import { uid } from '../../utils/id';
 
 const RULER_SIZE = 12;
 const RULER_CENTER = RULER_SIZE / 2;
-const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; guideSnapEnabled?: boolean; selectionTool?: boolean; callbacks: ViewportCallbacks }>();
+const props = defineProps<{ frame: SketchRulerFrame | null; selectedId: string | null; selectionTool?: boolean; callbacks: ViewportCallbacks }>();
 const root = ref<HTMLElement>();
 const hoverThrough = ref<string | null>(null);
 const drafts = new Map<string, string>();
@@ -42,11 +42,8 @@ function offsetFor(guide: SketchReferenceGuide, position: ScreenPoint) {
         : (frame.origin.y - position.y) * frame.unitsPerPixel;
 }
 function snappedOffset(guide: SketchReferenceGuide, raw: number) {
-    // Reference matching still renders while disabled; the controller returns the raw offset in that state.
-    props.callbacks.onSketchGuideSnap(guide, raw);
-    if (props.guideSnapEnabled === false || !props.frame) return raw;
-    const tick = snapGuideOffsetToRuler(guide, raw, props.frame);
-    return tick;
+    // Ruler ticks are display-only; operation points and persistent guides own snapping.
+    return props.callbacks.onSketchGuideSnap(guide, raw);
 }
 function hoverGuide(event: PointerEvent, id: string) {
     hoverThrough.value = props.callbacks.onSketchGuidePointer(event, 'move') ? id : null;

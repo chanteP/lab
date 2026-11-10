@@ -6,7 +6,7 @@ import SketchRulerOverlay from './SketchRulerOverlay.vue';
 import type { SketchRulerFrame } from '../../engine/sketchRulers';
 import type { ProjectedViewportOverlay } from '../../engine/viewport/OverlayController';
 
-const props = defineProps<{ callbacks: ViewportCallbacks; suspended?: boolean; selectedGuideId?: string | null; guideSnapEnabled?: boolean; sketchSelectionTool?: boolean }>();
+const props = defineProps<{ callbacks: ViewportCallbacks; suspended?: boolean; selectedGuideId?: string | null; sketchSelectionTool?: boolean }>();
 const emit = defineEmits<{ ready: [viewport: Viewport] }>();
 const viewportElement = ref<HTMLElement>();
 const overlayItems = shallowRef<ProjectedViewportOverlay[]>([]);
@@ -30,6 +30,6 @@ onBeforeUnmount(() => {
 <template>
     <div ref="viewportElement" class="viewport">
         <ViewportOverlay v-if="!suspended" :items="overlayItems" :callbacks="callbacks" />
-        <SketchRulerOverlay v-if="!suspended" :frame="rulerFrame" :selected-id="selectedGuideId || null" :guide-snap-enabled="guideSnapEnabled ?? true" :selection-tool="sketchSelectionTool ?? true" :callbacks="callbacks" />
+        <SketchRulerOverlay v-if="!suspended" :frame="rulerFrame" :selected-id="selectedGuideId || null" :selection-tool="sketchSelectionTool ?? true" :callbacks="callbacks" />
     </div>
 </template>

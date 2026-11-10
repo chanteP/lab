@@ -757,7 +757,7 @@ onBeforeUnmount(() => {
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
-                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :guide-snap-enabled="sketchGuideSnapEnabled" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"
