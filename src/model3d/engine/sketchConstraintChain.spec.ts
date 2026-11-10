@@ -33,7 +33,7 @@ test('single rectangle edge dimension preserves height instead of accepting a sm
     [[0, 0], [40, 0], [40, 20], [0, 20]].forEach((point, index) => closePoint(points[index], point as Point2));
 });
 
-test('rectangle corner drag preserves the opposite corner and moves only the two adjacent corners', () => {
+test('rectangle corner drag preserves its center before the opposite and adjacent corners', () => {
     const { document, entity } = rectangle();
     entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
         ...entity.edgeConstraints![index] as any[],
@@ -46,13 +46,35 @@ test('rectangle corner drag preserves the opposite corner and moves only the two
     assert.equal(solved.result, 'ok');
     const points = solved.document.entities[0].points!;
     closePoint(points[0], [-5, -5]);
-    closePoint(points[1], [20, -5]);
-    closePoint(points[2], [20, 20]);
-    closePoint(points[3], [-5, 20]);
-    assert.ok(solved.changed! <= 2);
+    closePoint(points[1], [25, -5]);
+    closePoint(points[2], [25, 25]);
+    closePoint(points[3], [-5, 25]);
+    closePoint(points.reduce((center, point) => [center[0] + point[0] / 4, center[1] + point[1] / 4], [0, 0] as Point2), [10, 10]);
 });
 
-test('regular polygon vertex drag keeps one non-dragged vertex stationary when a similarity solve exists', () => {
+test('selected edge endpoints have priority over the current shape center', () => {
+    const { document, entity } = rectangle();
+    const before = cloneDocument(document);
+    entity.points![0] = [-5, 0];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [{ entityId: entity.id, index: 1 }], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    closePoint(points[0], [-5, 0]);
+    closePoint(points[1], [20, 0]);
+    closePoint(points[2], [20, 20]);
+    closePoint(points[3], [-5, 20]);
+});
+
+test('every fallback candidate retains the current operation point', () => {
+    const { document, entity } = rectangle();
+    const current = { entityId: entity.id, index: 0 };
+    const levels = sketchConstraintAnchorLevels(document, [current], [{ entityId: entity.id, index: 0 }], null);
+    assert.ok(levels.length > 1);
+    levels.forEach((level) => assert.ok(level.anchors.some((anchor) => anchor.entityId === current.entityId && anchor.index === current.index)));
+});
+
+test('regular polygon vertex drag preserves the shape center before non-dragged vertices', () => {
     const document = createDocument();
     const entity = createEntity('sketch', 'regular');
     entity.profileType = 'regular';
@@ -66,6 +88,7 @@ test('regular polygon vertex drag keeps one non-dragged vertex stationary when a
     const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [], null);
     const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
     assert.equal(solved.result, 'ok');
-    const stationary = before.entities[0].points!.slice(1).filter((point, index) => Math.hypot(point[0] - solved.document.entities[0].points![index + 1][0], point[1] - solved.document.entities[0].points![index + 1][1]) < 0.001);
-    assert.ok(stationary.length >= 1, JSON.stringify(solved.document.entities[0].points));
+    closePoint(solved.document.entities[0].points![0], moved.map((value, index) => value + [4, 3][index]) as Point2);
+    const center = (points: Point2[]) => points.reduce((sum, point) => [sum[0] + point[0] / points.length, sum[1] + point[1] / points.length], [0, 0] as Point2);
+    closePoint(center(solved.document.entities[0].points!), center(before.entities[0].points!));
 });
