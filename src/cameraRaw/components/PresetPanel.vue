@@ -81,9 +81,10 @@ onBeforeUnmount(() => window.removeEventListener('camera-raw-presets-changed', r
 </template>
 
 <style lang="scss" scoped>
+.preset-panel { padding: 12px 13px 22px; }
 .preset-save { display: grid; grid-template-columns: 1fr auto; gap: 6px; input { min-width: 0; height: 29px; padding: 0 8px; border: 1px solid #555; border-radius: 3px; background: #272727; color: #ddd; font-size: 11px; } button { display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #555; border-radius: 3px; background: #3a3a3a; color: #ccc; cursor: pointer; } }
 .import-button { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; height: 30px; margin-top: 7px; border: 1px solid #555; border-radius: 3px; background: #3a3a3a; color: #ccc; cursor: pointer; }
-.strength { position: relative; margin: 15px 0 12px; > span { position: absolute; right: 3px; top: 5px; color: #999; font-size: 9px; pointer-events: none; } }
+.strength { position: relative; margin: 15px 10px 12px 0; > span { position: absolute; right: -10px; top: 5px; width: 10px; color: #999; font-size: 9px; text-align: center; pointer-events: none; } }
 .preset-status { margin: 0 0 8px; color: #8fbcd2; font-size: 10px; }
 .preset-empty, .hint { color: #888; font-size: 10px; line-height: 1.6; }
 .preset-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; li { display: grid; grid-template-columns: 1fr 27px; align-items: center; border: 1px solid #454545; border-radius: 3px; background: #2b2b2b; &.selected { border-color: #6c9eb7; background: #35444b; } } }

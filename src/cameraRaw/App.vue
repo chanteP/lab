@@ -4,7 +4,7 @@ import { NIcon, NModal, NProgress } from 'naive-ui';
 import { Add, AnalyticsOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, RefreshOutline, Remove, ShapesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
 import { activeAsset, assets, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import type { AdjustmentSection, MaskAdjustmentSection } from './engine/adjustments';
-import { ADJUSTMENT_SECTION_LABELS, ADJUSTMENT_SECTIONS, MASK_ADJUSTMENT_SECTIONS, hasSectionAdjustments, resetAdjustmentSection, withAdjustmentSectionsReset } from './engine/adjustments';
+import { ADJUSTMENT_SECTION_LABELS, ADJUSTMENT_SECTIONS, hasSectionAdjustments, resetAdjustmentSection, withAdjustmentSectionsReset } from './engine/adjustments';
 import { parsePreset, serializePreset } from './io/preset';
 import { saveAsset } from './io/export';
 import { downloadBlob } from './io/export';
@@ -113,6 +113,7 @@ function chooseMaskTool(tool: MaskTool) { maskTool.value = maskTool.value === to
 function selectMask(id: string) { if (activeAsset.value) { activeAsset.value.activeMaskId = id || undefined; if (!id) maskTool.value = ''; } }
 function addMaskShape(shape: MaskShape) {
     const asset = activeAsset.value; if (!asset) return;
+    if (allMasksHidden.value) setAllMasksHidden(false);
     asset.masks ??= [];
     if (activeMask.value) activeMask.value.shapes.push(shape);
     else {
@@ -144,31 +145,35 @@ function openMainPanel(id: string) {
     mobilePanelOpen.value = true;
 }
 function globalEffectKey(assetId: string, section: AdjustmentSection) { return `${assetId}:global:${section}`; }
-function maskEffectKey(assetId: string, maskId: string, section: MaskAdjustmentSection) { return `${assetId}:mask:${maskId}:${section}`; }
+function allMasksHiddenKey(assetId: string) { return `${assetId}:masks:hidden`; }
+const allMasksHidden = computed(() => Boolean(activeAsset.value && hiddenEffectKeys.value.has(allMasksHiddenKey(activeAsset.value.id))));
 const currentPanelHidden = computed(() => {
     const asset = activeAsset.value; if (!asset) return false;
-    if (panel.value === 'masking') return Boolean(activeMask.value && hiddenEffectKeys.value.has(maskEffectKey(asset.id, activeMask.value.id, maskSection.value)));
+    if (panel.value === 'masking') return allMasksHidden.value;
     return ADJUSTMENT_SECTIONS.includes(panel.value as AdjustmentSection) && hiddenEffectKeys.value.has(globalEffectKey(asset.id, panel.value as AdjustmentSection));
 });
+const visibleActiveMask = computed(() => activeMask.value?.visible && !allMasksHidden.value ? activeMask.value : undefined);
+function setAllMasksHidden(hidden: boolean) {
+    const asset = activeAsset.value; if (!asset) return;
+    const next = new Set(hiddenEffectKeys.value), key = allMasksHiddenKey(asset.id);
+    if (hidden) next.add(key); else next.delete(key);
+    hiddenEffectKeys.value = next;
+    if (hidden) { maskTool.value = ''; maskInteracting.value = false; }
+}
 function toggleCurrentPanelHidden() {
     const asset = activeAsset.value; if (!asset) return;
-    let key = '';
-    if (panel.value === 'masking' && activeMask.value) key = maskEffectKey(asset.id, activeMask.value.id, maskSection.value);
-    else if (ADJUSTMENT_SECTIONS.includes(panel.value as AdjustmentSection)) key = globalEffectKey(asset.id, panel.value as AdjustmentSection);
-    if (!key) return;
+    if (panel.value === 'masking') { setAllMasksHidden(!allMasksHidden.value); return; }
+    if (!ADJUSTMENT_SECTIONS.includes(panel.value as AdjustmentSection)) return;
+    const key = globalEffectKey(asset.id, panel.value as AdjustmentSection);
     const next = new Set(hiddenEffectKeys.value);
     if (next.has(key)) next.delete(key); else next.add(key);
     hiddenEffectKeys.value = next;
 }
 function assetWithHiddenEffects(asset: ImageAsset): ImageAsset {
     const sections = ADJUSTMENT_SECTIONS.filter((section) => hiddenEffectKeys.value.has(globalEffectKey(asset.id, section)));
-    let masksChanged = false;
-    const masks = asset.masks?.map((mask) => {
-        const hidden = MASK_ADJUSTMENT_SECTIONS.filter((section) => hiddenEffectKeys.value.has(maskEffectKey(asset.id, mask.id, section)));
-        if (hidden.length) masksChanged = true;
-        return hidden.length ? { ...mask, adjustments: withAdjustmentSectionsReset(mask.adjustments, hidden) } : mask;
-    });
-    if (!sections.length && !masksChanged) return asset;
+    const masksHidden = hiddenEffectKeys.value.has(allMasksHiddenKey(asset.id));
+    const masks = masksHidden ? asset.masks?.map((mask) => ({ ...mask, visible: false })) : asset.masks;
+    if (!sections.length && !masksHidden) return asset;
     return { ...asset, adjustments: withAdjustmentSectionsReset(asset.adjustments, sections), masks };
 }
 const previewAsset = computed(() => activeAsset.value ? assetWithHiddenEffects(activeAsset.value) : undefined);
@@ -176,9 +181,7 @@ const hiddenEffectLabels = computed(() => {
     const asset = activeAsset.value; if (!asset) return [];
     const label = (section: AdjustmentSection) => section === 'effects' ? '效果' : `${ADJUSTMENT_SECTION_LABELS[section]}效果`;
     const labels = ADJUSTMENT_SECTIONS.filter((section) => hiddenEffectKeys.value.has(globalEffectKey(asset.id, section))).map(label);
-    for (const mask of asset.masks ?? []) {
-        for (const section of MASK_ADJUSTMENT_SECTIONS) if (hiddenEffectKeys.value.has(maskEffectKey(asset.id, mask.id, section))) labels.push(`${mask.name} · ${label(section)}`);
-    }
+    if (hiddenEffectKeys.value.has(allMasksHiddenKey(asset.id))) labels.push('全部蒙版效果');
     return labels;
 });
 async function resolveActiveDcpProfile() {
@@ -279,7 +282,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
                 <button type="button" title="适合视图 (F)" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</button>
             </nav>
 
-            <ImageViewer :asset="previewAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" :dcp-profile="activeDcpProfile" :mask-tool="maskTool" :mask-mode="maskMode" :active-mask="activeMask" :show-mask-overlay="panel === 'masking' && !maskInteracting" @shape="addMaskShape" @update-shape="updateMaskShape" @histogram="histogram = $event">
+            <ImageViewer :asset="previewAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" :dcp-profile="activeDcpProfile" :mask-tool="maskTool" :mask-mode="maskMode" :active-mask="visibleActiveMask" :show-mask-overlay="panel === 'masking' && !maskInteracting" @shape="addMaskShape" @update-shape="updateMaskShape" @histogram="histogram = $event">
                 <div class="empty-workspace">
                     <CameraOutline class="empty-icon" /><h1>在浏览器中冲洗照片</h1><p>将 RAW、JPEG、PNG 图片或整个文件夹拖到这里</p>
                     <div><button type="button" @click="fileInput?.click()">选择图片</button><button type="button" class="secondary" @click="folderInput?.click()">选择文件夹</button></div>

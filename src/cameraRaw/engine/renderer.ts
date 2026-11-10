@@ -157,7 +157,7 @@ export class RawRenderer {
         const gl = this.gl;
         const pixels = rasterizeMask(mask, this.canvas.width, this.canvas.height);
         gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, this.canvas.width, this.canvas.height, 0, gl.RED, gl.FLOAT, pixels);
         gl.useProgram(this.blendProgram); gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.uniform1f(this.bu('uMaskAmount'), amount); gl.uniform1i(this.bu('uMaskOverlay'), Number(overlay));
         gl.uniform1i(this.bu('uMaskCompare'), options.compare ?? 0); gl.uniform1f(this.bu('uMaskSplit'), options.split ?? .5);

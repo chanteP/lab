@@ -47,7 +47,9 @@ const emit = defineEmits<{
 }>();
 const adjustmentPanel = computed(() => ADJUSTMENT_SECTIONS.includes(props.panel as AdjustmentSection));
 const title = computed(() => adjustmentPanel.value ? ADJUSTMENT_SECTION_LABELS[props.panel as AdjustmentSection] : props.panel === 'presets' ? '预设' : `蒙版 · ${ADJUSTMENT_SECTION_LABELS[props.maskSection]}`);
-const canEdit = computed(() => adjustmentPanel.value || (props.panel === 'masking' && Boolean(props.activeMaskId)));
+const canHide = computed(() => adjustmentPanel.value || (props.panel === 'masking' && props.masks.length > 0));
+const canReset = computed(() => adjustmentPanel.value || (props.panel === 'masking' && Boolean(props.activeMaskId)));
+const visibilityLabel = computed(() => props.panel === 'masking' ? (props.panelHidden ? '显示全部蒙版' : '隐藏全部蒙版') : `${props.panelHidden ? '显示' : '隐藏'}${title.value}调整`);
 </script>
 
 <template>
@@ -55,8 +57,8 @@ const canEdit = computed(() => adjustmentPanel.value || (props.panel === 'maskin
         <header>
             <h2>{{ title }}</h2>
             <div v-if="panel !== 'presets'" class="header-actions">
-                <button type="button" class="visibility-button" :class="{ active: panelHidden }" :disabled="!canEdit" :title="panelHidden ? `显示${title}调整` : `临时隐藏${title}调整`" :aria-label="panelHidden ? `显示${title}调整` : `隐藏${title}调整`" :aria-pressed="panelHidden" @click="emit('toggle-hidden')"><NIcon><EyeOffOutline v-if="panelHidden" /><EyeOutline v-else /></NIcon></button>
-                <button type="button" :disabled="!canEdit" :title="`复位${title}调整`" :aria-label="`复位${title}调整`" @click="emit('reset')">复位</button>
+                <button type="button" class="visibility-button" :class="{ active: panelHidden }" :disabled="!canHide" :title="visibilityLabel" :aria-label="visibilityLabel" :aria-pressed="panelHidden" @click="emit('toggle-hidden')"><NIcon><EyeOffOutline v-if="panelHidden" /><EyeOutline v-else /></NIcon></button>
+                <button type="button" :disabled="!canReset" :title="`复位${title}调整`" :aria-label="`复位${title}调整`" @click="emit('reset')">复位</button>
             </div>
         </header>
         <nav v-if="adjustmentPanel" class="section-tabs" aria-label="调整项目"><button v-for="section in ADJUSTMENT_SECTIONS" :key="section" type="button" :class="{ active: panel === section }" :aria-current="panel === section ? 'page' : undefined" @click="emit('update:panel', section)">{{ ADJUSTMENT_SECTION_LABELS[section] }}<sup v-if="modifiedSections.has(section)" aria-label="已调整">*</sup></button></nav>
