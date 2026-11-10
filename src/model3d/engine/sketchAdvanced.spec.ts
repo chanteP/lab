@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
-    radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, supportsMirrorSymmetry, symmetryRayAngles, symmetryTransform,
+    radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, supportsMirrorSymmetry, symmetryGuideEntities, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
 import type { ModelEntity, Point2, SketchProfilePart } from '../types';
 import { computeSketchFaces } from './sketchFaces';
@@ -10,6 +10,15 @@ import { computeSketchFaces } from './sketchFaces';
 const closePoint = (actual: Point2, expected: Point2) => {
     assert.ok(Math.hypot(actual[0] - expected[0], actual[1] - expected[1]) < 1e-7, `${actual} != ${expected}`);
 };
+
+test('symmetry guides expose every evaluated point instead of only source editor handles', () => {
+    const source: SketchProfilePart[] = [{ points: [[0, 0], [10, 0]], closed: false, editor: { type: 'line', source: [[0, 0], [10, 0]] } }];
+    const evaluated = radialSymmetry(source, 4, 0, 0, 'rotate');
+    const guides = symmetryGuideEntities(evaluated, 'plane');
+    assert.equal(guides.length, 4);
+    assert.equal(guides.flatMap((entity) => entity.points || []).length, evaluated.reduce((sum, part) => sum + part.points.length, 0));
+    assert.ok(guides.every((entity) => entity.planeId === 'plane' && entity.profileType === 'polygon'));
+});
 
 test('clockwise sectors start at the positive Y axis and honor offset', () => {
     assert.equal(sectorAtPoint([1, 1], 4, 0), 0);

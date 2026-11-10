@@ -39,7 +39,9 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal((front.material as THREE.Material).stencilZPass, THREE.DecrementWrapStencilOp);
     assert.equal(source.renderOrder, 1000);
     assert.equal(cap.position.x, 10);
-    assert.equal(cap.position.z, 0);
+    assert.ok(cap.position.z < 0 && cap.position.z > -0.001);
+    assert.equal((cap.material as THREE.Material).stencilFunc, THREE.NotEqualStencilFunc);
+    assert.equal((cap.material as THREE.Material).stencilZPass, THREE.ReplaceStencilOp);
 
     source.position.x = 25;
     renderer.update(plane);

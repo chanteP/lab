@@ -5,6 +5,7 @@ import type { ProfileType } from '../../engine/profiles';
 import {
     cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
     regenerateProfilePart, rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
+    symmetryGuideEntities,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
@@ -49,6 +50,7 @@ interface AdvancedOptions {
     sketchGuideSnapEnabled: Ref<boolean>;
     selectedShapes: Ref<string[]>;
     selectedIds: Ref<string[]>;
+    spaceActive: Ref<boolean>;
     lengthUnit: Ref<LengthUnit>;
     setLengthUnit: (unit: LengthUnit) => void;
     viewport: () => Viewport | undefined;
@@ -66,7 +68,7 @@ interface AdvancedOptions {
 export function useSketchAdvanced(options: AdvancedOptions) {
     const {
         document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool,
-        sketchGuideSnapEnabled, selectedShapes, selectedIds, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
+        sketchGuideSnapEnabled, selectedShapes, selectedIds, spaceActive, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
         refreshSketch, syncSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
     } = options;
     const symmetry = ref<SymmetrySession | null>(null);
@@ -255,17 +257,9 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
         if (!plane) return point;
         // A transform pivot may intentionally snap to its own rectangle corner or circle radius point.
-        const entities = document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id);
-        if (symmetry.value) {
-            workingParts.value.forEach((part, index) => {
-                if (!part.editor) return;
-                entities.push({
-                    id: `advanced:${index}`, parentId: null, kind: 'sketch', name: '', color: '', visible: true,
-                    position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], planeId: plane.id,
-                    profileType: part.editor.type, points: part.editor.source, sides: part.editor.sides,
-                });
-            });
-        }
+        const entities = symmetry.value?.step === 3
+            ? symmetryGuideEntities(renderedParts.value, plane.id)
+            : document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id);
         const offset = [-plane.origin[0], -plane.origin[1], -plane.origin[2]];
         const origins = [
             { id: 'plane' as const, point: [0, 0] as Point2 },
@@ -495,6 +489,11 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     function pointerDown(event: PointerEvent) {
         if (!overlayActive.value) return;
         const session = symmetry.value;
+        if ((session?.step === 3 || transformActive.value) && event.button === 0 && spaceActive.value) {
+            viewport()?.forwardSpacePan(event);
+            event.preventDefault();
+            return;
+        }
         if ((session?.step === 3 || transformActive.value) && event.button === 2) {
             viewGesture = true;
             (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -508,7 +507,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             event.preventDefault();
             return;
         }
-        const point = eventPoint(event);
+        let point = eventPoint(event);
         if (!point) return;
         if (session?.step === 2) {
             session.selectedSector = sectorAtPoint(point, session.count, session.offset);
@@ -555,6 +554,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             }
             return;
         }
+        point = snapCenterPoint(point);
         if (pendingShape && draftStart.value) {
             draft.value = shapePoints(sketchType.value, draftStart.value, point);
             commitDraft();
@@ -599,13 +599,13 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         if (!gesture && symmetry.value?.step === 3 && event.altKey) updateAltTarget(point);
         else altTarget.value = null;
         if (!gesture) {
-            if (pendingShape && draftStart.value) draft.value = shapePoints(sketchType.value, draftStart.value, point);
+            if (pendingShape && draftStart.value) draft.value = shapePoints(sketchType.value, draftStart.value, snapCenterPoint(point));
             return;
         }
         if (event.pointerId !== gesture.pointerId) return;
         gesture.moved ||= Math.hypot(event.clientX - gesture.startClient[0], event.clientY - gesture.startClient[1]) > 4;
         if (gesture.kind === 'draw') {
-            if (gesture.moved && draftStart.value) draft.value = shapePoints(sketchType.value, draftStart.value, point);
+            if (gesture.moved && draftStart.value) draft.value = shapePoints(sketchType.value, draftStart.value, snapCenterPoint(point));
         } else transformAt(point);
         event.preventDefault();
     }
@@ -626,7 +626,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         const point = eventPoint(event);
         if (gesture.kind === 'draw') {
             if (gesture.moved && point && draftStart.value) {
-                draft.value = shapePoints(sketchType.value, draftStart.value, point);
+                draft.value = shapePoints(sketchType.value, draftStart.value, snapCenterPoint(point));
                 commitDraft();
             } else if (!['polygon', 'line'].includes(sketchType.value)) pendingShape = true;
             gesture = null;

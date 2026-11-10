@@ -4,6 +4,15 @@ import type { ModelEntity, Point2, SketchProfileEditor, SketchProfilePart } from
 export type SymmetryMode = 'mirror' | 'rotate';
 export type PointTransform = (point: Point2) => Point2;
 
+/** Independent guide entities contain every point of every evaluated symmetry copy. */
+export function symmetryGuideEntities(parts: SketchProfilePart[], planeId: string): ModelEntity[] {
+    return parts.map((part, index) => ({
+        id: `symmetry:${index}`, parentId: null, kind: 'sketch', name: '', color: '', visible: true,
+        position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], planeId,
+        profileType: 'polygon', points: part.points, open: !part.closed,
+    }));
+}
+
 /** One ray per sector; opposite rays naturally form a cross for even counts. */
 export function symmetryRayAngles(count: number, offset: number): number[] {
     return Array.from({ length: count }, (_, index) => offset + index * 360 / count);

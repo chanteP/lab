@@ -18,7 +18,6 @@ interface SketchEditingOptions {
     selectedIds: Ref<string[]>;
     activePlaneId: Ref<string | null>;
     activePlane: ComputedRef<SketchPlane | null>;
-    viewportMenu: Ref<{ x: number; y: number; id: string | null } | null>;
     state: SketchState;
     constraints: SketchConstraints;
     viewport: () => Viewport | undefined;
@@ -36,13 +35,13 @@ interface SketchEditingOptions {
 /** Sketch selection and point/edge/handle gesture mutations. */
 export function useSketchEditing(options: SketchEditingOptions) {
     const {
-        document, selectedIds, activePlaneId, activePlane, viewportMenu, state, constraints, viewport,
+        document, selectedIds, activePlaneId, activePlane, state, constraints, viewport,
         message, pushHistory, popHistory, refreshSketch, persistSketchProgress,
         removeConstraintsForEdge, removeConstraintsForEntity, isTransforming, setTransforming,
     } = options;
     const {
         sketchType, sketchCurves, sketchSides, selectedSketchSegment, sketchPoints, selectedSketchPoint,
-        editingSketchId, trimmedSelection, sketchContextMenu, selectedSketchSegments, selectedShapes,
+        editingSketchId, trimmedSelection, selectedSketchSegments, selectedShapes,
         selectedEdges, selectedPoints, activeConstraintRule, sketchLockedPoints, sketchSectorAngle,
         sketchOpen, sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, selectedSketchGuideId, sketchGesture,
         rememberConstraintEdges, rememberConstraintShapes,
@@ -86,7 +85,6 @@ export function useSketchEditing(options: SketchEditingOptions) {
         selectedSketchSegment.value = -1;
         selectedSketchSegments.value = [];
         selectedIds.value = activePlaneId.value ? [activePlaneId.value] : [];
-        sketchContextMenu.value = null;
         viewport()?.setSketchEditing(null);
         refreshSketch();
         activateSketchSelectionTool();
@@ -124,7 +122,6 @@ export function useSketchEditing(options: SketchEditingOptions) {
         selectedSketchSegments.value = [];
         if (straight) ensureSketchSegment(0);
         selectedIds.value = [entityId];
-        sketchContextMenu.value = null;
         viewport()?.setSketchEditing(entityId);
         viewport()?.setSketchEdgeEditing(index);
         refreshSketch();
@@ -181,32 +178,8 @@ export function useSketchEditing(options: SketchEditingOptions) {
         selectedSketchSegment.value = -1;
         selectedSketchSegments.value = [];
         selectedIds.value = [...selectedShapes.value];
-        sketchContextMenu.value = null;
         viewport()?.setSketchEditing(id);
         refreshSketch();
-    }
-    function openSketchContext(id: string | null, x: number, y: number) {
-        if (id && id !== editingSketchId.value) selectSketchEntity(id);
-        const targetId = id || editingSketchId.value;
-        if (!targetId) return clearSketchSelection();
-        sketchContextMenu.value = { id: targetId, x: Math.min(x, window.innerWidth - 160), y: Math.min(y, window.innerHeight - 110) };
-    }
-    function deleteSketchFromContext() {
-        const id = sketchContextMenu.value?.id;
-        if (!id) return;
-        sketchContextMenu.value = null;
-        removeConstraintsForEntity(id);
-        pushHistory();
-        detachFeatureReferences(document.value, [id]);
-        document.value.entities = document.value.entities.filter((item) => item.id !== id);
-        clearSketchSelection();
-    }
-    function deleteViewportSketch() {
-        const id = viewportMenu.value?.id;
-        viewportMenu.value = null;
-        if (!id) return;
-        sketchContextMenu.value = { id, x: 0, y: 0 };
-        deleteSketchFromContext();
     }
     function addSketchPoint(point: Point2) {
         if (sketchSelectionTool.value) return;
@@ -685,7 +658,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
 
     return {
         clearSketchDragState, activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
-        openSketchContext, deleteSketchFromContext, deleteViewportSketch, addSketchPoint,
+        addSketchPoint,
         moveSketchPoint, beginSketchHandleDrag, finishSketchHandleDrag, moveSelectedPoints,
         moveTrimmedCurve, moveSketchCenter, deleteSketchPoint, deleteSketchBorder, recloseProfiles,
         ensureSketchSegment, selectSketchSegment, moveSketchHandle, resetSketchHandle,

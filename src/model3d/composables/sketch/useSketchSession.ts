@@ -44,7 +44,7 @@ export function useSketchSession(options: SketchSessionOptions) {
     } = options;
     const {
         sketchMode, sketchType, sketchCurves, sketchSides, selectedSketchSegment, sketchPoints,
-        sketchDepth, selectedSketchPoint, editingSketchId, trimmedSelection, sketchContextMenu,
+        sketchDepth, selectedSketchPoint, editingSketchId, trimmedSelection,
         selectedSketchSegments, selectedShapes, selectedEdges, selectedPoints, sketchLockedPoints,
         sketchSectorAngle, sketchOpen, sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool,
         sketchClosed,
@@ -311,7 +311,6 @@ export function useSketchSession(options: SketchSessionOptions) {
         lastFace.value = null;
         viewport()?.clearGeometrySelection();
         sketchMode.value = false;
-        sketchContextMenu.value = null;
         viewport()?.setSketchEditing(null);
         sketchPoints.value = [];
         selectedSketchPoint.value = -1;

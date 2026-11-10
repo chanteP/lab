@@ -86,7 +86,9 @@ export class SectionRenderer {
                 ? source.geometry.boundingSphere.center.clone().applyMatrix4(source.matrixWorld)
                 : source.getWorldPosition(new THREE.Vector3());
             plane.projectPoint(center, point);
-            cap.position.copy(point);
+            // A coplanar source face must not fight the cap for depth at the exact section boundary.
+            const surfaceOffset = Math.max(0.00001, radius * 0.00001);
+            cap.position.copy(point).addScaledVector(plane.normal, -surfaceOffset);
             target.copy(point).sub(plane.normal);
             cap.lookAt(target);
             cap.scale.setScalar(radius * 2);

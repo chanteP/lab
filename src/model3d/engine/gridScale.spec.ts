@@ -5,11 +5,11 @@ import { InfiniteGrid } from './viewport/InfiniteGrid';
 import { AXIS_COLORS } from '../config/colors';
 import * as THREE from 'three';
 
-test('grid scales by powers of ten when zooming out', () => {
+test('grid scales in five-times steps when zooming out', () => {
     assert.equal(gridStepForUnitsPerPixel(0.25), 10);
-    assert.equal(gridStepForUnitsPerPixel(0.51), 100);
-    assert.equal(gridStepForUnitsPerPixel(5.1), 1000);
-    assert.equal(gridStepForUnitsPerPixel(0.05), 1);
+    assert.equal(gridStepForUnitsPerPixel(0.51), 50);
+    assert.equal(gridStepForUnitsPerPixel(5.1), 250);
+    assert.equal(gridStepForUnitsPerPixel(0.05), 2);
 });
 
 test('scale bar uses integer grid segments near 150px', () => {

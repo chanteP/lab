@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AXIS_COLORS, VIEWPORT_COLORS } from '../../config/colors';
 
-/** World-space adaptive grid with 10x major lines and camera/viewport fading. */
+/** World-space adaptive grid with 5x major lines and camera/viewport fading. */
 export class InfiniteGrid {
     readonly mesh: THREE.Mesh;
     private readonly material: THREE.ShaderMaterial;
@@ -51,7 +51,7 @@ export class InfiniteGrid {
 
                 void main() {
                     float minor = gridLine(vGridPosition, uGridSize, 1.0);
-                    float major = gridLine(vGridPosition, uGridSize * 10.0, 1.25);
+                    float major = gridLine(vGridPosition, uGridSize * 5.0, 1.25);
                     float xAxis = 1.0 - min(abs(vGridPosition.y) / (fwidth(vGridPosition.y) * 1.5), 1.0);
                     float zAxis = 1.0 - min(abs(vGridPosition.x) / (fwidth(vGridPosition.x) * 1.5), 1.0);
                     float radiusFade = 1.0 - smoothstep(uFadeRadius * 2.0, uFadeRadius * 3.0, distance(vWorldPosition, uFadeCenter));

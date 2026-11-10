@@ -139,13 +139,14 @@ useEventListener(window, 'pointercancel', cancel);
         <svg class="sketch-guide-lines" :width="frame.width" :height="frame.height">
             <mask id="sketch-guide-handle-mask" maskUnits="userSpaceOnUse">
                 <rect :width="frame.width" :height="frame.height" fill="white" />
-                <circle v-for="(handle, index) in frame.handles" :key="index" :cx="handle.x" :cy="handle.y" r="9" fill="black" />
+                <circle v-for="(handle, index) in frame.handles" :key="index" :cx="handle.x" :cy="handle.y" r="12" fill="black" />
             </mask>
             <template v-for="guide in frame.guides" :key="guide.id">
                 <line
                     :x1="guide.axis === 'u' ? guide.x : 0" :y1="guide.axis === 'u' ? 0 : guide.y"
                     :x2="guide.axis === 'u' ? guide.x : frame.width" :y2="guide.axis === 'u' ? frame.height : guide.y"
                     class="sketch-guide-hit" :class="[guide.axis === 'u' ? 'vertical' : 'horizontal', { disabled: selectionTool === false, 'content-priority': hoverThrough === guide.id }]" role="button" :tabindex="selectionTool === false ? -1 : 0" aria-label="选择参考线"
+                    mask="url(#sketch-guide-handle-mask)"
                     @pointermove="hoverGuide($event, guide.id)" @pointerleave="hoverThrough = null"
                     @pointerdown="begin($event, undefined, guide)"
                     @keydown.enter.prevent="callbacks.onSketchGuideSelect(guide.id)"

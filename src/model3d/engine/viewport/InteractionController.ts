@@ -161,7 +161,6 @@ export class InteractionController {
         this.onPointerUp = this.onPointerUp.bind(this);
         this.onPointerCancel = this.onPointerCancel.bind(this);
         this.onDoubleClick = this.onDoubleClick.bind(this);
-        this.onContextMenu = this.onContextMenu.bind(this);
         this.onKeyDown = this.onKeyDown.bind(this);
         this.onKeyUp = this.onKeyUp.bind(this);
         this.onAltKey = this.onAltKey.bind(this);
@@ -173,7 +172,6 @@ export class InteractionController {
         canvas.addEventListener('pointerup', this.onPointerUp, true);
         canvas.addEventListener('pointercancel', this.onPointerCancel, true);
         canvas.addEventListener('pointerleave', this.onPointerLeave); canvas.addEventListener('dblclick', this.onDoubleClick);
-        canvas.addEventListener('contextmenu', this.onContextMenu);
         window.addEventListener('keydown', this.onKeyDown); window.addEventListener('keyup', this.onKeyUp);
         window.addEventListener('keydown', this.onAltKey); window.addEventListener('keyup', this.onAltKey);
         window.addEventListener('blur', this.onKeyUp); window.addEventListener('blur', this.onWindowBlur);
@@ -273,23 +271,24 @@ export class InteractionController {
 
     hasSketchContentAt(event: PointerEvent) {
         this.setPointer(event);
-        return !!(this.raycaster.intersectObjects(this.sketchRenderer.markers(), false)[0]
-            || this.raycaster.intersectObjects(this.sketchRenderer.borderTargets(), false)[0]);
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const markerHit = this.sketchRenderer.markers().some((marker) => {
+            const projected = marker.getWorldPosition(new THREE.Vector3()).project(this.camera);
+            const x = rect.left + (projected.x + 1) * rect.width / 2, y = rect.top + (1 - projected.y) * rect.height / 2;
+            return Math.hypot(event.clientX - x, event.clientY - y) <= 12;
+        });
+        if (markerHit) return true;
+        const previous = this.raycaster.params.Line.threshold;
+        this.raycaster.params.Line.threshold = this.sketchUnitsPerPixel() * 8;
+        const borderHit = this.raycaster.intersectObjects(this.sketchRenderer.borderTargets(), false)[0];
+        this.raycaster.params.Line.threshold = previous;
+        return !!borderHit;
     }
 
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') {
         if (phase === 'down') this.onPointerDown(event);
         else if (phase === 'move') this.onPointerMove(event);
         else this.onPointerUp(event);
-    }
-
-    private onContextMenu(event: MouseEvent) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (this.sketchMode) return;
-        if (Math.hypot(event.clientX - this.pointerStart.x, event.clientY - this.pointerStart.y) > 5) return;
-        const hit = this.hitEntity(event as unknown as PointerEvent);
-        this.callbacks.onViewportContext(hit?.object.userData.entityId || null, event.clientX, event.clientY);
     }
 
     private setPointer(event: PointerEvent | MouseEvent) {
@@ -1126,7 +1125,6 @@ export class InteractionController {
         canvas.removeEventListener('pointercancel', this.onPointerCancel, true);
         canvas.removeEventListener('pointerleave', this.onPointerLeave);
         canvas.removeEventListener('dblclick', this.onDoubleClick);
-        canvas.removeEventListener('contextmenu', this.onContextMenu);
         window.removeEventListener('keydown', this.onKeyDown);
         window.removeEventListener('keyup', this.onKeyUp);
         window.removeEventListener('keydown', this.onAltKey);

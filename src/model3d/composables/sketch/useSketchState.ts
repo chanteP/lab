@@ -19,7 +19,6 @@ export function useSketchState(document: Ref<ModelDocument>) {
     const selectedSketchPoint = ref(-1);
     const editingSketchId = ref<string | null>(null);
     const trimmedSelection = ref<TrimmedSelection | null>(null);
-    const sketchContextMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
     const selectedSketchSegments = ref<number[]>([]);
     const selectedShapes = ref<string[]>([]);
     const selectedEdges = ref<SketchElementRef[]>([]);
@@ -149,7 +148,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
 
     return {
         sketchMode, sketchType, sketchCurves, sketchSides, selectedSketchSegment, sketchPoints,
-        sketchDepth, selectedSketchPoint, editingSketchId, trimmedSelection, sketchContextMenu,
+        sketchDepth, selectedSketchPoint, editingSketchId, trimmedSelection,
         selectedSketchSegments, selectedShapes, selectedEdges, selectedPoints, activeConstraintRule,
         activeConstraintRuleData, sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, constraintLimit,

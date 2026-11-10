@@ -4,7 +4,7 @@ import { useStorage, useWindowSize } from '@vueuse/core';
 import * as THREE from 'three';
 import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
-    CloseOutline, EyeOutline, TrashOutline, ScanOutline,
+    TrashOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type EditPhase, type SketchDimension, type ViewTool, type ViewportCallbacks, type ViewportStats } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
@@ -64,7 +64,6 @@ const activePlaneId = ref<string | null>(null);
 const lastFace = ref<{ bodyId: string; normal: Vec3; point: Vec3 } | null>(null);
 const selectedProfileFace = ref<Point2[] | null>(null);
 const selectedFacePlanar = ref(false);
-const viewportMenu = ref<{ x: number; y: number; id: string | null } | null>(null);
 const activePanel = ref<PrimaryPanel | null>(null);
 const selectionKind = ref<SelectionKind>(null);
 const parameterCardOpen = ref(true);
@@ -90,7 +89,7 @@ const viewportStatus = computed(() => {
 const sketchState = useSketchState(document);
 const {
     sketchMode, sketchType, sketchSides, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
-    trimmedSelection, sketchContextMenu, selectedShapes, selectedEdges, selectedPoints,
+    trimmedSelection, selectedShapes, selectedEdges, selectedPoints,
     activeConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled, selectedSketchGuideId,
     sketchClosed, constraintSegmentCount,
     selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
@@ -177,7 +176,7 @@ const {
     beginSketch, refreshSketch: () => sketchSession.refreshSketch(),
 });
 const sketchEditing = useSketchEditing({
-    document, selectedIds, activePlaneId, activePlane, viewportMenu, state: sketchState,
+    document, selectedIds, activePlaneId, activePlane, state: sketchState,
     constraints: sketchConstraints, viewport: () => viewport, message, pushHistory, popHistory,
     refreshSketch: () => sketchSession.refreshSketch(),
     persistSketchProgress: (resetAfter) => sketchSession.persistSketchProgress(resetAfter),
@@ -186,7 +185,7 @@ const sketchEditing = useSketchEditing({
 });
 const {
     activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
-    openSketchContext, deleteSketchFromContext, addSketchPoint,
+    addSketchPoint,
     moveSketchPoint, finishSketchHandleDrag, moveSketchCenter, deleteSketchPoint, deleteSketchBorder,
     selectSketchSegment, moveSketchHandle, resetSketchHandle, selectSketchPoint,
     selectSketchPointRef, dragSketch, closeSketchPath, setSketchSides,
@@ -211,7 +210,7 @@ const {
     toggleAssetAspect, onSketchDrop,
 } = sketchAssets;
 const sketchAdvanced = useSketchAdvanced({
-    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedIds, lengthUnit, setLengthUnit,
+    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedIds, spaceActive, lengthUnit, setLengthUnit,
     viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
     refreshSketch, syncSketchFromDocument: sketchConstraints.syncLocalSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
 });
@@ -221,7 +220,6 @@ const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes
 function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
     activePanel.value = activePanel.value === panel ? null : panel;
-    viewportMenu.value = null;
 }
 function chooseTool(tool: ViewTool) {
     if (activeTool.value === tool && !operation.value) {
@@ -309,16 +307,8 @@ function updateDisplayMode(mode: DisplayMode) {
     displayMode.value = mode;
     viewport?.setDisplayMode(mode, showEdges.value);
 }
-function openViewportMenu(id: string | null, x: number, y: number) {
-    if (id && !selectedIds.value.includes(id)) {
-        selectedIds.value = [id];
-        selectionKind.value = document.value.entities.find((item) => item.id === id)?.kind === 'sketch' ? 'sketch' : 'body';
-    }
-    viewportMenu.value = { id, x: Math.min(x, window.innerWidth - 190), y: Math.min(y, window.innerHeight - 170) };
-}
 function zoomToSelection() {
     viewport?.fitSelection();
-    viewportMenu.value = null;
 }
 function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     const entity = document.value.entities.find((item) => item.id === id);
@@ -675,7 +665,6 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchClosePath: closeSketchPath,
         onSketchEntitySelect: selectSketchEntity,
         onSketchBorderSelect: selectTrimmedBorder,
-        onSketchContext: openSketchContext,
         onSketchCancelSelection: clearSketchSelection,
         onSketchCenterMove: moveSketchCenter,
         onSketchPointDelete: deleteSketchPoint,
@@ -697,7 +686,6 @@ const viewportCallbacks: ViewportCallbacks = {
         onBlankCommit,
         onMarqueeSelect,
         onHoverSketch,
-        onViewportContext: openViewportMenu,
         onSpaceChange: (active) => {
             spaceActive.value = active;
             if (active && transforming) {
@@ -748,7 +736,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="studio-shell" @click="contextMenu = null; viewportMenu = null; sketchContextMenu = null">
+    <div class="studio-shell" @click="contextMenu = null">
         <div class="workspace" :style="{ '--model3d-sidebar-width': `${sidebarWidth}px` }">
             <EntitySidebar v-model:width="sidebarWidth" :max-width="sidebarMaxWidth" :visible="true" :projects="projects" :project-id="project.id" :nodes="treeNodes" :selected-ids="selectedIds" :special-mode="sketchMode || symmetryActive"
                 :project-name="project.name" :saving="saveState === 'saving'" :can-undo="canUndo" :can-redo="canRedo" :exporting="exporting" :export-quality="exportQuality"
@@ -805,15 +793,6 @@ onBeforeUnmount(() => {
         </NModal>
         <div v-if="contextMenu" class="entity-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
             <button class="danger" @click="deleteContextNodes"><NIcon><TrashOutline /></NIcon>删除</button>
-        </div>
-        <div v-if="viewportMenu" class="entity-context-menu viewport-context-menu" :style="{ left: `${viewportMenu.x}px`, top: `${viewportMenu.y}px` }" @click.stop>
-            <button :disabled="!selectedIds.length" @click="toggleIsolate(); viewportMenu = null"><NIcon><EyeOutline /></NIcon>{{ isolateActive ? '退出隔离' : '隔离所选对象' }}</button>
-            <button :disabled="!selectedIds.length" @click="zoomToSelection"><NIcon><ScanOutline /></NIcon>缩放至所选对象</button>
-            <button v-if="selectionKind === 'face'" @click="beginSketch(); viewportMenu = null"><SvgIcon name="pencil" />在此面上绘制</button>
-        </div>
-        <div v-if="sketchContextMenu" class="entity-context-menu" :style="{ left: `${sketchContextMenu.x}px`, top: `${sketchContextMenu.y}px` }" @click.stop>
-            <button class="danger" @click="deleteSketchFromContext"><NIcon><TrashOutline /></NIcon>删除草图</button>
-            <button @click="clearSketchSelection"><NIcon><CloseOutline /></NIcon>取消选择</button>
         </div>
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">
             <div class="help-content">

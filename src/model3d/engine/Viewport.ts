@@ -49,7 +49,6 @@ export interface ViewportCallbacks {
     onSketchClosePath: () => void;
     onSketchEntitySelect: (id: string, additive: boolean) => void;
     onSketchBorderSelect: (entityId: string, index: number, additive: boolean) => void;
-    onSketchContext: (id: string | null, x: number, y: number) => void;
     onSketchCancelSelection: () => void;
     onSketchCenterMove: (point: Point2, phase: EditPhase) => void;
     onSketchPointDelete: (index: number) => void;
@@ -72,7 +71,6 @@ export interface ViewportCallbacks {
     onBlankCommit: () => void;
     onMarqueeSelect: (ids: string[], additive: boolean) => void;
     onHoverSketch: (id: string, normal: Vec3, point: Vec3) => void;
-    onViewportContext: (id: string | null, x: number, y: number) => void;
     onSpaceChange: (active: boolean) => void;
     onMeasureChange: (active: boolean) => void;
     onScale: (scale: { width: number; value: number; segments: number; gridSize: number }) => void;
@@ -445,6 +443,12 @@ export class Viewport {
     hasSketchContentAt(event: PointerEvent) { return this.interaction.hasSketchContentAt(event); }
     cancelSketchGesture() { this.interaction.cancelSketchGesture(); }
     forwardSketchPointer(event: PointerEvent, phase: 'down' | 'move' | 'up') { this.interaction.forwardSketchPointer(event, phase); }
+    forwardSpacePan(event: PointerEvent) {
+        this.engine.renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, cancelable: true, pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: event.isPrimary,
+            clientX: event.clientX, clientY: event.clientY, button: 0, buttons: 1,
+        }));
+    }
     forwardWheel(event: WheelEvent) {
         this.engine.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: event.deltaY, deltaMode: event.deltaMode, bubbles: true, cancelable: true }));
     }
