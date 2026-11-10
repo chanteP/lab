@@ -1,5 +1,6 @@
 import type { ModelEntity, Point2, SketchEdgeConstraint } from '../types';
 import type { ProfileCurves } from './profiles';
+import { rebaseProfileCubicCurves } from './sketchCurves';
 
 export type SketchConstraintType = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length' | 'angle';
 
@@ -194,6 +195,7 @@ export function solveSketchConstraints(
     });
 
     const changed = points.some((point, index) => distance(point, source[index]) > EPSILON);
+    rebaseProfileCubicCurves(curves, source, points);
     return { points, curves, changed };
 }
 

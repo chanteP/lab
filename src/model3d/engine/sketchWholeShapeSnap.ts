@@ -1,5 +1,5 @@
 import { entityProfileClosed } from './profiles';
-import type { ModelEntity, Point2 } from '../types';
+import type { ModelDocument, ModelEntity, Point2 } from '../types';
 
 /** Interaction metadata only; geometry and solving remain generic line/curve constraints. */
 export function isStandardClosedShape(entity: ModelEntity) {
@@ -11,6 +11,7 @@ export function isStandardClosedShape(entity: ModelEntity) {
 
 export function standardShapeCenter(entity: ModelEntity): Point2 | null {
     if (entity.trimmed || entity.parts?.length || !entity.points?.length) return null;
+    if (['circle', 'ellipse'].includes(entity.profileType || '')) return [...entity.points[0]];
     const type = entity.standardShape || (['rectangle', 'regular'].includes(entity.profileType || '') ? entity.profileType : null);
     if (!type) return null;
     if (type === 'regular' && !entity.standardShape) return [...entity.points[0]];
@@ -43,4 +44,15 @@ export function snapWholeShapeTranslation(source: Point2[], delta: Point2, snap:
     const winning = best as NonNullable<typeof best>;
     const snapped = snap(winning.raw);
     return [delta[0] + snapped[0] - winning.raw[0], delta[1] + snapped[1] - winning.raw[1]];
+}
+
+/** Overlapping untrimmed shapes remain selectable; fused/trimmed output has no standard-shape candidate. */
+export function standardShapeEntityFromFaces(document: ModelDocument, faces: { entityIds: string[] }[]) {
+    for (const face of faces) {
+        for (const id of face.entityIds) {
+            const entity = document.entities.find((item) => item.id === id);
+            if (entity && isStandardClosedShape(entity)) return entity;
+        }
+    }
+    return null;
 }

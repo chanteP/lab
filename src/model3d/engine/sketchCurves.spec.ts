@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collinearCubicCurve as collinearCubicCurveForTest, cubicCurveFromHandles as cubicCurveFromHandlesForTest, curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
+import { collinearCubicCurve as collinearCubicCurveForTest, cubicCurveFromHandles as cubicCurveFromHandlesForTest, rebaseCubicCurve as rebaseCubicCurveForTest, curveIntersections, curvePoint, curvePoints, nearestCurveT, reverseCurve, sliceCurve, translateCurve } from './sketchCurves';
 import type { SketchCurve } from '../types';
 
 const circle: SketchCurve = { kind: 'ellipse', center: [0, 0], radiusX: 10, radiusY: 10, rotation: 0, orientation: 1, startAngle: 0, endAngle: Math.PI * 2 };
@@ -52,4 +52,20 @@ test('Bezier handle dragging keeps non-collinear controls instead of snapping ba
     assert.deepEqual(curve.c1, [2, 18]);
     assert.deepEqual(curve.c2, [24, -8]);
     assert(curvePoints(curve).some((point) => Math.abs(30 * point[1] - 10 * point[0]) > 0.001));
+});
+
+test('endpoint motion preserves cubic handles in the normalized chord frame', () => {
+    const source = cubicCurveFromHandlesForTest([0, 0], [10, 0], { c1: [2, 4], c2: [8, -2] });
+    const moved = rebaseCubicCurveForTest(source, [0, 0], [10, 0], [5, 5], [5, 25]);
+    assertSamePoint(moved.a, [5, 5]);
+    assertSamePoint(moved.b, [5, 25]);
+    assertSamePoint(moved.c1, [-3, 9]);
+    assertSamePoint(moved.c2, [9, 21]);
+});
+
+test('straight cubic handles stay collinear after rotation and length changes', () => {
+    const source = collinearCubicCurveForTest([0, 0], [10, 0]);
+    const moved = rebaseCubicCurveForTest(source, [0, 0], [10, 0], [2, 3], [2, 23]);
+    assertSamePoint(moved.c1, [2, 3 + 20 / 3]);
+    assertSamePoint(moved.c2, [2, 3 + 40 / 3]);
 });

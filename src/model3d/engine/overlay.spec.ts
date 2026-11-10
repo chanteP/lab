@@ -23,3 +23,15 @@ test('a committed dimension value is not applied again by the following blur', a
     resetDimensionCommit(input);
     assert.equal(claimDimensionCommit(input, '5'), true);
 });
+
+test('external geometry changes invalidate stale dimension drafts but preserve active unchanged input', async () => {
+    const { reconcileDimensionDrafts } = await import('../components/viewport/dimensionCommit');
+    const drafts = new Map([['edge', '40']]), previous = new Map<string, number>();
+    reconcileDimensionDrafts([{ id: 'edge', value: 27.6 }], drafts, previous);
+    assert.equal(drafts.get('edge'), undefined);
+    drafts.set('edge', '40');
+    reconcileDimensionDrafts([{ id: 'edge', value: 27.6 }], drafts, previous);
+    assert.equal(drafts.get('edge'), '40');
+    reconcileDimensionDrafts([{ id: 'edge', value: 44.08 }], drafts, previous);
+    assert.equal(drafts.get('edge'), undefined);
+});

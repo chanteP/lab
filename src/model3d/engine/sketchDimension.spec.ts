@@ -295,3 +295,9 @@ test('an already horizontal edge still records its new horizontal rule without a
     assert.deepEqual(entity.points, before);
     assert.deepEqual(entity.edgeConstraints?.[0], [{ id: 'h', type: 'horizontal' }]);
 });
+
+test('segment length edit rebases existing cubic handles with the resized chord', () => {
+    const edit = editSketchDimension([[0, 0], [10, 0]], { 0: { c1: [2, 4], c2: [8, -4] } }, 360, { kind: 'segment', index: 0 }, 20);
+    closePoint(edit.curves[0].c1, [4, 8]);
+    closePoint(edit.curves[0].c2, [16, -8]);
+});

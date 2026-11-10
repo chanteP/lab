@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { cloneDocument, createDocument, createEntity, type Point2 } from '../types';
+import { convertSemanticShapeToConstrainedPolygon } from './sketchShapes';
+import { editSketchDimension } from './sketchDimension';
+import { sketchConstraintAnchorLevels, solveWithSketchConstraintCandidates } from './sketchConstraintChain';
+
+function closePoint(actual: Point2, expected: Point2) {
+    assert.ok(Math.hypot(actual[0] - expected[0], actual[1] - expected[1]) < 0.005, `${actual} != ${expected}`);
+}
+
+function rectangle() {
+    const document = createDocument();
+    const entity = createEntity('sketch', 'rectangle');
+    entity.profileType = 'rectangle';
+    entity.points = [[0, 0], [20, 0], [20, 20], [0, 20]];
+    entity.open = false;
+    convertSemanticShapeToConstrainedPolygon(entity);
+    document.entities.push(entity);
+    return { document, entity };
+}
+
+test('single rectangle edge dimension preserves height instead of accepting a smaller free-solve rectangle', () => {
+    const { document, entity } = rectangle();
+    const before = cloneDocument(document);
+    const edit = editSketchDimension([entity.points![0], entity.points![1]], {}, 360, { kind: 'segment', index: 0 }, 40);
+    entity.points![0] = edit.points[0];
+    entity.points![1] = edit.points[1];
+    const levels = sketchConstraintAnchorLevels(document, [], [{ entityId: entity.id, index: 0 }], { entityId: entity.id, index: 0, sourceCount: 1, kind: 'line' });
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100, { entityId: entity.id, ...edit.operation! });
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    [[0, 0], [40, 0], [40, 20], [0, 20]].forEach((point, index) => closePoint(points[index], point as Point2));
+});
+
+test('default rectangle corner drag keeps both adjacent corners and moves only the opposite corner', () => {
+    const { document, entity } = rectangle();
+    const before = cloneDocument(document);
+    entity.points![0] = [-5, -5];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    closePoint(points[0], [-5, -5]);
+    closePoint(points[1], [20, 0]);
+    closePoint(points[2], [25, 25]);
+    closePoint(points[3], [0, 20]);
+    closePoint(points.reduce((center, point) => [center[0] + point[0] / 4, center[1] + point[1] / 4], [0, 0] as Point2), [10, 10]);
+});
+
+test('explicit horizontal and vertical rectangle constraints remain hard during a corner drag', () => {
+    const { document, entity } = rectangle();
+    entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
+        ...entity.edgeConstraints![index] as any[],
+        { type: index % 2 === 0 ? 'horizontal' : 'vertical' },
+    ]]));
+    const before = cloneDocument(document);
+    entity.points![0] = [-5, -5];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    closePoint(points[0], [-5, -5]);
+    closePoint(points[1], [25, -5]);
+    closePoint(points[2], [25, 25]);
+    closePoint(points[3], [-5, 25]);
+    closePoint(points.reduce((center, point) => [center[0] + point[0] / 4, center[1] + point[1] / 4], [0, 0] as Point2), [10, 10]);
+});
+
+test('selected edge endpoints have priority over the current shape center', () => {
+    const { document, entity } = rectangle();
+    entity.edgeConstraints = Object.fromEntries(Array.from({ length: 4 }, (_, index) => [index, [
+        ...entity.edgeConstraints![index] as any[],
+        { type: index % 2 === 0 ? 'horizontal' : 'vertical' },
+    ]]));
+    const before = cloneDocument(document);
+    entity.points![0] = [-5, 0];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [{ entityId: entity.id, index: 1 }], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    const points = solved.document.entities[0].points!;
+    closePoint(points[0], [-5, 0]);
+    closePoint(points[1], [20, 0]);
+    closePoint(points[2], [20, 20]);
+    closePoint(points[3], [-5, 20]);
+});
+
+test('every fallback candidate retains the current operation point', () => {
+    const { document, entity } = rectangle();
+    const current = { entityId: entity.id, index: 0 };
+    const levels = sketchConstraintAnchorLevels(document, [current], [{ entityId: entity.id, index: 0 }], null);
+    assert.ok(levels.length > 1);
+    levels.forEach((level) => assert.ok(level.anchors.some((anchor) => anchor.entityId === current.entityId && anchor.index === current.index)));
+});
+
+test('regular polygon vertex drag preserves the shape center before non-dragged vertices', () => {
+    const document = createDocument();
+    const entity = createEntity('sketch', 'regular');
+    entity.profileType = 'regular';
+    entity.points = [[0, 0], [20, 0]];
+    entity.sides = 5;
+    convertSemanticShapeToConstrainedPolygon(entity);
+    document.entities.push(entity);
+    const before = cloneDocument(document);
+    const moved = entity.points![0];
+    entity.points![0] = [moved[0] + 4, moved[1] + 3];
+    const levels = sketchConstraintAnchorLevels(document, [{ entityId: entity.id, index: 0 }], [], null);
+    const solved = solveWithSketchConstraintCandidates(document, before, entity.id, levels, 100);
+    assert.equal(solved.result, 'ok');
+    closePoint(solved.document.entities[0].points![0], moved.map((value, index) => value + [4, 3][index]) as Point2);
+    const center = (points: Point2[]) => points.reduce((sum, point) => [sum[0] + point[0] / points.length, sum[1] + point[1] / points.length], [0, 0] as Point2);
+    closePoint(center(solved.document.entities[0].points!), center(before.entities[0].points!));
+});

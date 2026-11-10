@@ -6,7 +6,7 @@ import { borderEditingPoints, borderSegments, sliceBorder, sliceBorderCurve, spl
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { detachFeatureReferences } from '../../engine/modeling/FeatureReferences';
 import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
-import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, translateCurve } from '../../engine/sketchCurves';
+import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, rebaseProfileCubicCurves, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
 import { cloneDocument, createEntity, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
@@ -252,14 +252,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         }
         const previous = sketchPoints.value[index];
         const delta: Point2 = [point[0] - previous[0], point[1] - previous[1]];
-        const straightCurveSegments = new Set<number>();
-        Object.entries(sketchCurves.value).forEach(([key, curve]) => {
-            const segment = Number(key);
-            const a = sketchPoints.value[segment], b = sketchPoints.value[(segment + 1) % sketchPoints.value.length];
-            if (!a || !b) return;
-            const straight = [curve.c1, curve.c2].every((control) => Math.abs((b[0] - a[0]) * (control[1] - a[1]) - (b[1] - a[1]) * (control[0] - a[0])) < 0.0001);
-            if (straight) straightCurveSegments.add(segment);
-        });
+        const sourcePoints = sketchPoints.value.map((source) => [...source] as Point2);
         if (sketchType.value === 'ellipse' && (index === 1 || index === 2)) {
             const center = sketchPoints.value[0], first = sketchPoints.value[1], second = sketchPoints.value[2];
             const sign = Math.sign((first[0] - center[0]) * (second[1] - center[1]) - (first[1] - center[1]) * (second[0] - center[0])) || 1;
@@ -276,19 +269,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         } else if (index === 0 && ['circle', 'ellipse'].includes(sketchType.value)) {
             sketchPoints.value = sketchPoints.value.map((source) => [source[0] + delta[0], source[1] + delta[1]]);
         } else sketchPoints.value[index] = point;
-        const previousSegment = index === 0 && profileClosed(sketchType.value) && !sketchOpen.value ? sketchPoints.value.length - 1 : index - 1;
-        Object.entries(sketchCurves.value).forEach(([key, curve]) => {
-            const segment = Number(key);
-            if (segment === index) curve.c1 = [curve.c1[0] + delta[0], curve.c1[1] + delta[1]];
-            if (segment === previousSegment) curve.c2 = [curve.c2[0] + delta[0], curve.c2[1] + delta[1]];
-        });
-        [index, previousSegment].forEach((segment) => {
-            if (!straightCurveSegments.has(segment)) return;
-            const a = sketchPoints.value[segment], b = sketchPoints.value[(segment + 1) % sketchPoints.value.length];
-            const curve = sketchCurves.value[segment];
-            curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
-            curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
-        });
+        rebaseProfileCubicCurves(sketchCurves.value, sourcePoints, sketchPoints.value);
         if (phase === 'end' || !isTransforming()) {
             syncEditingSketch();
             if (sketchPoints.value.length >= 3) persistSketchProgress(false);
@@ -337,21 +318,8 @@ export function useSketchEditing(options: SketchEditingOptions) {
             selectedPoints.value.filter((item) => item.entityId === entityId).forEach(({ index }) => {
                 if (!next[index]) return;
                 next[index] = [next[index][0] + delta[0], next[index][1] + delta[1]];
-                if (curves[index]) curves[index].c1 = [curves[index].c1[0] + delta[0], curves[index].c1[1] + delta[1]];
-                if (curves[index - 1]) curves[index - 1].c2 = [curves[index - 1].c2[0] + delta[0], curves[index - 1].c2[1] + delta[1]];
             });
-            Object.entries(curves).forEach(([key, curve]) => {
-                const segment = Number(key), a = next[segment], b = next[(segment + 1) % next.length];
-                const baseA = base[segment], baseB = base[(segment + 1) % base.length];
-                const original = multiPointDrag!.curves.get(entityId)?.[segment];
-                if (!original || !a || !b || !baseA || !baseB) return;
-                const dx = baseB[0] - baseA[0], dy = baseB[1] - baseA[1];
-                const straight = [original.c1, original.c2].every((control) => Math.abs(dx * (control[1] - baseA[1]) - dy * (control[0] - baseA[0])) < 0.0001);
-                if (straight) {
-                    curve.c1 = [a[0] + (b[0] - a[0]) / 3, a[1] + (b[1] - a[1]) / 3];
-                    curve.c2 = [a[0] + (b[0] - a[0]) * 2 / 3, a[1] + (b[1] - a[1]) * 2 / 3];
-                }
-            });
+            rebaseProfileCubicCurves(curves, base, next);
             changes.set(entityId, { points: next, curves });
         });
         const current = changes.get(editingSketchId.value || '');

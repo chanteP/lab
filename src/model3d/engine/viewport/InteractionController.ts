@@ -20,7 +20,7 @@ import { DirectDragController } from './DirectDragController';
 import { GizmoDragController } from './GizmoDragController';
 import { SketchAssetDragController } from './SketchAssetDragController';
 import { SketchGuideController, type SketchGuideOptions } from './SketchGuideController';
-import { isStandardClosedShape, snapWholeShapeTranslation, wholeShapeControlPoints } from '../sketchWholeShapeSnap';
+import { isStandardClosedShape, snapWholeShapeTranslation, standardShapeEntityFromFaces, wholeShapeControlPoints } from '../sketchWholeShapeSnap';
 import type { InteractionOptions } from './InteractionOptions';
 
 function isVertexRoundingProxyHit(hit: THREE.Intersection | null) {
@@ -488,11 +488,9 @@ export class InteractionController {
     private standardSketchFaceEntity(event: PointerEvent) {
         if (!this.sketchSelectionTool) return null;
         this.setPointer(event);
-        const hit = this.raycaster.intersectObjects(this.sketchRenderer.faces.children.filter((object) => object.userData.sketchFace !== undefined), false)[0];
-        const ids = hit?.object.userData.sketchFaceEntityIds as string[] | undefined;
-        if (ids?.length !== 1) return null;
-        const entity = this.document?.entities.find((item) => item.id === ids[0]);
-        return entity && isStandardClosedShape(entity) ? entity : null;
+        const hits = this.raycaster.intersectObjects(this.sketchRenderer.faces.children.filter((object) => object.userData.sketchFace !== undefined), false);
+        if (!this.document) return null;
+        return standardShapeEntityFromFaces(this.document, hits.map((hit) => ({ entityIds: (hit.object.userData.sketchFaceEntityIds || []) as string[] })));
     }
 
     private onPointerDown(event: PointerEvent) {

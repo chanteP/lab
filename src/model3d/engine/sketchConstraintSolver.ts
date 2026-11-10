@@ -1,6 +1,8 @@
 import { constraintRules, entityConstraintSegment } from './sketchConstraints';
 import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchElementRef } from '../types';
 import type { SketchDimensionOperation } from './sketchDimension';
+import { rebaseEntityCubicCurves } from './sketchCurves';
+import { standardShapeCenter } from './sketchWholeShapeSnap';
 
 export const SKETCH_CONSTRAINT_TOLERANCE = 0.0001;
 
@@ -134,6 +136,24 @@ function operationRows(document: ModelDocument, entities: Map<string, ModelEntit
     return rows;
 }
 
+function centerRows(entities: Map<string, ModelEntity>, original: Map<string, Point2[]>, preservedCenters: string[], gestureBefore?: ModelDocument): ConstraintRow[] {
+    return preservedCenters.flatMap((entityId) => {
+        const entity = entities.get(entityId), before = original.get(entityId);
+        if (!entity?.points?.length || !before) return [];
+        const beforeEntity = gestureBefore?.entities.find((item) => item.id === entityId);
+        const center = standardShapeCenter(entity), initial = beforeEntity ? standardShapeCenter(beforeEntity) : standardShapeCenter({ ...entity, points: before });
+        if (!center || !initial) return [];
+        const semanticCenter = ['circle', 'ellipse', 'regular'].includes(entity.profileType || '');
+        const indices = semanticCenter ? [0] : entity.points.map((_, index) => index);
+        return ([0, 1] as Axis[]).map((axis) => ({
+            residual: center[axis] - initial[axis],
+            derivatives: indices.map((index) => ({
+                variable: { entityId, index, axis, initial: 0 }, value: 1 / indices.length,
+            })),
+        }));
+    });
+}
+
 function solveLinear(matrix: number[][], vector: number[]) {
     const size = vector.length;
     const a = matrix.map((row, index) => [...row, vector[index]]);
@@ -180,14 +200,21 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
     return new Map([...all].filter(([id]) => included.has(id)));
 }
 
+function implicitShapeRule(rule: Rule) {
+    const type = rule.entity.standardShape;
+    if (!type || rule.rule.reference?.entityId !== rule.entity.id) return false;
+    return type === 'rectangle' ? rule.rule.type === 'perpendicular' : rule.rule.type === 'equal' || rule.rule.type === 'angle';
+}
+
 /** Global Gauss-Newton solve; a dimension operation is exact, while persistent references are associations. */
-export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument): 'ok' | 'limit' | 'conflict' {
+export function solveDocumentConstraints(document: ModelDocument, rootId: string | null, preservedAnchors: SketchElementRef[], limit: number, operation?: SketchConstraintOperation, before?: ModelDocument, preservedCenters: string[] = [], relaxedShapes: string[] = []): 'ok' | 'limit' | 'conflict' {
     const grouped = relatedRules(document, rootId);
     if (grouped.size > limit) return 'limit';
-    const rules = [...grouped.values()].flat();
-    if (!rules.length && !operation) return 'ok';
+    const rules = [...grouped.values()].flat().filter((rule) => !relaxedShapes.includes(rule.entity.id) || !implicitShapeRule(rule));
+    if (!rules.length && !operation && !preservedCenters.length) return 'ok';
     const included = new Set(grouped.keys());
     if (operation) included.add(operation.entityId);
+    preservedCenters.forEach((entityId) => included.add(entityId));
     rules.forEach((rule) => { if (rule.rule.reference) included.add(rule.rule.reference.entityId); });
     const entities = new Map(document.entities.filter((entity) => included.has(entity.id) && entity.points).map((entity) => [entity.id, entity]));
     const original = new Map([...entities].map(([id, entity]) => [id, entity.points!.map((point) => [...point] as Point2)]));
@@ -204,7 +231,7 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
     })));
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-        const rows: ConstraintRow[] = operationRows(document, entities, original, operation);
+        const rows: ConstraintRow[] = [...operationRows(document, entities, original, operation), ...centerRows(entities, original, preservedCenters, before)];
         rules.forEach((rule) => {
             const value = residual(rule, document);
             if (value === null) return;
@@ -240,6 +267,10 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
         restore();
         return 'conflict';
     }
+    if (centerRows(entities, original, preservedCenters, before).some((row) => Math.abs(row.residual) > SKETCH_CONSTRAINT_TOLERANCE * 2)) {
+        restore();
+        return 'conflict';
+    }
     if (before && [...entities].some(([id, entity]) => {
         const source = before.entities.find((item) => item.id === id);
         return (entity.lockedPoints || []).some((index) => {
@@ -255,14 +286,8 @@ export function solveDocumentConstraints(document: ModelDocument, rootId: string
         (entity.lockedPoints || []).forEach((index) => {
             if (Math.hypot(entity.points![index][0] - before[index][0], entity.points![index][1] - before[index][1]) > SKETCH_CONSTRAINT_TOLERANCE) entity.points![index] = before[index];
         });
-        Object.entries(entity.analyticCurves || {}).forEach(([key, curve]) => {
-            if (curve.kind === 'ellipse') return;
-            const { a, b } = segment(entity, Number(key));
-            if (!a || !b) return;
-            // Constraint chords own endpoints only; cubic control handles never become solver variables.
-            curve.a = [...a];
-            curve.b = [...b];
-        });
+        // Endpoint changes rebase both analytic and legacy cubic handles in the same normalized chord frame.
+        rebaseEntityCubicCurves(entity, before);
     });
     return 'ok';
 }
