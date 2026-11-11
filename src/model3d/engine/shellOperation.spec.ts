@@ -41,7 +41,9 @@ function fixture() {
 test('shell start and thickness edits preview without touching the document or history', () => {
     const { document, operations, history, previews } = fixture();
     const before = JSON.stringify(document.value);
+    assert.equal(operations.active.value, false);
     operations.start();
+    assert.equal(operations.active.value, true);
     assert.equal(JSON.stringify(document.value), before);
     assert.equal(history(), 0);
     assert.equal(previews()?.length, 1);
@@ -54,6 +56,7 @@ test('shell start and thickness edits preview without touching the document or h
     assert.notEqual(JSON.stringify(document.value), before);
     assert(document.value.entities[0].meshGeometry);
     operations.finish();
+    assert.equal(operations.active.value, false);
     assert.equal(previews(), null);
 });
 

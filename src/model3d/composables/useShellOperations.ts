@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref, shallowRef, type Ref } from 'vue';
 import * as THREE from 'three';
 import type { useMessage } from 'naive-ui';
 import { buildEntityMesh } from '../engine/geometry';
@@ -30,8 +30,8 @@ type ShellSession = {
 export function useShellOperations(options: ShellOperationsOptions) {
     const { document, selectedIds, activeTool, viewport, message, pushHistory, popHistory, inputLength } = options;
     const thickness = ref(2);
-    let session: ShellSession | null = null;
-    const active = computed(() => !!session);
+    const session = shallowRef<ShellSession | null>(null);
+    const active = computed(() => !!session.value);
     const canShell = computed(() => options.canSelect() && !!viewport()?.getGeometryAnchors().length);
 
     function localOpenings(anchors: GeometryAnchor[], mesh: THREE.Mesh): ShellOpening[] {
@@ -82,7 +82,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
             anchors: anchors.map((anchor) => ({ ...anchor, vertices: anchor.vertices.map((point) => [...point]), indices: [...anchor.indices] })),
             previews: new Map(),
         };
-        session = current;
+        session.value = current;
         try {
             showPreview(current, thickness.value);
             activeTool.value = 'shell';
@@ -98,8 +98,8 @@ export function useShellOperations(options: ShellOperationsOptions) {
     }
 
     function update(value: number) {
-        if (!session || !(value > 0)) return;
-        try { showPreview(session, value); }
+        if (!session.value || !(value > 0)) return;
+        try { showPreview(session.value, value); }
         catch (error) { message.error(`抽壳预览失败：${error instanceof Error ? error.message : error}`); }
     }
 
@@ -121,7 +121,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
     }
 
     function commit() {
-        const current = session;
+        const current = session.value;
         if (!current) return false;
         const currentBodies = new Map<string, ModelEntity>();
         current.originals.forEach((_, id) => {
@@ -152,8 +152,8 @@ export function useShellOperations(options: ShellOperationsOptions) {
     }
 
     function finish() {
-        if (!session) return;
-        session = null;
+        if (!session.value) return;
+        session.value = null;
         viewport()?.setShellPreview(null);
     }
 

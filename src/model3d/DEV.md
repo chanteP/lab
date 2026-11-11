@@ -255,7 +255,7 @@
 ## 3D Shell 与多面选择
 
 - `engine/modeling/Shell.ts` 负责均匀内缩与开口切割；开口柱体保留所选面的世界/局部转换后的完整边界，起切深度等于壁厚，禁止伸入相邻保留壁。
-- `useShellOperations` 保存操作前实体与开口锚点，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，完成时才烘焙为 `meshGeometry` 并产生一步撤销，不叠加 parametric edge treatments。
+- `useShellOperations` 使用 `shallowRef` 保存 session，确保 OperationBar 的 `shellActive` 响应开始/取消；操作前实体与开口锚点随 session 保存，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，完成时才烘焙为 `meshGeometry` 并产生一步撤销，不叠加 parametric edge treatments。
 - `InteractionController.geometryAnchors` 保存多面选择，`GuideRenderer` 对每个面渲染 active feedback。Ctrl/Command 重复选择同一面只切换该面，App 不再通过 body id 的 toggle 处理这种多选。
 - `ShellOperationBar.vue` 提供厚度输入、完成和取消；Shell 不使用指针旁 `directFace` 尺寸输入。剖视封口同时采集提交实体与 Shell 预览网格，cap 不读写深度并使用高对比壁面材质，避免内表面遮挡截面壁。
 

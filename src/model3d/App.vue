@@ -154,6 +154,9 @@ function closeShell() {
 function completeShell() {
     if (commitShell()) closeShell();
 }
+function cancelShellForSelection() {
+    if (shellActive.value) closeShell();
+}
 
 const canRestoreTreatment = computed(() => {
     selectionKind.value;
@@ -342,10 +345,11 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
-function undoModel() { finishShell(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
-function redoModel() { finishShell(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
+function undoModel() { cancelShellForSelection(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
+function redoModel() { cancelShellForSelection(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
 
 function onMarqueeSelect(ids: string[], additive: boolean) {
+    cancelShellForSelection();
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
     selectionKind.value = selectedIds.value.length === 1 ? 'body' : selectedIds.value.length > 1 ? 'mixed' : null;
     activePanel.value = null;
@@ -353,6 +357,7 @@ function onMarqueeSelect(ids: string[], additive: boolean) {
     setTool(selectedIds.value.length === 1 ? 'translate' : 'select');
 }
 function onBlankCommit() {
+    cancelShellForSelection();
     if (operation.value) return doneOperation();
     if (activeTool.value === 'offsetFace') {
         setTool('select');
@@ -373,6 +378,7 @@ function setTool(tool: ViewTool) {
     viewport?.setTool(tool);
 }
 function selectFromItems(id: string | null, additive: boolean) {
+    cancelShellForSelection();
     finishDirectEdit();
     finishEdgeTreatment();
     if (!id) {
@@ -398,6 +404,7 @@ function selectFromItems(id: string | null, additive: boolean) {
     else if (entity && entity.kind !== 'boolean') setTool('translate');
 }
 function selectRangeFromItems(ids: string[]) {
+    cancelShellForSelection();
     finishDirectEdit();
     if (!ids.length) return;
     if (sketchMode.value) {
@@ -413,7 +420,7 @@ function selectRangeFromItems(ids: string[]) {
     setTool('select');
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
-    finishShell();
+    cancelShellForSelection();
     finishDirectEdit();
     finishEdgeTreatment();
     const picked = document.value.entities.find((item) => item.id === id);
@@ -440,6 +447,7 @@ function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: 
     setTool('select');
 }
 function onBodySelect(id: string) {
+    cancelShellForSelection();
     finishDirectEdit();
     finishEdgeTreatment();
     selectEntity(id);
@@ -663,7 +671,7 @@ function onSketchGuideDelete(id: string) {
 }
 
 const viewportCallbacks: ViewportCallbacks = {
-        onSelect: selectEntity,
+        onSelect: (id, additive) => { cancelShellForSelection(); selectEntity(id, additive); },
         onGeometrySelect,
         onBodySelect,
         onPlaneSelect: selectPlane,
