@@ -86,11 +86,11 @@ const viewportStatus = computed(() => {
     const dimensions = selection.size.map((value) => `${displayLength(value).toFixed(2)}${lengthUnit.value}`).join(' x ');
     return `${subject} · ${selection.triangles.toLocaleString()} 三角形 · ${dimensions}`;
 });
-const sketchState = useSketchState(document);
+const sketchState = useSketchState(document, activePlaneId);
 const {
     sketchMode, sketchType, sketchSides, sketchPoints, sketchDepth, selectedSketchPoint, editingSketchId,
     trimmedSelection, selectedShapes, selectedEdges, selectedPoints,
-    activeConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled, selectedSketchGuideId,
+    activeConstraintRule, hoverConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled, selectedSketchGuideId,
     sketchClosed, constraintSegmentCount,
     selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
     autoConstraintActive, selectedConstraintRuleItems,
@@ -591,6 +591,14 @@ function onSketchGuideChange(guide: SketchReferenceGuide, phase: EditPhase) {
 function onSketchGuideSnap(guide: SketchReferenceGuide, offset: number) {
     return viewport?.snapSketchGuideOffset(guide, offset) ?? offset;
 }
+function onSketchConstraintRuleHover(item: typeof selectedConstraintRuleItems.value[number] | null) {
+    hoverConstraintRule.value = item;
+    viewport?.setHoverConstraintRule(item);
+}
+function onSketchConstraintItemSelect(item: typeof selectedConstraintRuleItems.value[number]) {
+    if (item.lock === 'point') selectSketchPointRef(item.entityId, item.index);
+    else selectConstraintRule(item.entityId, item.index, item.ruleId || '');
+}
 function onSketchGuidePointer(event: PointerEvent, phase: 'down' | 'move') {
     if (!viewport?.hasSketchContentAt(event)) return false;
     viewport.forwardSketchPointer(event, phase);
@@ -661,6 +669,7 @@ const viewportCallbacks: ViewportCallbacks = {
         onSketchSelect: selectSketchPoint,
         onSketchPointRefSelect: selectSketchPointRef,
         onSketchConstraintRule: selectConstraintRule,
+        onSketchConstraintRuleHover,
         onSketchComplete: finishSketch,
         onSketchClosePath: closeSketchPath,
         onSketchEntitySelect: selectSketchEntity,
@@ -765,7 +774,7 @@ onBeforeUnmount(() => {
                     @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
-                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
+                    @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @select-rule="onSketchConstraintItemSelect" @hover-rule="onSketchConstraintRuleHover" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
                     :selected-profile-type="hintSketchProfileType" :has-selection="hintSketchHasSelection" />
                 <ModelingHints v-if="!sketchMode" :selection-kind="selectionKind" :active-tool="activeTool" :selected-count="selectedIds.length" :measure-mode="measureMode" :operation="operation" />

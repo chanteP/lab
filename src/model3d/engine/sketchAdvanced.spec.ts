@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
     clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
-    radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, supportsMirrorSymmetry, symmetryGuideEntities, symmetryRayAngles, symmetryTransform,
+    radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides, supportsMirrorSymmetry, symmetryGuideEntities, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
 import type { ModelEntity, Point2, SketchProfilePart } from '../types';
 import { computeSketchFaces } from './sketchFaces';
@@ -18,6 +18,17 @@ test('symmetry guides expose every evaluated point instead of only source editor
     assert.equal(guides.length, 4);
     assert.equal(guides.flatMap((entity) => entity.points || []).length, evaluated.reduce((sum, part) => sum + part.points.length, 0));
     assert.ok(guides.every((entity) => entity.planeId === 'plane' && entity.profileType === 'polygon'));
+});
+
+test('transform gestures recover translation, rotation and scale from operation point guides', () => {
+    const translated = snapTranslationToGuides([[0, 0]], [4.9, 0], () => [5, 0]);
+    closePoint(translated.delta, [5, 0]);
+
+    const rotated = snapRotationToGuides([[10, 0]], [0, 0], 40, () => [0, 10]);
+    assert.ok(Math.abs(rotated.degrees - 90) < 1e-7);
+
+    const scaled = snapScaleToGuides([[10, 0]], [0, 0], 1.9, () => [20, 0]);
+    assert.ok(Math.abs(scaled.scale - 2) < 1e-7);
 });
 
 test('clockwise sectors start at the positive Y axis and honor offset', () => {

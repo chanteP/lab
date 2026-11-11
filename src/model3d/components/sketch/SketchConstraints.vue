@@ -2,10 +2,11 @@
 import { NIcon, NSwitch } from 'naive-ui';
 import { CloseOutline, LockClosedOutline, LockOpenOutline } from '@vicons/ionicons5';
 import type { SketchConstraintType } from '../../engine/sketchConstraints';
+import type { ConstraintRuleListItem } from '../../types';
 import MinimalRange from '../ui/MinimalRange.vue';
 
-const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; rules: { id: string; label: string }[]; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean; assetSelected: boolean; aspectLocked: boolean }>();
-const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; deleteRule: [id: string]; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean]; aspect: [] }>();
+const props = defineProps<{ segmentCount: number; selectedPoint: number; selectionLocked: boolean; lengthLocked: boolean; edgeSelected: boolean; rules: ConstraintRuleListItem[]; constraintLimit: number; guideSnapEnabled: boolean; autoActive: boolean; horizontalActive: boolean; verticalActive: boolean; assetSelected: boolean; aspectLocked: boolean }>();
+const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; deleteRule: [id: string]; selectRule: [rule: ConstraintRuleListItem]; hoverRule: [rule: ConstraintRuleListItem | null]; 'update:constraintLimit': [value: number]; 'update:guideSnapEnabled': [value: boolean]; aspect: [] }>();
 </script>
 
 <template>
@@ -21,7 +22,7 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; d
         <button :disabled="segmentCount < 2" @click="emit('constraint', 'equal')">等长</button>
         <button :disabled="!segmentCount" @click="emit('constraint', 'length')">{{ lengthLocked ? '取消长度固定' : '固定长度' }}</button>
         <button :disabled="selectedPoint < 0 && !edgeSelected" @click="emit('lock')"><NIcon><component :is="selectionLocked ? LockOpenOutline : LockClosedOutline" /></NIcon>{{ selectionLocked ? '取消固定' : '固定' }}</button>
-        <div v-if="rules.length" class="constraint-rules"><div class="constraint-rules-title">当前规则</div><div v-for="rule in rules" :key="rule.id" class="constraint-rule"><span>{{ rule.label }}</span><button class="constraint-rule-delete" :aria-label="`删除${rule.label}规则`" @click="emit('deleteRule', rule.id)"><NIcon><CloseOutline /></NIcon></button></div></div>
+        <div v-if="rules.length" class="constraint-rules"><div class="constraint-rules-title">全部规则</div><div class="constraint-rules-list"><div v-for="rule in rules" :key="rule.id" class="constraint-rule" @mouseenter="emit('hoverRule', rule)" @mouseleave="emit('hoverRule', null)" @focusin="emit('hoverRule', rule)" @focusout="emit('hoverRule', null)"><button class="constraint-rule-select" @click="emit('selectRule', rule)">{{ rule.label }}</button><button class="constraint-rule-delete" :aria-label="`删除${rule.label}规则`" @click="emit('deleteRule', rule.id)"><NIcon><CloseOutline /></NIcon></button></div></div></div>
         <div class="constraint-state"><i :class="{ locked: selectionLocked }"></i>{{ selectionLocked ? (selectedPoint >= 0 ? '所选点已固定' : '所选边端点已固定') : '约束修改会保留固定点' }}</div>
         <div class="constraint-limit"><label for="constraint-limit-range">约束传播 <output>{{ constraintLimit }}</output></label><MinimalRange id="constraint-limit-range" :min="10" :max="100" :value="constraintLimit" aria-label="约束传播检查上限" @update:value="emit('update:constraintLimit', $event)" /></div>
         </template>
@@ -48,7 +49,10 @@ button:disabled { opacity: .3; cursor: default; }
 .constraint-state i.locked { background: var(--model3d-ui-54a184); }
 .constraint-rules { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--model3d-ui-e4eae6); }
 .constraint-rules-title { margin-bottom: 5px; color: var(--model3d-ui-8a968f); font-size: 9px; }
+.constraint-rules-list { max-height: 180px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .constraint-rule { display: flex; align-items: center; justify-content: space-between; min-height: 25px; color: var(--model3d-ui-147d70); font-size: 10px; }
+.constraint-rule:hover, .constraint-rule:focus-within { background: var(--model3d-ui-0000000a); }
+button.constraint-rule-select { flex: 1; justify-content: flex-start; min-width: 0; margin: 0; padding-left: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.constraint-rule-delete { width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 0; padding: 2px; border-radius: 5px; background: var(--model3d-ui-c45757); color: var(--model3d-ui-fff); }
 button.constraint-rule-delete:hover { background: var(--model3d-ui-df4b5a); color: var(--model3d-ui-fff); }
 .constraint-limit { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e4eae6); }

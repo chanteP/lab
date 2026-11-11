@@ -6,11 +6,12 @@ import { computeSketchFaces, type SketchFace } from '../sketchFaces';
 import type { SketchGuideResult } from '../sketchGuides';
 import { SKETCH_COLORS } from '../../config/colors';
 import { SKETCH_STYLE } from '../../config/const';
-import type { LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, SketchEdgeConstraint, SketchPlane } from '../../types';
+import type { ConstraintRuleListItem, LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, SketchEdgeConstraint, SketchPlane } from '../../types';
 import type { SketchDimension } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
 import { sketchDimensionEdgeKey, type OverlayController } from './OverlayController';
 import { standardShapeCenter } from '../sketchWholeShapeSnap';
+import { constraintRules } from '../sketchConstraints';
 
 type SketchDragState = { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; moved: boolean } | null;
 
@@ -42,6 +43,7 @@ export class SketchRenderer {
     selectedEdgeRefs: SketchElementRef[] = [];
     selectedPointRefs: SketchElementRef[] = [];
     activeConstraintRule: { entityId: string; index: number; ruleId: string } | null = null;
+    hoverConstraintRule: ConstraintRuleListItem | null = null;
     hoverSketchFace: THREE.Mesh | null = null;
     selectedSketchPoint = -1;
     activeSketchSegment = -1;
@@ -138,6 +140,11 @@ export class SketchRenderer {
         this.refreshSelectionFeedback();
     }
 
+    setHoverConstraintRule(selection: ConstraintRuleListItem | null) {
+        this.hoverConstraintRule = selection;
+        this.refreshSelectionFeedback();
+    }
+
     refreshSelectionFeedback() {
         clearGroup(this.selectionFeedback);
         this.options.overlay.clear('sketch-lock:');
@@ -161,7 +168,15 @@ export class SketchRenderer {
                 rules.forEach((rule, order) => this.addLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true, rule, order));
             });
         });
-        this.selectedEdgeRefs.forEach(({ entityId, index }, order) => {
+        const highlightedEdges = [...this.selectedEdgeRefs];
+        const preview = this.hoverConstraintRule;
+        if (preview && preview.lock !== 'point') highlightedEdges.push({ entityId: preview.entityId, index: preview.index });
+        if (preview?.ruleId) {
+            const entity = document.entities.find((item) => item.id === preview.entityId);
+            const rule = constraintRules(entity?.edgeConstraints?.[preview.index]).find((item) => item.id === preview.ruleId);
+            if (rule?.reference) highlightedEdges.push(rule.reference);
+        }
+        highlightedEdges.forEach(({ entityId, index }, order) => {
             const entity = document.entities.find((item) => item.id === entityId);
             const segment = entity && borderSegments(entity).find((item) => item.index === index);
             if (!segment) return;
@@ -172,7 +187,9 @@ export class SketchRenderer {
             line.renderOrder = 1005;
             this.selectionFeedback.add(line);
         });
-        this.selectedPointRefs.forEach(({ entityId, index }) => {
+        const highlightedPoints = [...this.selectedPointRefs];
+        if (preview?.lock === 'point') highlightedPoints.push({ entityId: preview.entityId, index: preview.index });
+        highlightedPoints.forEach(({ entityId, index }) => {
             const drag = this.options.getSketchDrag();
             if (drag?.moved && entityId === this.options.getEditingSketchId() && index === drag.index) return;
             const entity = document.entities.find((item) => item.id === entityId);

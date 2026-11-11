@@ -8,7 +8,7 @@ import type {
 } from '../../types';
 
 /** Sketch draft, selection and derived constraint display state. */
-export function useSketchState(document: Ref<ModelDocument>) {
+export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref<string | null>) {
     const sketchMode = ref(false);
     const sketchType = ref<ProfileType>('polygon');
     const sketchCurves = ref<ProfileCurves>({});
@@ -24,6 +24,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
     const selectedEdges = ref<SketchElementRef[]>([]);
     const selectedPoints = ref<SketchElementRef[]>([]);
     const activeConstraintRule = ref<{ entityId: string; index: number; ruleId: string } | null>(null);
+    const hoverConstraintRule = ref<ConstraintRuleListItem | null>(null);
     const sketchLockedPoints = ref<number[]>([]);
     const sketchSectorAngle = ref(360);
     const sketchOpen = ref(false);
@@ -132,15 +133,18 @@ export function useSketchState(document: Ref<ModelDocument>) {
             }));
         };
 
-        if (selectedPoints.value.length) selectedPoints.value.forEach(({ entityId, index }) => addPoint(entityId, index));
-        else if (selectedEdges.value.length) selectedEdges.value.forEach(({ entityId, index }) => addEdge(entityId, index));
-        else selectedShapes.value.forEach((entityId) => {
-            const entity = document.value.entities.find((item) => item.id === entityId);
-            if (!entity?.points) return;
+        document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.points && (!activePlaneId?.value || entity.planeId === activePlaneId.value)).forEach((entity) => {
+            const entityId = entity.id;
             const covered = new Set<string>();
             const edges = new Set([...Object.keys(entity.edgeConstraints || {}).map(Number), ...(entity.constraintEdges || [])]);
             edges.forEach((index) => addEdge(entityId, index, covered));
             entity.lockedPoints?.forEach((index) => addPoint(entityId, index, covered));
+        });
+        items.forEach((item) => {
+            if (!item.ruleId) return;
+            const entity = document.value.entities.find((candidate) => candidate.id === item.entityId);
+            const rule = constraintRules(entity?.edgeConstraints?.[item.index]).find((candidate) => candidate.id === item.ruleId);
+            if (rule?.type === 'angle') item.label = `角度 ${Number(((rule.angle || 0) * 180 / Math.PI).toFixed(2))}°`;
         });
         return items;
     });
@@ -149,7 +153,7 @@ export function useSketchState(document: Ref<ModelDocument>) {
     return {
         sketchMode, sketchType, sketchCurves, sketchSides, selectedSketchSegment, sketchPoints,
         sketchDepth, selectedSketchPoint, editingSketchId, trimmedSelection,
-        selectedSketchSegments, selectedShapes, selectedEdges, selectedPoints, activeConstraintRule,
+        selectedSketchSegments, selectedShapes, selectedEdges, selectedPoints, activeConstraintRule, hoverConstraintRule,
         activeConstraintRuleData, sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, sketchAppendMode, sketchSelectionTool, constraintLimit,
         sketchGuideSnapEnabled, selectedSketchGuideId, sketchGesture, sketchClosed, selectedPointLocked, constraintSegmentCount,

@@ -6,6 +6,7 @@ import {
     cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
     regenerateProfilePart, rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
     symmetryGuideEntities,
+    snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
@@ -251,7 +252,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             curve.c2 = mapPoint(curve.c2);
         });
     }
-    function snapCenterPoint(point: Point2): Point2 {
+    function snapCenterPoint(point: Point2, excludeEntityIds: string[] = []): Point2 {
         centerSnapMatches.value = [];
         if (!sketchGuideSnapEnabled.value) return point;
         const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
@@ -268,10 +269,16 @@ export function useSketchAdvanced(options: AdvancedOptions) {
                 offset[0] * plane.v[0] + offset[1] * plane.v[1] + offset[2] * plane.v[2],
             ] as Point2 },
         ];
-        const match = matchSketchGuide({ entities, point, origins, threshold: (viewport()?.sketchUnitsPerPixel() || 0.1) * 8 });
+        const match = matchSketchGuide({ entities, point, origins, excludeEntityIds, threshold: (viewport()?.sketchUnitsPerPixel() || 0.1) * 8 });
         if (!match) return point;
         centerSnapMatches.value = match.matches;
         return match.point;
+    }
+    function transformSourcePoints(current: Gesture) {
+        const parts = symmetry.value
+            ? current.workingBefore!.filter((_, index) => workingSelection.value.includes(index))
+            : [...current.before!.values()].flat();
+        return parts.flatMap((part) => part.editor?.source || part.points);
     }
     function transformAt(point: Point2, final = false) {
         const current = gesture;
@@ -281,23 +288,32 @@ export function useSketchAdvanced(options: AdvancedOptions) {
             return;
         }
         const center = current.center!;
+        const sourcePoints = transformSourcePoints(current);
+        const guideSnap = (probe: Point2) => snapCenterPoint(probe, symmetry.value ? [] : selectedShapes.value);
         let mapper: (part: SketchProfilePart) => SketchProfilePart;
         if (current.kind === 'translate-x' || current.kind === 'translate-y') {
-            const delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
+            let delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
             if (current.kind === 'translate-x') delta[1] = 0;
             else delta[0] = 0;
+            const snapped = snapTranslationToGuides(sourcePoints, delta, guideSnap);
+            delta = snapped.delta;
+            if (current.kind === 'translate-x') delta[1] = 0;
+            else delta[0] = 0;
+            guideSnap(snapped.probe);
             transformCenter.value = [center[0] + delta[0], center[1] + delta[1]];
             mapper = (part) => translateProfilePart(part, delta);
         } else if (current.kind === 'rotate') {
             const angle = Math.atan2(point[1] - center[1], point[0] - center[0]);
-            const degrees = (angle - current.angle!) * 180 / Math.PI;
-            transformInput.value.angle = degrees;
-            mapper = (part) => rotateProfilePart(part, center, degrees);
+            const degrees = snapRotationToGuides(sourcePoints, center, (angle - current.angle!) * 180 / Math.PI, guideSnap);
+            guideSnap(degrees.probe);
+            transformInput.value.angle = degrees.degrees;
+            mapper = (part) => rotateProfilePart(part, center, degrees.degrees);
         } else {
             const distance = Math.hypot(point[0] - center[0], point[1] - center[1]);
-            const scale = Math.max(0.01, distance / Math.max(current.distance!, 0.0001));
-            transformInput.value.scale = scale;
-            mapper = (part) => scaleProfilePart(part, center, scale);
+            const scale = snapScaleToGuides(sourcePoints, center, Math.max(0.01, distance / Math.max(current.distance!, 0.0001)), guideSnap);
+            guideSnap(scale.probe);
+            transformInput.value.scale = scale.scale;
+            mapper = (part) => scaleProfilePart(part, center, scale.scale);
         }
         if (symmetry.value) {
             const next = current.workingBefore!.map((part, index) => workingSelection.value.includes(index) ? mapper(part) : cloneProfilePart(part));

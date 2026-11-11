@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import type { ProfileType, ProfileCurves } from './profiles';
-import type { DisplayMode, LengthUnit, ModelDocument, OperationState, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef, SketchReferenceGuide } from '../types';
+import type { ConstraintRuleListItem, DisplayMode, LengthUnit, ModelDocument, OperationState, Point2, SelectionKind, SketchPlane, Vec3, SketchElementRef, SketchReferenceGuide } from '../types';
 import { ViewportEngine } from './viewport/ViewportEngine';
 import { CameraController, type ProjectionMode } from './viewport/CameraController';
 import { SceneSynchronizer } from './viewport/SceneSynchronizer';
@@ -45,6 +45,7 @@ export interface ViewportCallbacks {
     onSketchSelect: (index: number, additive: boolean) => void;
     onSketchPointRefSelect: (entityId: string, index: number) => void;
     onSketchConstraintRule: (entityId: string, index: number, ruleId: string) => void;
+    onSketchConstraintRuleHover: (item: ConstraintRuleListItem | null) => void;
     onSketchComplete: () => void;
     onSketchClosePath: () => void;
     onSketchEntitySelect: (id: string, additive: boolean) => void;
@@ -292,6 +293,7 @@ export class Viewport {
     }
     setSketchSelectionState(edges: SketchElementRef[], points: SketchElementRef[]) { this.sketchRenderer.setSelectionState(edges, points); }
     setActiveConstraintRule(selection: { entityId: string; index: number; ruleId: string } | null) { this.sketchRenderer.setActiveConstraintRule(selection); }
+    setHoverConstraintRule(selection: ConstraintRuleListItem | null) { this.sketchRenderer.setHoverConstraintRule(selection); }
     clearGeometrySelection() {
         this.interaction.clearGeometrySelection();
         this.publishStats();

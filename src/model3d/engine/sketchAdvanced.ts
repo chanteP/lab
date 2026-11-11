@@ -94,6 +94,69 @@ export function scaleProfilePart(part: SketchProfilePart, center: Point2, scale:
     return mapProfilePart(part, ([x, y]) => [center[0] + (x - center[0]) * scale, center[1] + (y - center[1]) * scale]);
 }
 
+export type TransformGuideSnap = (point: Point2) => Point2;
+
+/** Use transformed operation points to recover a guide-aligned translation. */
+export function snapTranslationToGuides(points: Point2[], delta: Point2, snap: TransformGuideSnap) {
+    let best = delta, probe: Point2 = points[0] ? [points[0][0] + delta[0], points[0][1] + delta[1]] : [0, 0];
+    let correction = Infinity;
+    points.forEach((point) => {
+        const candidate: Point2 = [point[0] + delta[0], point[1] + delta[1]];
+        const target = snap(candidate);
+        if (Math.hypot(target[0] - candidate[0], target[1] - candidate[1]) < 1e-7) return;
+        const distance = Math.hypot(target[0] - candidate[0], target[1] - candidate[1]);
+        if (distance >= correction) return;
+        correction = distance;
+        best = [delta[0] + target[0] - candidate[0], delta[1] + target[1] - candidate[1]];
+        probe = candidate;
+    });
+    return { delta: best, probe };
+}
+
+/** Recover the nearest angle that rotates any operation point onto a guide target. */
+export function snapRotationToGuides(points: Point2[], center: Point2, degrees: number, snap: TransformGuideSnap) {
+    let best = degrees, probe: Point2 = points[0] ? rotateProfilePart({ points: [points[0]], closed: false }, center, degrees).points[0] : [...center];
+    let correction = Infinity;
+    points.forEach((point) => {
+        if (Math.hypot(point[0] - center[0], point[1] - center[1]) < 1e-7) return;
+        const candidate = rotateProfilePart({ points: [point], closed: false }, center, degrees).points[0];
+        const target = snap(candidate);
+        if (Math.hypot(target[0] - candidate[0], target[1] - candidate[1]) < 1e-7) return;
+        if (Math.hypot(target[0] - center[0], target[1] - center[1]) < 1e-7) return;
+        const sourceAngle = Math.atan2(point[1] - center[1], point[0] - center[0]);
+        const targetAngle = Math.atan2(target[1] - center[1], target[0] - center[0]);
+        const rawTarget = (targetAngle - sourceAngle) * 180 / Math.PI;
+        const aligned = rawTarget + 360 * Math.round((degrees - rawTarget) / 360);
+        const distance = Math.abs(aligned - degrees);
+        if (distance >= correction) return;
+        correction = distance;
+        best = aligned;
+        probe = candidate;
+    });
+    return { degrees: best, probe };
+}
+
+/** Recover the nearest scale that moves any operation point onto a guide target. */
+export function snapScaleToGuides(points: Point2[], center: Point2, scale: number, snap: TransformGuideSnap) {
+    let best = scale, probe: Point2 = points[0] ? scaleProfilePart({ points: [points[0]], closed: false }, center, scale).points[0] : [...center];
+    let correction = Infinity;
+    points.forEach((point) => {
+        const radius = Math.hypot(point[0] - center[0], point[1] - center[1]);
+        if (radius < 1e-7) return;
+        const candidate = scaleProfilePart({ points: [point], closed: false }, center, scale).points[0];
+        const target = snap(candidate);
+        if (Math.hypot(target[0] - candidate[0], target[1] - candidate[1]) < 1e-7) return;
+        const targetRadius = Math.hypot(target[0] - center[0], target[1] - center[1]);
+        const aligned = Math.max(0.01, targetRadius / radius);
+        const distance = Math.abs(aligned - scale);
+        if (distance >= correction) return;
+        correction = distance;
+        best = aligned;
+        probe = candidate;
+    });
+    return { scale: best, probe };
+}
+
 export function clockwiseRotation(degrees: number): PointTransform {
     const angle = degrees * Math.PI / 180;
     const cos = Math.cos(angle), sin = Math.sin(angle);

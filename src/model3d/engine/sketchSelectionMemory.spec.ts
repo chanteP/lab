@@ -35,3 +35,19 @@ test('constraint edge and shape ownership survives handle selection and clears o
     listeners.get('blur')?.();
     assert.deepEqual(state.constraintAnchorSelection.shapeIds, []);
 });
+
+test('constraint panel lists every rule with readable angle values', () => {
+    const document = ref(createDocument());
+    const shape = createEntity('sketch', 'shape');
+    shape.points = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    shape.edgeConstraints = { 0: { id: 'angle', type: 'angle', angle: Math.PI / 2, reference: { entityId: shape.id, index: 3 } } };
+    document.value.entities.push(shape);
+    const state = useSketchState(document);
+    state.selectedShapes.value = [];
+    state.selectedEdges.value = [];
+
+    const rules = state.selectedConstraintRuleItems.value;
+    assert.equal(rules.length, 1);
+    assert.equal(rules[0].label, '角度 90°');
+    assert.equal(rules[0].ruleId, 'angle');
+});
