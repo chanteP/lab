@@ -5,12 +5,13 @@ import type { ProfileType } from '../../engine/profiles';
 import {
     cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, sketchTransformCenter, supportsMirrorSymmetry, symmetryRayAngles,
     regenerateProfilePart, rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
+    sketchOperationPoints, transformOperationCenter,
     symmetryGuideEntities,
     snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides,
     type SymmetryMode,
 } from '../../engine/sketchAdvanced';
 import { SKETCH_COLORS, VIEWPORT_COLORS } from '../../config/colors';
-import { createEntity, type LengthUnit, type ModelDocument, type ModelEntity, type Point2, type SketchProfilePart } from '../../types';
+import { createEntity, type LengthUnit, type ModelDocument, type ModelEntity, type Point2, type SketchElementRef, type SketchProfilePart } from '../../types';
 import { uid } from '../../utils/id';
 import { uniqueSketchName } from '../../utils/entity';
 import { profilePoints } from '../../engine/profiles';
@@ -50,6 +51,8 @@ interface AdvancedOptions {
     sketchSelectionTool: Ref<boolean>;
     sketchGuideSnapEnabled: Ref<boolean>;
     selectedShapes: Ref<string[]>;
+    selectedEdges: Ref<SketchElementRef[]>;
+    selectedPoints: Ref<SketchElementRef[]>;
     selectedIds: Ref<string[]>;
     spaceActive: Ref<boolean>;
     lengthUnit: Ref<LengthUnit>;
@@ -69,7 +72,7 @@ interface AdvancedOptions {
 export function useSketchAdvanced(options: AdvancedOptions) {
     const {
         document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool,
-        sketchGuideSnapEnabled, selectedShapes, selectedIds, spaceActive, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
+        sketchGuideSnapEnabled, selectedShapes, selectedEdges, selectedPoints, selectedIds, spaceActive, lengthUnit, setLengthUnit, viewport, message, pushHistory, setTransforming,
         refreshSketch, syncSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
     } = options;
     const symmetry = ref<SymmetrySession | null>(null);
@@ -102,14 +105,15 @@ export function useSketchAdvanced(options: AdvancedOptions) {
     });
 
     function selectedEntities() {
-        return selectedShapes.value.map((id) => document.value.entities.find((entity) => entity.id === id)).filter(Boolean) as ModelEntity[];
+        const ids = selectedShapes.value.length ? selectedShapes.value : [...new Set([...selectedEdges.value, ...selectedPoints.value].map((item) => item.entityId))];
+        return ids.map((id) => document.value.entities.find((entity) => entity.id === id)).filter(Boolean) as ModelEntity[];
     }
     function currentParts() {
         if (symmetry.value) return workingSelection.value.map((index) => workingParts.value[index]).filter(Boolean);
         return selectedEntities().flatMap((entity) => entityProfileParts(entity));
     }
     function resetTransformValue() {
-        const center = symmetry.value ? profilePartsCenter(currentParts()) : sketchTransformCenter(selectedEntities(), currentParts());
+        const center = symmetry.value ? profilePartsCenter(currentParts()) : transformOperationCenter(selectedEntities(), currentParts(), selectedEdges.value, selectedPoints.value);
         transformCenter.value = center;
         transformInput.value = { x: center[0], y: center[1], angle: 0, scale: 1 };
     }
@@ -163,7 +167,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         if (draft.value && draft.value.points.length >= 2) source.push(cloneProfilePart(draft.value));
         const parts = radialSymmetry(source, session.count, session.offset, session.selectedSector, session.mode);
         if (!parts.length) {
-            message.warning('选中区域内还没有可完成的对称内容');
+            message.warning('选中区域内还没有可完成的镜像内容');
             return;
         }
         pushHistory();
@@ -275,9 +279,8 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         return match.point;
     }
     function transformSourcePoints(current: Gesture) {
-        const parts = symmetry.value
-            ? current.workingBefore!.filter((_, index) => workingSelection.value.includes(index))
-            : [...current.before!.values()].flat();
+        if (!symmetry.value) return selectedEntities().flatMap(sketchOperationPoints);
+        const parts = current.workingBefore!.filter((_, index) => workingSelection.value.includes(index));
         return parts.flatMap((part) => part.editor?.source || part.points);
     }
     function transformAt(point: Point2, final = false) {
@@ -289,7 +292,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
         const center = current.center!;
         const sourcePoints = transformSourcePoints(current);
-        const guideSnap = (probe: Point2) => snapCenterPoint(probe, symmetry.value ? [] : selectedShapes.value);
+        const guideSnap = (probe: Point2) => snapCenterPoint(probe, symmetry.value ? [] : selectedEntities().map((entity) => entity.id));
         let mapper: (part: SketchProfilePart) => SketchProfilePart;
         if (current.kind === 'translate-x' || current.kind === 'translate-y') {
             let delta: Point2 = [point[0] - current.startPoint[0], point[1] - current.startPoint[1]];
@@ -895,20 +898,26 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         }
     }
 
-    watch([selectedShapes, activeTool], () => {
+    function prepareTransform() {
+        gesture = null;
+        editGesture = null;
+        resetTransformValue();
+    }
+
+    watch([selectedShapes, selectedEdges, selectedPoints, activeTool], () => {
         if (gesture) return;
         editGesture = null;
         draft.value = null;
         draftStart.value = null;
         pendingShape = false;
         resetTransformValue();
-    }, { deep: true });
+    }, { deep: true, flush: 'sync' });
     watch(() => symmetry.value?.step, () => resetTransformValue());
 
     return {
         symmetry, symmetryActive, transformActive, overlayActive, transformInput, inputPositions, lengthUnit,
         startSymmetry, cancelSymmetry, nextSymmetryStep, updateSymmetry, setTransformInput,
-        pointerDown, pointerMove, pointerUp, pointerLeave, wheel, changeLengthUnit, doubleClick, contextMenu, render,
+        prepareTransform, pointerDown, pointerMove, pointerUp, pointerLeave, wheel, changeLengthUnit, doubleClick, contextMenu, render,
     };
 }
 

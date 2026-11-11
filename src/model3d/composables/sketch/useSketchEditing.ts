@@ -5,7 +5,7 @@ import { entityProfileClosed, profileClosed, type ProfileCurves } from '../../en
 import { borderEditingPoints, borderSegments, sliceBorder, sliceBorderCurve, splitCubic } from '../../engine/sketchBorders';
 import { projectSketchPointToFixedLengths } from '../../engine/sketchConstraints';
 import { detachFeatureReferences } from '../../engine/modeling/FeatureReferences';
-import { restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
+import { inheritRestitchedConstraints, restitchSketchEdges, type RestitchEdge } from '../../engine/sketchRestitch';
 import { collinearCubicCurve, cubicCurveFromHandles, curvePoint as curvePointForEntity, rebaseProfileCubicCurves, translateCurve } from '../../engine/sketchCurves';
 import { uid } from '../../utils/id';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
@@ -417,7 +417,9 @@ export function useSketchEditing(options: SketchEditingOptions) {
             return;
         }
         const remaining: ModelEntity[] = [];
-        const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false, analyticCurve?: SketchCurve) => {
+        const splitSource = cloneEntity(entity);
+        const remainingSourceRefs = new Map<string, SketchElementRef>();
+        const makeOpen = (points: Point2[], curve?: { c1: Point2; c2: Point2 }, arc = false, analyticCurve?: SketchCurve, sourceIndex?: number) => {
             if (points.length < 2) return;
             const next = createEntity('sketch', uid());
             next.name = uniqueSketchName(document.value, undefined, true, remaining);
@@ -430,6 +432,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             next.curves = curve ? { 0: curve } : {};
             if (analyticCurve) next.analyticCurves = { 0: analyticCurve };
             delete next.depth;
+            if (sourceIndex !== undefined) remainingSourceRefs.set(next.id, { entityId: splitSource.id, index: sourceIndex });
             remaining.push(next);
         };
         borderSegments(entity).forEach((segment) => {
@@ -440,44 +443,48 @@ export function useSketchEditing(options: SketchEditingOptions) {
                 const samples = sliced.points;
                 if (sliced.curve) {
                     const cubic = sliced.curve.kind === 'cubic' ? { c1: sliced.curve.c1, c2: sliced.curve.c2 } : undefined;
-                    return makeOpen([samples[0], samples[samples.length - 1]], cubic, false, sliced.curve);
+                    return makeOpen([samples[0], samples[samples.length - 1]], cubic, false, sliced.curve, segment.index);
                 }
-                if (type === 'arc') return makeOpen([samples[0], samples[Math.floor(samples.length / 2)], samples[samples.length - 1]], undefined, true);
+                if (type === 'arc') return makeOpen([samples[0], samples[Math.floor(samples.length / 2)], samples[samples.length - 1]], undefined, true, undefined, segment.index);
                 const source = entity.points || [];
                 const a = source[segment.index], b = source[(segment.index + 1) % source.length];
                 const curve = segment.sourceCount === 1 ? entity.curves?.[segment.index] : undefined;
-                if (!a || !b) return makeOpen(samples);
-                if (!curve) return makeOpen(samples);
-                if (from === 0 && to === 1) return makeOpen([a, b], { c1: [...curve.c1], c2: [...curve.c2] });
+                if (!a || !b) return makeOpen(samples, undefined, false, undefined, segment.index);
+                if (!curve) return makeOpen(samples, undefined, false, undefined, segment.index);
+                if (from === 0 && to === 1) return makeOpen([a, b], { c1: [...curve.c1], c2: [...curve.c2] }, false, undefined, segment.index);
                 if (from === 0) {
                     const part = splitCubic(a, curve.c1, curve.c2, b, to).left;
-                    return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 });
+                    return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 }, false, undefined, segment.index);
                 }
                 const part = splitCubic(a, curve.c1, curve.c2, b, from).right;
-                return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 });
+                return makeOpen([part.a, part.b], { c1: part.c1, c2: part.c2 }, false, undefined, segment.index);
             });
         });
         document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
         document.value.entities.push(...remaining);
-        if (entity.planeId) recloseProfiles(entity.planeId);
+        if (entity.planeId) recloseProfiles(entity.planeId, { source: splitSource, refs: remainingSourceRefs });
         clearSketchSelection();
     }
-    function recloseProfiles(planeId: string) {
+    function recloseProfiles(planeId: string, replacement?: { source: ModelEntity; refs: Map<string, SketchElementRef> }) {
         const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId
             && (item.open || ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'))
             && !document.value.entities.some((entity) => entity.profileId === item.id));
         if (!candidates.length) return;
-        candidates.forEach((entity) => removeConstraintsForEntity(entity.id));
+        if (activeConstraintRule.value && candidates.some((entity) => entity.id === activeConstraintRule.value?.entityId)) {
+            activeConstraintRule.value = null;
+            viewport()?.setActiveConstraintRule(null);
+        }
         const edges: RestitchEdge[] = candidates.flatMap((entity) => borderSegments(entity).map((segment) => ({
             a: segment.points[0], b: segment.points[segment.points.length - 1], points: segment.points.map((point) => [...point] as Point2),
             c1: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c1 : undefined,
             c2: segment.sourceCount === 1 ? entity.curves?.[segment.index]?.c2 : undefined,
-            curve: segment.curve,
+            curve: segment.curve, source: replacement?.refs.get(entity.id) || { entityId: entity.id, index: segment.index },
         })));
         // Temporary split entities are replaced below; do not let their names consume the final trimmed-edge sequence.
         const namingDocument = { ...document.value, entities: document.value.entities.filter((item) => !candidates.includes(item)) };
         const rebuilt: ModelEntity[] = [];
-        restitchSketchEdges(edges).forEach((path) => {
+        const paths = restitchSketchEdges(edges);
+        paths.forEach((path) => {
             const entity = createEntity('sketch', uid());
             entity.name = uniqueSketchName(namingDocument, undefined, true, rebuilt);
             entity.planeId = planeId;
@@ -492,6 +499,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             delete entity.depth;
             rebuilt.push(entity);
         });
+        inheritRestitchedConstraints(document.value.entities, replacement ? [...candidates, replacement.source] : candidates, rebuilt, paths);
         document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
         document.value.entities.push(...rebuilt);
     }

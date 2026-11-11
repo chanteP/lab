@@ -146,8 +146,12 @@ export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref
             }));
         };
 
-        document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.points && (!activePlaneId?.value || entity.planeId === activePlaneId.value)).forEach((entity) => {
-            const entityId = entity.id;
+        if (selectedEdges.value.length) {
+            const covered = new Set<string>();
+            selectedEdges.value.forEach(({ entityId, index }) => addEdge(entityId, index, covered));
+        } else selectedShapes.value.forEach((entityId) => {
+            const entity = document.value.entities.find((candidate) => candidate.id === entityId);
+            if (!entity?.points) return;
             const covered = new Set<string>();
             const edges = new Set([...Object.keys(entity.edgeConstraints || {}).map(Number), ...(entity.constraintEdges || [])]);
             edges.forEach((index) => addEdge(entityId, index, covered));

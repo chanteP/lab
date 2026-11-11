@@ -88,16 +88,16 @@ onBeforeUnmount(() => { cancelAnimationFrame(frame); wheelTimers.forEach(clearTi
             @dblclick="advanced.doubleClick"
         />
 
-        <OperationBar v-if="session" label="对称操作" close-label="退出对称" @close="advanced.cancelSymmetry">
+        <OperationBar v-if="session" label="镜像操作" close-label="退出镜像" @close="advanced.cancelSymmetry">
             <span class="step-badge">{{ session.step }}/3</span>
-            <strong>{{ session.step === 1 ? '设置对称属性' : session.step === 2 ? '选择素材区域' : '绘制对称' }}</strong>
+            <strong>{{ session.step === 1 ? '设置镜像属性' : session.step === 2 ? '选择素材区域' : '绘制镜像' }}</strong>
             <template v-if="session.step === 1">
-                <label>数量<input type="number" min="2" max="24" step="1" :value="session.count" aria-label="对称数量" @wheel="advanced.updateSymmetry('count', wheelValue($event, session.count))" @input="advanced.updateSymmetry('count', numberValue($event))" /></label>
-                <label>偏移角度<input type="number" min="0" max="360" step="1" :value="session.offset" aria-label="对称偏移角度" @wheel="advanced.updateSymmetry('offset', wheelValue($event, session.offset))" @input="advanced.updateSymmetry('offset', numberValue($event))" /><span>deg</span></label>
+                <label>数量<input type="number" min="2" max="24" step="1" :value="session.count" aria-label="镜像数量" @wheel="advanced.updateSymmetry('count', wheelValue($event, session.count))" @input="advanced.updateSymmetry('count', numberValue($event))" /></label>
+                <label>偏移角度<input type="number" min="0" max="360" step="1" :value="session.offset" aria-label="镜像偏移角度" @wheel="advanced.updateSymmetry('offset', wheelValue($event, session.offset))" @input="advanced.updateSymmetry('offset', numberValue($event))" /><span>deg</span></label>
             </template>
             <span v-else-if="session.step === 2" class="operation-hint">点击平分线之间的区域，仅保留一个选中区</span>
-            <label v-else>对称方式
-                <select :value="session.mode" aria-label="对称方式" @change="advanced.updateSymmetry('mode', ($event.target as HTMLSelectElement).value as 'mirror' | 'rotate')">
+            <label v-else>镜像方式
+                <select :value="session.mode" aria-label="镜像方式" @change="advanced.updateSymmetry('mode', ($event.target as HTMLSelectElement).value as 'mirror' | 'rotate')">
                     <option value="mirror" :disabled="session.count % 2 !== 0">轴对称</option>
                     <option value="rotate">旋转对称</option>
                 </select>

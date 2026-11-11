@@ -10,7 +10,7 @@ export function splitSemanticShapeToLines(source: ModelEntity, createId: () => s
         ? profilePoints('regular', source.points || [], 64, undefined, source.sides)
         : (source.points || []).map((point) => [...point] as Point2);
     if (points.length < 2) return [];
-    return points.map((a, index) => {
+    const lines = points.map((a, index) => {
         const b = points[(index + 1) % points.length];
         const entity = cloneEntity(source);
         entity.id = createId();
@@ -22,13 +22,33 @@ export function splitSemanticShapeToLines(source: ModelEntity, createId: () => s
         delete entity.parts;
         delete entity.sides;
         delete entity.sectorAngle;
-        delete entity.constraintEdges;
+        if (source.constraintEdges?.includes(index)) entity.constraintEdges = [0];
+        else delete entity.constraintEdges;
         delete entity.edgeConstraints;
-        delete entity.lockedPoints;
+        entity.lockedPoints = [index, (index + 1) % points.length]
+            .map((point, pointIndex) => source.lockedPoints?.includes(point) ? pointIndex : -1)
+            .filter((pointIndex) => pointIndex >= 0);
+        if (!entity.lockedPoints.length) delete entity.lockedPoints;
         delete entity.controlPoints;
         delete entity.trimmed;
         delete entity.standardShape;
         delete entity.profileStartAngle;
         return entity;
     });
+
+    // Rules and references belong to logical edges, so split lines keep both on edge zero.
+    lines.forEach((entity, index) => {
+        const rules = source.edgeConstraints?.[index];
+        if (!rules) return;
+        const remap = (reference: { entityId: string; index: number } | undefined) => {
+            if (reference?.entityId !== source.id) return reference ? { ...reference } : undefined;
+            return lines[reference.index] ? { entityId: lines[reference.index].id, index: 0 } : undefined;
+        };
+        entity.edgeConstraints = {
+            0: (Array.isArray(rules) ? rules : [rules]).map((rule) => ({
+                ...JSON.parse(JSON.stringify(rule)), ...(rule.reference ? { reference: remap(rule.reference) } : {}),
+            })),
+        };
+    });
+    return lines;
 }

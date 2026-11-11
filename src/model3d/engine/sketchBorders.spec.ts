@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { borderEditingPoints as borderEditingPointsForTest, borderInterval, borderSegments, sliceBorder, sliceBorderCurve } from './sketchBorders';
 import { curvePoint } from './sketchCurves';
 import type { BorderSegment } from './sketchBorders';
-import { restitchSketchEdges } from './sketchRestitch';
+import { inheritRestitchedConstraints, restitchSketchEdges, type RestitchEdge } from './sketchRestitch';
 import { computeSketchFaces } from './sketchFaces';
 import type { ModelEntity, Point2, SketchCurve } from '../types';
 
@@ -120,4 +120,36 @@ test('a sector radius intersection does not mark the outer arc for deletion', ()
     assert.ok(radiusInterval.end < 1 || radiusInterval.start > 0);
     assert.equal(arcInterval.start, 0);
     assert.equal(arcInterval.end, 1);
+});
+
+test('restitch retains surviving source rules, endpoint locks and external references', () => {
+    const rectangle = sketch('polygon', [[0, 0], [20, 0], [20, 10], [0, 10]]);
+    rectangle.id = 'rectangle';
+    rectangle.edgeConstraints = {
+        0: [{ id: 'h0', type: 'horizontal' }],
+        1: [{ id: 'p1', type: 'perpendicular', reference: { entityId: rectangle.id, index: 0 } }],
+        2: [{ id: 'h2', type: 'horizontal' }],
+        3: [{ id: 'removed', type: 'horizontal' }],
+    };
+    rectangle.lockedPoints = [0, 1];
+    rectangle.constraintEdges = [0];
+    const external = sketch('line', [[0, 30], [20, 30]]);
+    external.id = 'external';
+    external.edgeConstraints = { 0: [{ id: 'parallel', type: 'parallel', reference: { entityId: rectangle.id, index: 0 } }] };
+    const edges: RestitchEdge[] = [0, 1, 2].map((index) => ({
+        a: rectangle.points![index], b: rectangle.points![(index + 1) % 4],
+        points: [rectangle.points![index], rectangle.points![(index + 1) % 4]], source: { entityId: rectangle.id, index },
+    }));
+    const paths = restitchSketchEdges(edges);
+    const rebuilt = sketch('polygon', paths[0].points);
+    rebuilt.id = 'rebuilt';
+    rebuilt.open = true;
+    inheritRestitchedConstraints([rectangle, external, rebuilt], [rectangle], [rebuilt], paths);
+    const rules = Object.values(rebuilt.edgeConstraints || {}).flat();
+    assert.deepEqual(rules.map((rule) => rule.id).sort(), ['h0', 'h2', 'p1']);
+    assert.equal(rules.find((rule) => rule.id === 'p1')?.reference?.entityId, rebuilt.id);
+    assert.deepEqual(rebuilt.constraintEdges, [0]);
+    assert.deepEqual(rebuilt.lockedPoints, [0, 1]);
+    assert.equal(external.edgeConstraints?.[0][0].reference?.entityId, rebuilt.id);
+    assert.ok(!rules.some((rule) => rule.id === 'removed'));
 });

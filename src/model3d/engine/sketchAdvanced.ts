@@ -1,5 +1,5 @@
 import { entityProfileClosed, profilePoints } from './profiles';
-import type { ModelEntity, Point2, SketchProfileEditor, SketchProfilePart } from '../types';
+import type { ModelEntity, Point2, SketchElementRef, SketchProfileEditor, SketchProfilePart } from '../types';
 import { standardShapeCenter } from './sketchWholeShapeSnap';
 
 export type SymmetryMode = 'mirror' | 'rotate';
@@ -54,6 +54,34 @@ export function entityProfileParts(entity: ModelEntity): SketchProfilePart[] {
         sides: entity.sides, sectorAngle: entity.sectorAngle, startAngle: entity.profileStartAngle,
     } : undefined;
     return points.length >= 2 ? [{ points: points.map((point) => [...point]), closed: entityProfileClosed(entity), editor }] : [];
+}
+
+/** Every semantic handle participates in guide recovery; curve samples are not magnetic targets. */
+export function sketchOperationPoints(entity: ModelEntity): Point2[] {
+    const parts = entityProfileParts(entity);
+    const points = parts.flatMap((part) => part.editor?.source || (entity.points?.length ? entity.points : part.points));
+    points.push(...parts.map(profilePartCenter));
+    Object.values(entity.curves || {}).forEach((curve) => points.push(curve.c1, curve.c2));
+    Object.values(entity.analyticCurves || {}).forEach((curve) => {
+        if (curve.kind === 'ellipse') points.push(curve.center);
+        else if (curve.kind === 'line') points.push(curve.a, curve.b);
+        else points.push(curve.a, curve.c1, curve.c2, curve.b);
+    });
+    return points.filter((point, index) => points.findIndex((candidate) => Math.hypot(point[0] - candidate[0], point[1] - candidate[1]) < 1e-7) === index)
+        .map((point) => [...point] as Point2);
+}
+
+/** Edge transforms pivot at an endpoint, prioritizing an explicitly selected endpoint. */
+export function transformOperationCenter(entities: ModelEntity[], parts: SketchProfilePart[], edges: SketchElementRef[], points: SketchElementRef[]): Point2 {
+    const pointAt = (selection?: SketchElementRef) => {
+        if (!selection) return null;
+        return entities.find((entity) => entity.id === selection.entityId)?.points?.[selection.index] || null;
+    };
+    const edge = edges[0];
+    const edgeEntity = entities.find((entity) => entity.id === edge?.entityId);
+    const selectedEdgePoint = edge && points.find((point) => point.entityId === edge.entityId
+        && (point.index === edge.index || point.index === (edge.index + 1) % (edgeEntity?.points?.length || 0)));
+    return pointAt(edge ? selectedEdgePoint : points[0]) || pointAt(edge) || sketchTransformCenter(entities, parts);
 }
 
 export function profilePartCenter(part: SketchProfilePart): Point2 {

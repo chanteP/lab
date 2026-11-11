@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-    clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart, profilePartsCenter, sketchTransformCenter,
+    clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart, profilePartsCenter, sketchOperationPoints, sketchTransformCenter, transformOperationCenter,
     radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides, supportsMirrorSymmetry, symmetryGuideEntities, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
 import { createEntity, type ModelEntity, type Point2, type SketchProfilePart } from '../types';
@@ -129,4 +129,24 @@ test('single centered shapes use their semantic center for rotate and scale tran
     assert.deepEqual(sketchTransformCenter([circle], parts), [20, 10]);
     const other = Object.assign(createEntity('sketch', 'other'), { profileType: 'circle' as const, points: [[0, 0], [5, 0]] });
     assert.deepEqual(sketchTransformCenter([circle, other], parts), profilePartsCenter(parts));
+});
+
+test('transform source points include semantic vertices and curve controls', () => {
+    const entity = Object.assign(createEntity('sketch', 'curve'), {
+        profileType: 'polygon' as const, points: [[0, 0], [10, 0], [10, 10]] as Point2[],
+        curves: { 0: { c1: [3, 2] as Point2, c2: [7, 2] as Point2 } },
+    });
+    const points = sketchOperationPoints(entity);
+    assert.ok(points.some((point) => point[0] === 3 && point[1] === 2));
+    assert.ok(points.some((point) => point[0] === 7 && point[1] === 2));
+    assert.ok(points.some((point) => point[0] === 10 && point[1] === 10));
+});
+
+test('edge and point selections determine the transform pivot before shape bounds', () => {
+    const entity = Object.assign(createEntity('sketch', 'line'), { profileType: 'line' as const, points: [[4, 5], [9, 12]] as Point2[], open: true });
+    const parts = entityProfileParts(entity);
+    assert.deepEqual(transformOperationCenter([entity], parts, [{ entityId: entity.id, index: 0 }], []), [4, 5]);
+    assert.deepEqual(transformOperationCenter([entity], parts, [{ entityId: entity.id, index: 0 }], [{ entityId: entity.id, index: 1 }]), [9, 12]);
+    assert.deepEqual(transformOperationCenter([entity], parts, [], [{ entityId: entity.id, index: 1 }]), [9, 12]);
+    assert.deepEqual(transformOperationCenter([entity], parts, [{ entityId: entity.id, index: 0 }], [{ entityId: 'other', index: 0 }]), [4, 5]);
 });

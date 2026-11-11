@@ -8,7 +8,7 @@ import type { ProfileType } from '../../engine/profiles';
 import type { SketchPlane } from '../../types';
 import type { ViewTool } from '../../engine/Viewport';
 
-const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null; hasSelection: boolean }>();
+const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null; hasSelection: boolean; hasShapeSelection: boolean; linearPatternActive: boolean }>();
 const emit = defineEmits<{
     close: [];
     select: [];
@@ -18,6 +18,7 @@ const emit = defineEmits<{
     construct: [kind: SketchPlane['kind']];
     face: [];
     symmetry: [];
+    linearPattern: [];
     transform: [tool: 'translate' | 'rotate' | 'scale'];
 }>();
 const polygonOptions = POLYGON_SIDES.map(sides => ({ label: `${sides} 边`, value: sides }));
@@ -48,7 +49,8 @@ function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').repla
             </div>
             <div class="tool-group advanced-tool-group">
                 <div class="tool-group-label">高级工具</div>
-                <ViewportToolItem label="对称" :active="symmetryStep !== null" :description-on-hover="false" @click="emit('symmetry')"><NIcon><CopyOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem label="镜像" :active="symmetryStep !== null" :description-on-hover="false" @click="emit('symmetry')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem v-if="hasShapeSelection" label="线性阵列" :active="linearPatternActive" :disabled="symmetryStep !== null" :description-on-hover="false" @click="emit('linearPattern')"><NIcon><CopyOutline /></NIcon></ViewportToolItem>
             </div>
             <Transition name="tool-group-slide"><div v-if="hasSelection" class="tool-group transform-tool-group">
                 <div class="tool-group-label">变换工具</div>

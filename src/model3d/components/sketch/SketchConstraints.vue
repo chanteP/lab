@@ -58,23 +58,23 @@ const emit = defineEmits<{ constraint: [type: SketchConstraintType]; lock: []; d
 
 <style lang="scss" scoped>
 .constraints-panel { position: absolute; z-index: 7; top: 12px; right: 12px; width: 232px; max-height: calc(100% - 55px); padding: 11px; overflow-y: auto; border-radius: 9px; transition: background .16s ease; }
-.asset-aspect { margin-bottom: 8px !important; border: 1px solid var(--model3d-ui-d4dfd8) !important; border-radius: 6px; background: var(--model3d-ui-fff) !important; }
+.asset-aspect { margin-bottom: 8px !important; border: 0 !important; border-radius: 6px; background: var(--model3d-ui-fff) !important; }
 .constraints-panel:hover { background: var(--model3d-ui-0000000a); }
 .tool-panel-title { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--model3d-ui-e3e9e5); }
 .tool-panel-title > div { display: flex; flex-direction: column; gap: 2px; }
 .tool-panel-title small { color: var(--model3d-ui-87938c); font-size: 8px; }
 .tool-panel-title strong { font-size: 12px; }
 p { margin-bottom: 9px; color: var(--model3d-ui-7e8b83); font-size: 9px; line-height: 1.5; }
-button { width: 100%; min-height: 28px; display: flex; align-items: center; justify-content: center; gap: 4px; margin: 0; padding: 4px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--model3d-ui-56675d); font-size: 9px; white-space: nowrap; cursor: pointer; }
+button { width: 100%; min-height: 28px; display: flex; align-items: center; justify-content: center; gap: 4px; margin: 0; padding: 4px 5px; border: 0; border-radius: 5px; background: transparent; color: var(--model3d-ui-56675d); font-size: 9px; white-space: nowrap; cursor: pointer; }
 button:hover { color: var(--model3d-ui-147d70); background: var(--model3d-ui-147d700a); }
-button.active { color: var(--model3d-ui-147d70); border-color: var(--model3d-ui-147d7030); font-weight: 700; }
+button.active { color: var(--model3d-ui-147d70); font-weight: 700; }
 button:disabled { opacity: .3; cursor: default; }
 button:focus-visible { outline: 2px solid var(--model3d-ui-147d70); outline-offset: 1px; }
 .constraint-group { margin-top: 8px; }
 .constraint-group-title { margin-bottom: 4px; color: var(--model3d-ui-8a968f); font-size: 8px; }
 .constraint-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
-.constraint-grid button { background: var(--model3d-ui-ffffff70); border-color: var(--model3d-ui-e0e7e2); }
-.constraint-lock { margin-top: 7px !important; border-color: var(--model3d-ui-e0e7e2) !important; }
+.constraint-grid button { background: var(--model3d-ui-ffffff70); border-color: transparent; }
+.constraint-lock { margin-top: 7px !important; }
 .constraint-state { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--model3d-ui-e4eae6); color: var(--model3d-ui-8a968f); font-size: 9px; }
 .constraint-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--model3d-ui-599fd0); }
 .constraint-state i.locked { background: var(--model3d-ui-54a184); }

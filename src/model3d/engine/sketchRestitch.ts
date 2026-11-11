@@ -1,4 +1,5 @@
-import type { Point2, SketchCurve } from '../types';
+import type { ModelEntity, Point2, SketchCurve, SketchEdgeConstraint, SketchElementRef } from '../types';
+import { constraintRules } from './sketchConstraints';
 import { curveIntersections, curvePoints, reverseCurve, sliceCurve } from './sketchCurves';
 import type { ProfileCurves } from './profiles';
 
@@ -9,6 +10,8 @@ export interface RestitchEdge {
     c1?: Point2;
     c2?: Point2;
     curve?: SketchCurve;
+    /** Original logical edge used to carry its constraints through splitting and reconnection. */
+    source?: SketchElementRef;
 }
 
 export interface RestitchPath {
@@ -17,6 +20,7 @@ export interface RestitchPath {
     curves: ProfileCurves;
     analyticCurves: Record<number, SketchCurve>;
     closed: boolean;
+    sources: ({ ref: SketchElementRef; forward: boolean } | undefined)[];
 }
 
 type OrderedEdge = { index: number; forward: boolean };
@@ -98,8 +102,11 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
         const controlPoints: number[] = [];
         const curves: ProfileCurves = {};
         const analyticCurves: Record<number, SketchCurve> = {};
+        const sources: RestitchPath['sources'] = [];
         ordered.forEach(({ index, forward }) => {
             const edge = edges[index];
+            const sourceStart = points.length;
+            const sourceCountBefore = sources.length;
             controlPoints.push(points.length);
             // Keep semantic endpoints plus analytic parameters; never expand curves into render samples here.
             if (edge.curve) {
@@ -114,13 +121,14 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
                 const samples = forward ? edge.points : [...edge.points].reverse();
                 samples.slice(0, -1).forEach((point) => points.push([...point]));
             }
+            while (sources.length - sourceCountBefore < points.length - sourceStart) sources.push(edge.source ? { ref: { ...edge.source }, forward } : undefined);
         });
         if (!closed && ordered.length) {
             const last = ordered[ordered.length - 1];
             controlPoints.push(points.length);
             points.push([...(last.forward ? edges[last.index].b : edges[last.index].a)]);
         }
-        return { points, controlPoints: [...new Set(controlPoints)], curves, analyticCurves, closed };
+        return { points, controlPoints: [...new Set(controlPoints)], curves, analyticCurves, closed, sources };
     };
 
     const trace = (first: number, start: string, stopAtJunction: boolean) => {
@@ -174,4 +182,63 @@ export function restitchSketchEdges(edges: RestitchEdge[]): RestitchPath[] {
         if (ordered.length) paths.push(assemble(ordered, closed));
     });
     return paths.filter((path) => path.points.length >= 2);
+}
+
+const edgeKey = (ref: SketchElementRef) => `${ref.entityId}:${ref.index}`;
+const samePoint = (a: Point2, b: Point2) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6;
+
+/** Reattach source rules after restitching; partial fixed-length edges inherit their new chord length. */
+export function inheritRestitchedConstraints(all: ModelEntity[], sources: ModelEntity[], targets: ModelEntity[], paths: RestitchPath[]) {
+    const sourceById = new Map(sources.map((entity) => [entity.id, entity]));
+    const targetsBySource = new Map<string, SketchElementRef>();
+    targets.forEach((entity, targetIndex) => {
+        entity.edgeConstraints = {};
+        entity.constraintEdges = [];
+        entity.lockedPoints = [];
+        paths[targetIndex]?.sources.forEach((source, index) => {
+            if (!source) return;
+            const key = edgeKey(source.ref);
+            if (!targetsBySource.has(key)) targetsBySource.set(key, { entityId: entity.id, index });
+            const original = sourceById.get(source.ref.entityId);
+            if (!original) return;
+            const a = entity.points?.[index], b = entity.points?.[(index + 1) % entity.points!.length];
+            if (!a || !b) return;
+            const originalA = original.points?.[source.ref.index];
+            const originalB = original.points?.[(source.ref.index + 1) % (original.points?.length || 0)];
+            const rules = constraintRules(original.edgeConstraints?.[source.ref.index]).map((rule) => {
+                const copy = JSON.parse(JSON.stringify(rule)) as SketchEdgeConstraint;
+                const originalLength = originalA && originalB ? Math.hypot(originalB[0] - originalA[0], originalB[1] - originalA[1]) : 0;
+                const nextLength = Math.hypot(b[0] - a[0], b[1] - a[1]);
+                if (copy.type === 'length' && Math.abs(originalLength - nextLength) > 1e-6) copy.length = nextLength;
+                if (copy.type === 'angle' && !source.forward) copy.angle = -(copy.angle || 0);
+                return copy;
+            });
+            if (rules.length) entity.edgeConstraints[index] = rules;
+            if (original.constraintEdges?.includes(source.ref.index) && originalA && originalB
+                && [originalA, originalB].every((point) => samePoint(point, a) || samePoint(point, b))) entity.constraintEdges.push(index);
+        });
+        entity.points?.forEach((point, index) => {
+            const locked = sources.some((original) => original.lockedPoints?.some((pointIndex) => {
+                const originalPoint = original.points?.[pointIndex];
+                return originalPoint && samePoint(point, originalPoint);
+            }));
+            if (locked) entity.lockedPoints!.push(index);
+        });
+        if (!entity.constraintEdges.length) delete entity.constraintEdges;
+        if (!entity.lockedPoints.length) delete entity.lockedPoints;
+    });
+
+    const remapRules = (entity: ModelEntity, index: number, input: ModelEntity['edgeConstraints'][number]) => {
+        const rules = constraintRules(input).flatMap((rule) => {
+            if (!rule.reference || !sourceById.has(rule.reference.entityId)) return [JSON.parse(JSON.stringify(rule)) as SketchEdgeConstraint];
+            const target = targetsBySource.get(edgeKey(rule.reference));
+            return target ? [{ ...JSON.parse(JSON.stringify(rule)), reference: { ...target } } as SketchEdgeConstraint] : [];
+        });
+        if (rules.length) entity.edgeConstraints![index] = rules;
+        else delete entity.edgeConstraints![index];
+    };
+    targets.forEach((entity) => Object.entries({ ...entity.edgeConstraints }).forEach(([index, rules]) => remapRules(entity, Number(index), rules)));
+    all.filter((entity) => !sourceById.has(entity.id) && entity.edgeConstraints).forEach((entity) => {
+        Object.entries({ ...entity.edgeConstraints }).forEach(([index, rules]) => remapRules(entity, Number(index), rules));
+    });
 }

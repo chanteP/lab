@@ -23,6 +23,7 @@ import { useSketchConstraints } from './composables/sketch/useSketchConstraints'
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
 import { useSketchSession } from './composables/sketch/useSketchSession';
 import { useSketchAdvanced } from './composables/sketch/useSketchAdvanced';
+import { useSketchLinearPattern } from './composables/sketch/useSketchLinearPattern';
 import { useSketchAssets } from './composables/sketch/useSketchAssets';
 import { storedLengthUnit, useUnits } from './composables/useUnits';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
@@ -31,6 +32,7 @@ import SketchToolbar from './components/sketch/SketchToolbar.vue';
 import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import SketchHints from './components/sketch/SketchHints.vue';
 import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
+import SketchLinearPatternOverlay from './components/sketch/SketchLinearPatternOverlay.vue';
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
@@ -236,11 +238,17 @@ const {
     toggleAssetAspect, onSketchDrop,
 } = sketchAssets;
 const sketchAdvanced = useSketchAdvanced({
-    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedIds, spaceActive, lengthUnit, setLengthUnit,
+    document, activePlaneId, activeTool, sketchType, sketchSides, sketchSelectionTool, sketchGuideSnapEnabled, selectedShapes, selectedEdges, selectedPoints, selectedIds, spaceActive, lengthUnit, setLengthUnit,
     viewport: () => viewport, message, pushHistory, setTransforming: (value) => transforming = value,
     refreshSketch, syncSketchFromDocument: sketchConstraints.syncLocalSketchFromDocument, selectSketchEntity, clearSketchSelection, activateSketchSelectionTool,
 });
 const { symmetry, symmetryActive, overlayActive } = sketchAdvanced;
+const linearPattern = useSketchLinearPattern({
+    document, activePlaneId, activeTool, selectedShapes, selectedIds, spaceActive, sketchGuideSnapEnabled, lengthUnit, setLengthUnit,
+    viewport: () => viewport, message, pushHistory, clearSketchSelection, selectSketchEntity, activateSketchSelectionTool,
+});
+const { active: linearPatternActive } = linearPattern;
+const sketchOverlayActive = computed(() => overlayActive.value || linearPatternActive.value);
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 
 function togglePanel(panel: PrimaryPanel) {
@@ -257,14 +265,17 @@ function chooseTool(tool: ViewTool) {
     setTool(tool);
 }
 function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
+    if (linearPatternActive.value) linearPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = tool;
     sketchSelectionTool.value = true;
     viewport?.setTool(tool);
     viewport?.setSketchSelectionTool(true);
+    sketchAdvanced.prepareTransform();
 }
 function chooseSketchSelection() {
+    if (linearPatternActive.value) linearPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = 'select';
@@ -272,6 +283,7 @@ function chooseSketchSelection() {
     activateSketchSelectionTool();
 }
 function chooseSketchType(type: typeof sketchType.value) {
+    if (linearPatternActive.value) linearPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = 'select';
@@ -280,6 +292,7 @@ function chooseSketchType(type: typeof sketchType.value) {
 }
 function closeSketchMode() {
     stopMeasure();
+    if (linearPatternActive.value) linearPattern.cancel();
     if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
     closeSketch();
 }
@@ -477,7 +490,13 @@ function stopMeasure() {
 }
 function startSymmetry() {
     stopMeasure();
+    if (linearPatternActive.value) linearPattern.cancel();
     sketchAdvanced.startSymmetry();
+}
+function startLinearPattern() {
+    if (symmetryActive.value) return;
+    stopMeasure();
+    linearPattern.start();
 }
 function preventContextMenu(event: Event) { event.preventDefault(); }
 function preventBrowserZoom(event: WheelEvent) { if (event.ctrlKey || event.metaKey) event.preventDefault(); }
@@ -499,9 +518,11 @@ function onKeyDown(event: KeyboardEvent) {
     if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') { event.preventDefault(); event.shiftKey ? redoModel() : undoModel(); return; }
     if (event.metaKey || event.ctrlKey || event.code === 'Space') return;
     if (event.code === 'Enter' && operation.value) doneOperation();
+    else if (event.code === 'Enter' && linearPatternActive.value) linearPattern.complete();
     else if (event.code === 'Enter' && sketchMode.value) finishSketch();
     else if (event.code === 'Escape') {
-        if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
+        if (linearPatternActive.value) linearPattern.cancel();
+        else if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
         else if (operation.value) cancelOperation();
         else if (sketchMode.value) clearSketchSelection();
         else if (activeTool.value !== 'select') setTool('select');
@@ -509,7 +530,7 @@ function onKeyDown(event: KeyboardEvent) {
     }
     else if (event.code === 'Delete' || event.code === 'Backspace') {
         if (selectedSketchGuideId.value) onSketchGuideDelete(selectedSketchGuideId.value);
-        else if (!symmetryActive.value) removeSelected();
+        else if (!symmetryActive.value && !linearPatternActive.value) removeSelected();
     }
     else if (event.code === 'KeyV') sketchMode.value ? chooseSketchSelection() : setTool('select');
     else if (event.code === 'KeyG') sketchMode.value ? chooseSketchTransform('translate') : setTool('translate');
@@ -545,6 +566,7 @@ watch(sketchMode, (active) => {
         updateDisplayMode('shaded');
     } else {
         updateDisplayMode(displayModeBeforeSketch);
+        if (linearPatternActive.value) linearPattern.cancel();
         if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
     }
 });
@@ -794,8 +816,9 @@ onBeforeUnmount(() => {
                 @name="project.name = $event" @undo="undoModel" @redo="redoModel" @help="showHelp = true" @quality="exportQuality = $event" @export="onExportAction" />
 
             <main class="viewport-area" :class="{ 'drawing-active': sketchMode, 'symmetry-active': symmetryActive }" @dragover="sketchMode && $event.preventDefault()" @drop="sketchMode && onSketchDrop($event)">
-                <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
+                <ViewportView :callbacks="viewportCallbacks" :suspended="sketchOverlayActive" :selected-guide-id="selectedSketchGuideId" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
+                <SketchLinearPatternOverlay v-if="sketchMode && linearPatternActive" :pattern="linearPattern" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
@@ -811,12 +834,12 @@ onBeforeUnmount(() => {
                     @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
-                    :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
-                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
-                <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
+                    :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" :has-shape-selection="selectedShapes.length > 0" :linear-pattern-active="linearPatternActive" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
+                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @linear-pattern="startLinearPattern" @transform="chooseSketchTransform" />
+                <SketchConstraints v-if="sketchMode && !symmetryActive && !linearPatternActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :tangent-available="tangentConstraintAvailable" :concentric-available="concentricConstraintAvailable" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @select-rule="onSketchConstraintItemSelect" @hover-rule="onSketchConstraintRuleHover" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
-                <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
+                <SketchHints v-if="sketchMode && !sketchOverlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
                     :selected-profile-type="hintSketchProfileType" :has-selection="hintSketchHasSelection" />
                 <ModelingHints v-if="!sketchMode" :selection-kind="selectionKind" :active-tool="activeTool" :selected-count="selectedIds.length" :measure-mode="measureMode" :operation="operation" />
 
