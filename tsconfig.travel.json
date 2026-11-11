@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "target": "ES2022",
+        "types": ["vite/client", "node"],
+        "noUncheckedIndexedAccess": true
+    },
+    "include": ["src/travel/**/*", "ext.d.ts"],
+    "exclude": ["node_modules", "docs"]
+}

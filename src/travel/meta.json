@@ -1,0 +1,6 @@
+{
+    "title": "Atlas - 旅行计划与世界地图",
+    "description": "在交互世界地图上记录旅行计划，按天组织景点、交通路线和旅行笔记，支持 YAML 导入导出与 WebMCP Agent 工具。",
+    "canonical": "https://lab.neetproject.com/travel/index.html",
+    "keywords": "旅行计划,旅游地图,行程规划,YAML,WebMCP,世界地图"
+}
