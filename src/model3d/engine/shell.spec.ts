@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { initializeManifold } from './modeling/ManifoldKernel';
 import { evaluateShell, type ShellOpening } from './modeling/Shell';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
+import { buildEntityMesh } from './geometry';
+import { buildMeshTopology } from './topology/MeshTopology';
+import { createDocument, createEntity } from '../types';
 
 before(async () => { await initializeManifold(); });
 
@@ -70,4 +73,36 @@ test('adjacent selected faces open through their shared edge without leaving a b
     assert(Math.abs(volume(result) - 350) < 1e-4, `shared rim must be removed, volume=${volume(result)}`);
     assert.deepEqual(result.boundingBox!.min.toArray(), [-5, -5, -5]);
     assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5]);
+});
+
+test('adjacent sides of a regular pentagonal prism join without an extra recessed notch', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const body = createEntity('extrude', 'pentagon');
+    body.planeId = 'plane';
+    body.profileType = 'polygon';
+    body.points = [[10, 0], [3.0901699437, 9.510565163], [-8.090169944, 5.877852523], [-8.090169944, -5.877852523], [3.0901699437, -9.510565163]];
+    body.depth = 10;
+    body.position = [0, 0, 0];
+    document.entities.push(body);
+    const mesh = buildEntityMesh(body, document);
+    mesh.geometry.computeBoundingBox();
+    const topology = buildMeshTopology(mesh.geometry, body.id, body, document);
+    const sides = topology.faces.filter((face) => face.planar && Math.abs(face.normal[1]) < 1e-6);
+    const shared = topology.logicalEdges.find((edge) => edge.faceIds.length === 2 && edge.faceIds.every((id) => sides.some((face) => face.id === id)))!;
+    const openings = shared.faceIds.map((id): ShellOpening => {
+        const face = topology.faces.find((item) => item.id === id)!;
+        const vertices: [number, number, number][] = [], indices: number[] = [];
+        face.triangleIds.forEach((triangleId) => topology.triangles[triangleId].renderVertices.forEach((renderVertex) => {
+            vertices.push(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, renderVertex).toArray());
+            indices.push(indices.length);
+        }));
+        return { normal: face.normal, vertices, indices };
+    });
+    const result = evaluateShell(mesh.geometry, openings, 1);
+    const validation = validateSolidGeometry(result);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(validation.volume - 753.0035985994373) < 1e-4, `volume=${validation.volume}`);
+    assert(Math.abs(result.boundingBox!.min.z - mesh.geometry.boundingBox!.min.z) < 1e-6, 'shared-edge joint must not recess the original outer silhouette');
+    assert.deepEqual(result.boundingBox!.max.toArray(), mesh.geometry.boundingBox!.max.toArray());
 });

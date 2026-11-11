@@ -73,9 +73,10 @@ function openingShape(opening: ShellOpening) {
 }
 
 
-type ShellSharedEdge = { a: Vec3; b: Vec3 };
+type ShellBoundaryEdge = { a: Vec3; b: Vec3 };
+type ShellSharedEdge = ShellBoundaryEdge & { coplanar: boolean; otherIndex: number };
 
-function openingBoundaryEdges(opening: ShellOpening): ShellSharedEdge[] {
+function openingBoundaryEdges(opening: ShellOpening): ShellBoundaryEdge[] {
     const points = opening.vertices.map((point) => new THREE.Vector3(...point));
     const welded: number[] = [], unique: THREE.Vector3[] = [], keys = new Map<string, number>();
     points.forEach((point) => {
@@ -99,12 +100,18 @@ function openingBoundaryEdges(opening: ShellOpening): ShellSharedEdge[] {
 function sharedOpeningEdges(openings: ShellOpening[]) {
     const boundaries = openings.map(openingBoundaryEdges);
     const same = (a: Vec3, b: Vec3) => new THREE.Vector3(...a).distanceTo(new THREE.Vector3(...b)) < 1e-5;
-    return boundaries.map((edges, index) => edges.filter((edge) => boundaries.some((other, otherIndex) => otherIndex !== index && other.some((candidate) =>
-        (same(edge.a, candidate.a) && same(edge.b, candidate.b)) || (same(edge.a, candidate.b) && same(edge.b, candidate.a))))));
+    return boundaries.map((edges, index) => edges.flatMap((edge) => boundaries.flatMap((other, otherIndex) => {
+        if (otherIndex === index) return [];
+        return other.filter((candidate) => (same(edge.a, candidate.a) && same(edge.b, candidate.b)) || (same(edge.a, candidate.b) && same(edge.b, candidate.a))).map((candidate) => {
+            const aNormal = new THREE.Vector3(...openings[index].normal).normalize(), bNormal = new THREE.Vector3(...openings[otherIndex].normal).normalize();
+            const coplanar = Math.abs(aNormal.dot(bNormal)) > 0.999 && Math.abs(aNormal.dot(new THREE.Vector3(...candidate.a).sub(new THREE.Vector3(...edge.a)))) < 1e-5;
+            return { ...edge, coplanar, otherIndex };
+        });
+    })));
 }
 
 /** Extend the inset cavity through the opening without shortening adjacent outer walls. */
-function openingCutter(opening: ShellOpening, thickness: number, sharedEdges: ShellSharedEdge[]) {
+function openingCutter(opening: ShellOpening, thickness: number, sharedEdges: ShellSharedEdge[], full = false) {
     const { shape, matrix } = openingShape(opening);
     const { CrossSection } = getManifold();
     const contours = [shape, ...shape.holes].map((path) => path.getPoints(12).map((point) => [point.x, point.y] as [number, number]));
@@ -112,10 +119,10 @@ function openingCutter(opening: ShellOpening, thickness: number, sharedEdges: Sh
     let opened: InstanceType<typeof CrossSection> | null = null;
     let extruded: ReturnType<InstanceType<typeof CrossSection>['extrude']> | null = null;
     try {
-        opened = section.offset(-thickness, 'Miter', 4, 32);
+        opened = full ? new CrossSection(contours) : section.offset(-thickness, 'Miter', 4, 32);
         if (opened.isEmpty()) throw new Error('壁厚过大，开口面没有可贯通的内部区域');
         const inverse = matrix.clone().invert();
-        sharedEdges.forEach((edge) => {
+        sharedEdges.filter((edge) => edge.coplanar).forEach((edge) => {
             const a = new THREE.Vector3(...edge.a).applyMatrix4(inverse), b = new THREE.Vector3(...edge.b).applyMatrix4(inverse);
             const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
             if (length < 1e-8) return;
@@ -173,6 +180,25 @@ export function evaluateShell(base: THREE.BufferGeometry, openings: ShellOpening
                 cutterGeometry.dispose();
                 cutter?.delete();
                 next?.delete();
+            }
+        }
+        for (let aIndex = 0; aIndex < openings.length; aIndex++) for (let bIndex = aIndex + 1; bIndex < openings.length; bIndex++) {
+            if (!sharedEdges[aIndex].some((edge) => edge.otherIndex === bIndex && !edge.coplanar)) continue;
+            const geometryA = openingCutter(openings[aIndex], thickness, [], true);
+            const geometryB = openingCutter(openings[bIndex], thickness, [], true);
+            let cutterA: InstanceType<typeof Manifold> | null = null, cutterB: InstanceType<typeof Manifold> | null = null;
+            let joint: InstanceType<typeof Manifold> | null = null, next: InstanceType<typeof Manifold> | null = null;
+            try {
+                cutterA = new Manifold(inputMesh(geometryA));
+                cutterB = new Manifold(inputMesh(geometryB));
+                joint = cutterA.intersect(cutterB);
+                next = result.subtract(joint);
+                result.delete();
+                result = next;
+                next = null;
+            } finally {
+                geometryA.dispose(); geometryB.dispose();
+                cutterA?.delete(); cutterB?.delete(); joint?.delete(); next?.delete();
             }
         }
         if (result.status() !== 'NoError' || result.isEmpty()) throw new Error('抽壳结果为空，请减小壁厚');
