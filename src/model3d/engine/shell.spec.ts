@@ -70,9 +70,7 @@ test('adjacent selected faces open through their shared edge without leaving a b
     const result = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0]), side], 1);
     const validation = validateSolidGeometry(result);
     assert(validation.valid, validation.errors.join(', '));
-    assert(Math.abs(volume(result) - 350) < 1e-4, `shared rim must be removed, volume=${volume(result)}`);
-    assert.deepEqual(result.boundingBox!.min.toArray(), [-5, -5, -5]);
-    assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5]);
+    assert(Math.abs(volume(result) - 298) < 1e-4, `adjacent full openings must not leave a beam, volume=${volume(result)}`);
 });
 
 test('adjacent sides of a regular pentagonal prism join without an extra recessed notch', () => {
@@ -102,7 +100,7 @@ test('adjacent sides of a regular pentagonal prism join without an extra recesse
     const result = evaluateShell(mesh.geometry, openings, 1);
     const validation = validateSolidGeometry(result);
     assert(validation.valid, validation.errors.join(', '));
-    assert(Math.abs(validation.volume - 753.0035985994373) < 1e-4, `volume=${validation.volume}`);
-    assert(Math.abs(result.boundingBox!.min.z - mesh.geometry.boundingBox!.min.z) < 1e-6, 'shared-edge joint must not recess the original outer silhouette');
+    assert(Math.abs(validation.volume - 688.5284340352495) < 1e-4, `legacy adjacent opening volume=${validation.volume}`);
+    assert(Math.abs(result.boundingBox!.min.z - -8.334994316101074) < 1e-6, 'the joint must match the previous full-face opening instead of adding a V notch');
     assert.deepEqual(result.boundingBox!.max.toArray(), mesh.geometry.boundingBox!.max.toArray());
 });

@@ -166,7 +166,8 @@ export function evaluateShell(base: THREE.BufferGeometry, openings: ShellOpening
         result = solid.subtract(cavity);
         const sharedEdges = sharedOpeningEdges(openings);
         for (const [index, opening] of openings.entries()) {
-            const cutterGeometry = openingCutter(opening, thickness, sharedEdges[index]);
+            const full = sharedEdges[index].some((edge) => !edge.coplanar);
+            const cutterGeometry = openingCutter(opening, thickness, full ? [] : sharedEdges[index], full);
             let cutter: InstanceType<typeof Manifold> | null = null;
             let next: InstanceType<typeof Manifold> | null = null;
             try {
@@ -180,25 +181,6 @@ export function evaluateShell(base: THREE.BufferGeometry, openings: ShellOpening
                 cutterGeometry.dispose();
                 cutter?.delete();
                 next?.delete();
-            }
-        }
-        for (let aIndex = 0; aIndex < openings.length; aIndex++) for (let bIndex = aIndex + 1; bIndex < openings.length; bIndex++) {
-            if (!sharedEdges[aIndex].some((edge) => edge.otherIndex === bIndex && !edge.coplanar)) continue;
-            const geometryA = openingCutter(openings[aIndex], thickness, [], true);
-            const geometryB = openingCutter(openings[bIndex], thickness, [], true);
-            let cutterA: InstanceType<typeof Manifold> | null = null, cutterB: InstanceType<typeof Manifold> | null = null;
-            let joint: InstanceType<typeof Manifold> | null = null, next: InstanceType<typeof Manifold> | null = null;
-            try {
-                cutterA = new Manifold(inputMesh(geometryA));
-                cutterB = new Manifold(inputMesh(geometryB));
-                joint = cutterA.intersect(cutterB);
-                next = result.subtract(joint);
-                result.delete();
-                result = next;
-                next = null;
-            } finally {
-                geometryA.dispose(); geometryB.dispose();
-                cutterA?.delete(); cutterB?.delete(); joint?.delete(); next?.delete();
             }
         }
         if (result.status() !== 'NoError' || result.isEmpty()) throw new Error('抽壳结果为空，请减小壁厚');
