@@ -29,12 +29,16 @@ test('committed entities translate semantic points, curves and self references w
     const document = createDocument();
     const source = createEntity('sketch', 'source');
     source.profileType = 'polygon';
+    source.name = '矩形 1';
     source.points = [[0, 0], [10, 0]];
     source.curves = { 0: { c1: [3, 2], c2: [7, 2] } };
     source.edgeConstraints = { 0: [{ id: 'rule', type: 'parallel', reference: { entityId: source.id, index: 0 } }] };
-    document.entities.push(source);
+    const existing = createEntity('sketch', 'existing');
+    existing.name = '矩形 3';
+    document.entities.push(source, existing);
     const [copy] = linearPatternEntities(document, [source.id], { count: 1, direction: [1, 0], spacing: 20 });
     assert.deepEqual(copy.points, [[20, 0], [30, 0]]);
+    assert.equal(copy.name, '矩形 4');
     assert.deepEqual(copy.curves?.[0], { c1: [23, 2], c2: [27, 2] });
     assert.equal(copy.edgeConstraints?.[0][0].reference?.entityId, copy.id);
     assert.deepEqual(source.points, [[0, 0], [10, 0]]);

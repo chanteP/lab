@@ -4,7 +4,7 @@ import { useStorage, useWindowSize } from '@vueuse/core';
 import * as THREE from 'three';
 import { NButton, NIcon, NInput, NModal, NSelect, useMessage } from 'naive-ui';
 import {
-    TrashOutline,
+    TrashOutline, CreateOutline,
 } from '@vicons/ionicons5';
 import { Viewport, type EditPhase, type SketchDimension, type ViewTool, type ViewportCallbacks, type ViewportStats } from './engine/Viewport';
 import ViewportView from './components/viewport/Viewport.vue';
@@ -24,6 +24,7 @@ import { useSketchEditing } from './composables/sketch/useSketchEditing';
 import { useSketchSession } from './composables/sketch/useSketchSession';
 import { useSketchAdvanced } from './composables/sketch/useSketchAdvanced';
 import { useSketchLinearPattern } from './composables/sketch/useSketchLinearPattern';
+import { useSketchRadialPattern } from './composables/sketch/useSketchRadialPattern';
 import { useSketchAssets } from './composables/sketch/useSketchAssets';
 import { storedLengthUnit, useUnits } from './composables/useUnits';
 import EntitySidebar from './components/layout/EntitySidebar.vue';
@@ -33,6 +34,7 @@ import SketchConstraints from './components/sketch/SketchConstraints.vue';
 import SketchHints from './components/sketch/SketchHints.vue';
 import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
 import SketchLinearPatternOverlay from './components/sketch/SketchLinearPatternOverlay.vue';
+import SketchRadialPatternOverlay from './components/sketch/SketchRadialPatternOverlay.vue';
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
@@ -42,6 +44,7 @@ import SectionControl from './components/viewport/SectionControl.vue';
 import { SIDEBAR_LAYOUT, STORAGE_KEYS } from './config/const';
 import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
+import { sketchMarqueeSelection, type SketchMarqueeRect } from './engine/sketchMarquee';
 import {
     cloneDocument, createDocument,
     type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type PrimitiveKind, type SelectionKind, type SketchReferenceGuide,
@@ -191,7 +194,7 @@ const {
     treeNodes, contextMenu,
     selectEntity, updateEntity, updateLengthEntity,
     removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
-    createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
+    createFolder, openNodeContext, renameNode, renameNodes, deleteContextNodes, reparentNodes,
     createPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
     toggleNodeVisibility,
 } = useDocumentEntities({
@@ -212,7 +215,7 @@ const sketchEditing = useSketchEditing({
     isTransforming: () => transforming, setTransforming: (value) => transforming = value,
 });
 const {
-    activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
+    activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity, selectSketchItems, deleteSelectedSketchItems,
     addSketchPoint,
     moveSketchPoint, finishSketchHandleDrag, moveSketchCenter, deleteSketchPoint, deleteSketchBorder,
     selectSketchSegment, moveSketchHandle, resetSketchHandle, selectSketchPoint,
@@ -248,7 +251,12 @@ const linearPattern = useSketchLinearPattern({
     viewport: () => viewport, message, pushHistory, clearSketchSelection, selectSketchEntity, activateSketchSelectionTool,
 });
 const { active: linearPatternActive } = linearPattern;
-const sketchOverlayActive = computed(() => overlayActive.value || linearPatternActive.value);
+const radialPattern = useSketchRadialPattern({
+    document, activePlaneId, activeTool, selectedShapes, selectedIds, spaceActive, sketchGuideSnapEnabled,
+    viewport: () => viewport, message, pushHistory, clearSketchSelection, selectSketchEntity, activateSketchSelectionTool,
+});
+const { active: radialPatternActive } = radialPattern;
+const sketchOverlayActive = computed(() => overlayActive.value || linearPatternActive.value || radialPatternActive.value);
 const canDraw = computed(() => !!activePlane.value && selectedIds.value.includes(activePlane.value.id));
 
 function togglePanel(panel: PrimaryPanel) {
@@ -266,6 +274,7 @@ function chooseTool(tool: ViewTool) {
 }
 function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
     if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = tool;
@@ -276,6 +285,7 @@ function chooseSketchTransform(tool: 'translate' | 'rotate' | 'scale') {
 }
 function chooseSketchSelection() {
     if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = 'select';
@@ -284,6 +294,7 @@ function chooseSketchSelection() {
 }
 function chooseSketchType(type: typeof sketchType.value) {
     if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
     if (symmetry.value && symmetry.value.step !== 3) return;
     stopMeasure();
     activeTool.value = 'select';
@@ -293,6 +304,7 @@ function chooseSketchType(type: typeof sketchType.value) {
 function closeSketchMode() {
     stopMeasure();
     if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
     if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
     closeSketch();
 }
@@ -369,6 +381,13 @@ function onMarqueeSelect(ids: string[], additive: boolean) {
     parameterCardOpen.value = true;
     setTool(selectedIds.value.length === 1 ? 'translate' : 'select');
 }
+function onSketchMarqueeSelect(rect: SketchMarqueeRect, additive: boolean) {
+    const view = viewport;
+    if (!view) return;
+    const selection = sketchMarqueeSelection(document.value.entities, activePlaneId.value, rect, (point) => view.sketchScreen(point));
+    selectSketchItems(selection, additive);
+}
+
 function onBlankCommit() {
     cancelShellForSelection();
     if (operation.value) return doneOperation();
@@ -491,13 +510,45 @@ function stopMeasure() {
 function startSymmetry() {
     stopMeasure();
     if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
     sketchAdvanced.startSymmetry();
 }
 function startLinearPattern() {
     if (symmetryActive.value) return;
+    if (radialPatternActive.value) radialPattern.cancel();
     stopMeasure();
     linearPattern.start();
 }
+function startRadialPattern() {
+    if (symmetryActive.value) return;
+    stopMeasure();
+    if (linearPatternActive.value) linearPattern.cancel();
+    radialPattern.start();
+}
+function deleteCurrentSelection() {
+    if (linearPatternActive.value || radialPatternActive.value || symmetryActive.value) return;
+    if (sketchMode.value) deleteSelectedSketchItems();
+    else removeSelected();
+}
+
+const showBatchRename = ref(false);
+const batchRenameName = ref('');
+let batchRenameIds: string[] = [];
+function openBatchRename() {
+    if (!contextMenu.value || selectedIds.value.length < 2) return;
+    batchRenameIds = [...selectedIds.value];
+    const first = document.value.entities.find((entity) => entity.id === batchRenameIds[0])
+        || document.value.folders.find((folder) => folder.id === batchRenameIds[0]);
+    batchRenameName.value = first?.name || '';
+    showBatchRename.value = true;
+    contextMenu.value = null;
+}
+function confirmBatchRename() {
+    if (!batchRenameName.value.trim()) return;
+    renameNodes(batchRenameIds, batchRenameName.value);
+    showBatchRename.value = false;
+}
+
 function preventContextMenu(event: Event) { event.preventDefault(); }
 function preventBrowserZoom(event: WheelEvent) { if (event.ctrlKey || event.metaKey) event.preventDefault(); }
 function preventGesture(event: Event) { event.preventDefault(); }
@@ -519,9 +570,11 @@ function onKeyDown(event: KeyboardEvent) {
     if (event.metaKey || event.ctrlKey || event.code === 'Space') return;
     if (event.code === 'Enter' && operation.value) doneOperation();
     else if (event.code === 'Enter' && linearPatternActive.value) linearPattern.complete();
+    else if (event.code === 'Enter' && radialPatternActive.value) radialPattern.complete();
     else if (event.code === 'Enter' && sketchMode.value) finishSketch();
     else if (event.code === 'Escape') {
         if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
         else if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
         else if (operation.value) cancelOperation();
         else if (sketchMode.value) clearSketchSelection();
@@ -530,7 +583,7 @@ function onKeyDown(event: KeyboardEvent) {
     }
     else if (event.code === 'Delete' || event.code === 'Backspace') {
         if (selectedSketchGuideId.value) onSketchGuideDelete(selectedSketchGuideId.value);
-        else if (!symmetryActive.value && !linearPatternActive.value) removeSelected();
+        else if (!symmetryActive.value && !linearPatternActive.value && !radialPatternActive.value) deleteCurrentSelection();
     }
     else if (event.code === 'KeyV') sketchMode.value ? chooseSketchSelection() : setTool('select');
     else if (event.code === 'KeyG') sketchMode.value ? chooseSketchTransform('translate') : setTool('translate');
@@ -567,6 +620,7 @@ watch(sketchMode, (active) => {
     } else {
         updateDisplayMode(displayModeBeforeSketch);
         if (linearPatternActive.value) linearPattern.cancel();
+    if (radialPatternActive.value) radialPattern.cancel();
         if (symmetryActive.value) sketchAdvanced.cancelSymmetry();
     }
 });
@@ -753,9 +807,13 @@ const viewportCallbacks: ViewportCallbacks = {
         onLengthUnitChange: setLengthUnit,
         onDirectDistance: (value) => ['edge', 'vertex'].includes(selectionKind.value || '') ? updateEdgeTreatmentDistance(value) : updateFaceOffsetInput(value),
         onExtrudeDistance: updateExtrudeLength,
+        onSketchExtrudeDistance: (profileId, direction, value) => {
+            if (operation.value?.type !== 'extrude' || operation.value.profileId !== profileId) startExtrude(profileId, undefined, true);
+            updateExtrudeLength(value);
+        },
         onExtrudeGesture,
         onBlankCommit,
-        onMarqueeSelect,
+        onMarqueeSelect, onSketchMarqueeSelect,
         onHoverSketch,
         onSpaceChange: (active) => {
             spaceActive.value = active;
@@ -819,6 +877,7 @@ onBeforeUnmount(() => {
                 <ViewportView :callbacks="viewportCallbacks" :suspended="sketchOverlayActive" :selected-guide-id="selectedSketchGuideId" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <SketchLinearPatternOverlay v-if="sketchMode && linearPatternActive" :pattern="linearPattern" />
+                <SketchRadialPatternOverlay v-if="sketchMode && radialPatternActive" :pattern="radialPattern" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
@@ -834,9 +893,9 @@ onBeforeUnmount(() => {
                     @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
-                    :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" :has-shape-selection="selectedShapes.length > 0" :linear-pattern-active="linearPatternActive" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
-                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @linear-pattern="startLinearPattern" @transform="chooseSketchTransform" />
-                <SketchConstraints v-if="sketchMode && !symmetryActive && !linearPatternActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
+                    :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" :has-shape-selection="selectedShapes.length > 0" :linear-pattern-active="linearPatternActive" :radial-pattern-active="radialPatternActive" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
+                    @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @linear-pattern="startLinearPattern" @radial-pattern="startRadialPattern" @transform="chooseSketchTransform" @delete="deleteCurrentSelection" />
+                <SketchConstraints v-if="sketchMode && !symmetryActive && !linearPatternActive && !radialPatternActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
                     :rules="selectedConstraintRuleItems" :tangent-available="tangentConstraintAvailable" :concentric-available="concentricConstraintAvailable" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @select-rule="onSketchConstraintItemSelect" @hover-rule="onSketchConstraintRuleHover" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode && !sketchOverlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
@@ -864,7 +923,13 @@ onBeforeUnmount(() => {
             <p class="modal-note">新项目为空白项目，所有数据保存在当前浏览器。</p>
             <div class="modal-actions"><NButton @click="showNewProject = false">取消</NButton><NButton type="primary" @click="newProject">创建项目</NButton></div>
         </NModal>
+        <NModal v-model:show="showBatchRename" preset="card" title="批量重命名" style="width: 420px" :bordered="false">
+            <label class="modal-field">名称前缀<NInput v-model:value="batchRenameName" autofocus placeholder="名称" @keyup.enter="confirmBatchRename" /></label>
+            <p class="modal-note">按选择顺序命名为“名称 1、名称 2…”</p>
+            <div class="modal-actions"><NButton @click="showBatchRename = false">取消</NButton><NButton type="primary" :disabled="!batchRenameName.trim()" @click="confirmBatchRename">确定</NButton></div>
+        </NModal>
         <div v-if="contextMenu" class="entity-context-menu" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop>
+            <button v-if="selectedIds.length > 1" @click="openBatchRename"><NIcon><CreateOutline /></NIcon>重命名</button>
             <button class="danger" @click="deleteContextNodes"><NIcon><TrashOutline /></NIcon>删除</button>
         </div>
         <NModal v-model:show="showHelp" preset="card" title="直接建模操作" style="width: 600px" :bordered="false">

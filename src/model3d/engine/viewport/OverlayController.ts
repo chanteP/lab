@@ -9,7 +9,7 @@ export type ViewportOverlay = {
 } & ({
     kind: 'dimension';
     edgeKey?: string;
-    target: SketchDimension | { kind: 'directFace' } | { kind: 'edgeTreatment' } | { kind: 'extrudeDepth' };
+    target: SketchDimension | { kind: 'directFace' } | { kind: 'edgeTreatment' } | { kind: 'extrudeDepth' } | { kind: 'sketchExtrude'; profileId: string; direction: 1 | -1 };
     value: number;
     unit: LengthUnit;
     signed?: boolean;

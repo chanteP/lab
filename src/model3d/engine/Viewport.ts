@@ -23,6 +23,7 @@ export type ViewportStats = { vertices: number; triangles: number; objects: numb
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
 export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
+import type { SketchMarqueeRect } from './sketchMarquee';
 export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 
 export interface ViewportCallbacks {
@@ -68,9 +69,11 @@ export interface ViewportCallbacks {
     onLengthUnitChange: (unit: LengthUnit) => void;
     onDirectDistance: (value: number) => void;
     onExtrudeDistance: (value: number) => void;
+    onSketchExtrudeDistance: (profileId: string, direction: 1 | -1, value: number) => void;
     onExtrudeGesture: (profileId: string, direction: 1 | -1, delta: number, phase: EditPhase) => void;
     onBlankCommit: () => void;
     onMarqueeSelect: (ids: string[], additive: boolean) => void;
+    onSketchMarqueeSelect: (rect: SketchMarqueeRect, additive: boolean) => void;
     onHoverSketch: (id: string, normal: Vec3, point: Vec3) => void;
     onSpaceChange: (active: boolean) => void;
     onMeasureChange: (active: boolean) => void;

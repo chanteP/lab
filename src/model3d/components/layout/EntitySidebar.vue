@@ -123,7 +123,7 @@ function onTreeSelect(id: string, additive: boolean, shiftKey: boolean) {
         </section>
 
         <section class="objects-section">
-            <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span v-if="!specialMode" class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
+            <div class="section-label">{{ specialMode ? '草图' : '实体' }} <span class="section-actions"><button class="add-folder" title="新建文件夹" aria-label="新建文件夹" @click="emit('folder')"><NIcon><FolderOutline /></NIcon></button></span></div>
             <div class="object-list">
                 <div v-if="!nodes.length" class="empty-objects">从左侧开始建模</div>
                 <EntityTree v-if="nodes.length" :nodes="nodes" :selected-ids="selectedIds" @select="onTreeSelect" @activate="(id) => emit('activate', id)" @rename="(id, name) => emit('rename', id, name)" @context="(node, event) => emit('context', node, event)" @drop="(ids, target) => emit('drop', ids, target)" @toggle="emit('toggle', $event)" />

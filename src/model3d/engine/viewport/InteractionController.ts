@@ -632,6 +632,14 @@ export class InteractionController {
                 this.capturePointer(event);
                 return;
             }
+            if (this.sketchSelectionTool && this.tool === 'select') {
+                event.preventDefault(); event.stopImmediatePropagation();
+                this.clearSketchReferences();
+                this.marquee = { startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, additive: event.shiftKey || event.metaKey || event.ctrlKey, moved: false };
+                this.controls.enabled = false;
+                this.capturePointer(event);
+                return;
+            }
             const start = this.sketchOperationPoint(event, { edgeStart: this.drawingEdgeStart() });
             if (start) { this.shapeDrag = { start, moved: false }; this.capturePointer(event); }
             return;
@@ -650,8 +658,11 @@ export class InteractionController {
             }
         }
         const hit = this.hitEntity(event);
-        if ((event.metaKey || event.ctrlKey) && !this.spacePressed && this.tool === 'select' && !this.measureMode) {
+        const marqueeTool = !this.sketchMode && this.tool === 'select' && !this.spacePressed && !this.measureMode && (event.metaKey || event.ctrlKey);
+        if (marqueeTool) {
             event.preventDefault(); event.stopImmediatePropagation();
+            this.shapeDrag = null;
+            this.clearSketchReferences();
             this.marquee = { startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, additive: event.shiftKey || event.metaKey || event.ctrlKey, moved: false };
             this.controls.enabled = false;
             this.capturePointer(event);
@@ -799,7 +810,7 @@ export class InteractionController {
             display: this.marquee.moved ? 'block' : 'none', left: `${left}px`, top: `${top}px`,
             width: `${Math.abs(this.marquee.x - this.marquee.startX)}px`, height: `${Math.abs(this.marquee.y - this.marquee.startY)}px`,
         });
-        this.selectionRectangle.classList.toggle('intersect', this.marquee.x < this.marquee.startX);
+        this.selectionRectangle.classList.toggle('intersect', !this.sketchMode && this.marquee.x < this.marquee.startX);
     }
     private finishMarquee() {
         const marquee = this.marquee;
@@ -811,6 +822,12 @@ export class InteractionController {
         const rect = this.renderer.domElement.getBoundingClientRect();
         const minX = Math.min(marquee.startX, marquee.x), maxX = Math.max(marquee.startX, marquee.x);
         const minY = Math.min(marquee.startY, marquee.y), maxY = Math.max(marquee.startY, marquee.y);
+        if (this.sketchMode) {
+            this.callbacks.onSketchMarqueeSelect({
+                left: minX - rect.left, top: minY - rect.top, right: maxX - rect.left, bottom: maxY - rect.top,
+            }, marquee.additive);
+            return;
+        }
         const intersectMode = marquee.x < marquee.startX;
         const ids: string[] = [];
         this.model.children.forEach((object) => {
@@ -841,6 +858,11 @@ export class InteractionController {
             const moved = this.marquee.moved;
             this.finishMarquee();
             if (moved) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+            if (this.sketchMode) {
+                this.callbacks.onSketchCancelSelection();
+                event.preventDefault(); event.stopImmediatePropagation();
+                return;
+            }
         }
         if (this.viewRotateDrag) {
             event.preventDefault(); event.stopImmediatePropagation();

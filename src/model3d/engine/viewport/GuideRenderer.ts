@@ -135,7 +135,12 @@ export class GuideRenderer {
                 normal.copy(new THREE.Vector3(...geometryAnchor.normal));
             }
             const profileId = sources[sources.length - 1].id;
-            for (const direction of [1, -1] as const) this.group.add(this.createThickArrow(center, normal.clone().multiplyScalar(direction), 18, { extrudeArrow: { profileId, direction } }));
+            this.group.add(this.createThickArrow(center, normal, 18, { extrudeArrow: { profileId, direction: 1 } }));
+            this.options.overlay.set({
+                id: 'guide-label:sketch-extrude', kind: 'dimension', target: { kind: 'sketchExtrude', profileId, direction: 1 },
+                position: center.clone().add(normal.clone().multiplyScalar(12)).toArray(), screenOffset: [76, 0],
+                value: 10, unit: this.options.getLengthUnit(), signed: true,
+            });
             return;
         }
         if (tool !== 'extrude') return;
@@ -159,7 +164,7 @@ export class GuideRenderer {
             id: 'guide-label:extrude',
             kind: 'dimension', target: { kind: 'extrudeDepth' },
             position: arrowOrigin.clone().add(normal.multiplyScalar(direction * 12)).toArray(), screenOffset: [76, 0],
-            value: length, unit: this.options.getLengthUnit(),
+            value: length, unit: this.options.getLengthUnit(), signed: true,
         });
     }
 

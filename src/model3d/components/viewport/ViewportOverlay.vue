@@ -57,6 +57,7 @@ function commitDimension(item: DimensionOverlay, input: HTMLInputElement) {
         window.setTimeout(() => {
             if (item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment') props.callbacks.onDirectDistance(next);
             else if (item.target.kind === 'extrudeDepth') props.callbacks.onExtrudeDistance(next);
+            else if (item.target.kind === 'sketchExtrude') props.callbacks.onSketchExtrudeDistance(item.target.profileId, item.target.direction, next);
             else props.callbacks.onSketchDimension(item.target, next);
         }, 0);
     } else {
@@ -118,7 +119,7 @@ onBeforeUnmount(() => {
                     type="number"
                     step="1"
                     :value="dimensionValue(item)"
-                    :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment' ? item.target.kind === 'edgeTreatment' ? '圆角或倒角距离' : '推拉距离' : item.target.kind === 'extrudeDepth' ? '拉伸距离' : '尺寸'"
+                    :aria-label="item.target.kind === 'angle' ? '角度' : item.target.kind === 'directFace' || item.target.kind === 'edgeTreatment' ? item.target.kind === 'edgeTreatment' ? '圆角或倒角距离' : '推拉距离' : item.target.kind === 'extrudeDepth' || item.target.kind === 'sketchExtrude' ? '拉伸距离' : '尺寸'"
                     @input="onDimensionInput(item, $event.currentTarget as HTMLInputElement)"
                     @blur="commitDimension(item, $event.currentTarget as HTMLInputElement)"
                     @wheel.prevent.stop="onDimensionWheel(item, $event)"

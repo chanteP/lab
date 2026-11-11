@@ -1,5 +1,5 @@
 import type { ModelDocument, ModelEntity, Point2, SketchCurve, SketchProfilePart } from '../types';
-import { cloneEntity, uniqueSketchName } from '../utils/entity';
+import { cloneEntity } from '../utils/entity';
 import { uid } from '../utils/id';
 import { cloneProfilePart, translateProfilePart } from './sketchAdvanced';
 
@@ -76,6 +76,18 @@ function translateCurve(curve: SketchCurve, delta: Point2): SketchCurve {
     return { ...curve, center: move(curve.center) };
 }
 
+export function patternEntityName(document: ModelDocument, source: ModelEntity, pending: ModelEntity[]) {
+    const base = source.name.trim().replace(/\s+\d+$/, '') || '草图';
+    const entities = [...document.entities, ...pending];
+    let index = 1;
+    entities.forEach((entity) => {
+        const match = entity.name.match(new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+(\\d+)$`));
+        if (match) index = Math.max(index, Number(match[1]) + 1);
+    });
+    while (entities.some((entity) => entity.name === `${base} ${index}`)) index++;
+    return `${base} ${index}`;
+}
+
 /** Clone complete sketch data, including semantic handles, constraints and analytic curves. */
 export function linearPatternEntities(document: ModelDocument, sourceIds: string[], value: LinearPatternValue): ModelEntity[] {
     const direction = normalize(value.direction);
@@ -87,7 +99,7 @@ export function linearPatternEntities(document: ModelDocument, sourceIds: string
             const delta: Point2 = [direction[0] * value.spacing * copy, direction[1] * value.spacing * copy];
             const entity = cloneEntity(source);
             entity.id = uid();
-            entity.name = uniqueSketchName(document, source.profileType, source.trimmed, pending);
+            entity.name = patternEntityName(document, source, pending);
             entity.points = source.points?.map(([x, y]) => [x + delta[0], y + delta[1]] as Point2);
             entity.parts = source.parts?.map((part) => translateProfilePart(cloneProfilePart(part), delta));
             Object.values(entity.curves || {}).forEach((curve) => {

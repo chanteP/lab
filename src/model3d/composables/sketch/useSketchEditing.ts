@@ -11,6 +11,8 @@ import { uid } from '../../utils/id';
 import { cloneEntity, uniqueSketchName } from '../../utils/entity';
 import { cloneDocument, createEntity, type ModelDocument, type ModelEntity, type Point2, type SketchCurve, type SketchElementRef, type SketchPlane } from '../../types';
 import type { SketchState } from './useSketchState';
+import { mergeSketchItemSelection, type SketchItemSelection } from '../../engine/sketchMarquee';
+import { deleteSketchEntityItems } from '../../engine/sketchItemDeletion';
 import type { SketchConstraints } from './useSketchConstraints';
 
 interface SketchEditingOptions {
@@ -462,10 +464,10 @@ export function useSketchEditing(options: SketchEditingOptions) {
         });
         document.value.entities = document.value.entities.filter((item) => item.id !== entityId);
         document.value.entities.push(...remaining);
-        if (entity.planeId) recloseProfiles(entity.planeId, { source: splitSource, refs: remainingSourceRefs });
+        if (entity.planeId) recloseProfiles(entity.planeId, { sources: [splitSource], refs: remainingSourceRefs });
         clearSketchSelection();
     }
-    function recloseProfiles(planeId: string, replacement?: { source: ModelEntity; refs: Map<string, SketchElementRef> }) {
+    function recloseProfiles(planeId: string, replacement?: { sources: ModelEntity[]; refs: Map<string, SketchElementRef> }) {
         const candidates = document.value.entities.filter((item) => item.kind === 'sketch' && item.planeId === planeId
             && (item.open || ['polygon', 'rectangle', 'regular', 'line'].includes(item.profileType || 'polygon'))
             && !document.value.entities.some((entity) => entity.profileId === item.id));
@@ -499,7 +501,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
             delete entity.depth;
             rebuilt.push(entity);
         });
-        inheritRestitchedConstraints(document.value.entities, replacement ? [...candidates, replacement.source] : candidates, rebuilt, paths);
+        inheritRestitchedConstraints(document.value.entities, replacement ? [...candidates, ...replacement.sources] : candidates, rebuilt, paths);
         document.value.entities = document.value.entities.filter((item) => !candidates.includes(item));
         document.value.entities.push(...rebuilt);
     }
@@ -569,6 +571,30 @@ export function useSketchEditing(options: SketchEditingOptions) {
         if (editingSketchId.value !== entityId) selectSketchEntity(entityId);
         selectSketchPoint(index);
     }
+    function selectSketchItems(incoming: SketchItemSelection, additive = false) {
+        const current = { shapes: selectedShapes.value, edges: selectedEdges.value, points: selectedPoints.value };
+        const next = mergeSketchItemSelection(additive ? current : { shapes: [], edges: [], points: [] }, incoming, document.value.entities);
+        const primary = next.shapes[next.shapes.length - 1] || next.edges[next.edges.length - 1]?.entityId || next.points[next.points.length - 1]?.entityId;
+        if (!primary) {
+            clearSketchSelection();
+            return;
+        }
+        if (next.shapes.includes(primary)) selectSketchEntity(primary);
+        else {
+            const edge = next.edges.find((item) => item.entityId === primary);
+            if (edge) selectTrimmedBorder(edge.entityId, edge.index);
+            else {
+                const point = next.points.find((item) => item.entityId === primary)!;
+                selectSketchPointRef(point.entityId, point.index);
+            }
+        }
+        selectedShapes.value = next.shapes;
+        selectedEdges.value = next.edges;
+        selectedPoints.value = next.points;
+        selectedIds.value = [...new Set([...next.shapes, ...next.edges.map((item) => item.entityId), ...next.points.map((item) => item.entityId)])];
+        refreshSketch();
+    }
+
     function dragSketch(start: Point2, point: Point2, phase: EditPhase) {
         if (sketchSelectionTool.value) return;
         if (editingSketchId.value) return;
@@ -664,6 +690,55 @@ export function useSketchEditing(options: SketchEditingOptions) {
         viewport()?.refreshSketchFaces();
     }
 
+    function deleteSelectedSketchItems() {
+        const shapeIds = selectedShapes.value.length || selectedEdges.value.length || selectedPoints.value.length
+            ? [...selectedShapes.value] : editingSketchId.value ? [editingSketchId.value] : [];
+        const removedShapeIds = new Set(shapeIds);
+        const affectedIds = [...new Set([...selectedEdges.value, ...selectedPoints.value].map((item) => item.entityId))].filter((id) => !removedShapeIds.has(id));
+        if (!shapeIds.length && !affectedIds.length) return;
+
+        // One toolbar command is one undo step, including mixed multi-entity deletion.
+        pushHistory();
+        shapeIds.forEach(removeConstraintsForEntity);
+        detachFeatureReferences(document.value, shapeIds);
+        document.value.entities = document.value.entities.filter((entity) => !removedShapeIds.has(entity.id));
+        const namingDocument = { ...document.value, entities: document.value.entities.filter((entity) => !affectedIds.includes(entity.id)) };
+        const fragments: ModelEntity[] = [];
+        const replacements = new Map<string, { sources: ModelEntity[]; refs: Map<string, SketchElementRef> }>();
+
+        affectedIds.forEach((id) => {
+            const entity = document.value.entities.find((candidate) => candidate.id === id);
+            if (!entity) return;
+            const pointIndices = selectedPoints.value.filter((item) => item.entityId === id).map((item) => item.index);
+            const edgeIndices = selectedEdges.value.filter((item) => item.entityId === id).map((item) => item.index);
+            const result = deleteSketchEntityItems(entity, pointIndices, edgeIndices);
+            document.value.entities = document.value.entities.filter((candidate) => candidate.id !== id);
+            const replacement = replacements.get(entity.planeId || '') || { sources: [], refs: new Map<string, SketchElementRef>() };
+            replacement.sources.push(result.source);
+            replacements.set(entity.planeId || '', replacement);
+            result.fragments.forEach((fragment) => {
+                const next = createEntity('sketch', uid());
+                next.name = uniqueSketchName(namingDocument, undefined, true, fragments);
+                next.parentId = entity.parentId;
+                next.planeId = entity.planeId;
+                next.position = [0, 0, 0];
+                next.open = true;
+                next.profileType = 'polygon';
+                next.points = fragment.points;
+                next.curves = fragment.curve ? { 0: fragment.curve } : {};
+                next.analyticCurves = fragment.analyticCurve ? { 0: fragment.analyticCurve } : {};
+                next.trimmed = true;
+                delete next.depth;
+                replacement.refs.set(next.id, { entityId: result.source.id, index: fragment.sourceIndex });
+                fragments.push(next);
+            });
+        });
+        document.value.entities.push(...fragments);
+        replacements.forEach((replacement, planeId) => { if (planeId) recloseProfiles(planeId, replacement); });
+        clearSketchSelection();
+        viewport()?.sync(document.value);
+    }
+
     return {
         clearSketchDragState, activateSketchSelectionTool, clearSketchSelection, selectTrimmedBorder, selectSketchEntity,
         addSketchPoint,
@@ -671,7 +746,7 @@ export function useSketchEditing(options: SketchEditingOptions) {
         moveTrimmedCurve, moveSketchCenter, deleteSketchPoint, deleteSketchBorder, recloseProfiles,
         ensureSketchSegment, selectSketchSegment, moveSketchHandle, resetSketchHandle,
         selectSketchPoint, selectSketchPointRef, dragSketch, closeSketchPath, setSketchSides,
-        updateSketchCoordinate, syncTrimmedEntity,
+        updateSketchCoordinate, syncTrimmedEntity, selectSketchItems, deleteSelectedSketchItems,
     };
 }
 

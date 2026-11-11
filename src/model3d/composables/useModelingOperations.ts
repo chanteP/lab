@@ -173,7 +173,12 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             if (body) (body as any)[key] = value;
         });
     }
-    function updateExtrudeLength(value: number | null) { updateExtrude('depth', inputLength(value)); }
+    function updateExtrudeLength(value: number | null) {
+        const length = inputLength(value);
+        if (length === null) return;
+        updateExtrude('direction', length < 0 ? -1 : 1);
+        updateExtrude('depth', Math.max(0.1, Math.abs(length)));
+    }
     function onExtrudeGesture(profileId: string, direction: 1 | -1, delta: number, phase: EditPhase) {
         if (phase === 'start') {
             extrudeGestureMoved = false;

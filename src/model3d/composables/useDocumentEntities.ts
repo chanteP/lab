@@ -186,7 +186,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         const sameParent = selectedNodes.length > 0 && selectedNodes.every((item) => item.parentId === selectedNodes[0].parentId);
         const parentId = sameParent ? selectedNodes[0].parentId : null;
         pushHistory();
-        const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId, visible: true };
+        const folder = { id: uid(), name: `文件夹 ${document.value.folders.length + 1}`, parentId, visible: true, planeId: sketchMode.value ? activePlaneId.value || undefined : undefined };
         document.value.folders.push(folder);
         if (sameParent) selectedNodes.forEach((item) => {
             const node = document.value.entities.find((entity) => entity.id === item.id) || document.value.folders.find((entry) => entry.id === item.id);
@@ -208,6 +208,18 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         pushHistory();
         item.name = name;
     }
+    function renameNodes(ids: string[], value: string) {
+        const base = value.trim();
+        if (!base || !ids.length) return;
+        pushHistory();
+        ids.forEach((id, index) => {
+            const item = document.value.entities.find((entity) => entity.id === id)
+                || document.value.folders.find((folder) => folder.id === id)
+                || document.value.planes.find((plane) => plane.id === id);
+            if (item) item.name = `${base} ${index + 1}`;
+        });
+    }
+
     function deleteContextNodes() {
         const menu = contextMenu.value;
         if (!menu) return;
@@ -297,7 +309,7 @@ export function useDocumentEntities(options: DocumentEntitiesOptions) {
         treeNodes, contextMenu,
         selectEntity, updateEntity, updateLengthEntity, updateVector,
         removeSelected, removeConstraintsForEdge, removeConstraintsForEntity, deleteNodeIds, duplicateSelected,
-        createFolder, openNodeContext, renameNode, deleteContextNodes, reparentNodes,
+        createFolder, openNodeContext, renameNode, renameNodes, deleteContextNodes, reparentNodes,
         createPlane, constructPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
         toggleNodeVisibility, changeActivePlane,
     };

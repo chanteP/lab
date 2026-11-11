@@ -146,10 +146,7 @@ export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref
             }));
         };
 
-        if (selectedEdges.value.length) {
-            const covered = new Set<string>();
-            selectedEdges.value.forEach(({ entityId, index }) => addEdge(entityId, index, covered));
-        } else selectedShapes.value.forEach((entityId) => {
+        selectedShapes.value.forEach((entityId) => {
             const entity = document.value.entities.find((candidate) => candidate.id === entityId);
             if (!entity?.points) return;
             const covered = new Set<string>();
@@ -157,6 +154,10 @@ export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref
             edges.forEach((index) => addEdge(entityId, index, covered));
             entity.lockedPoints?.forEach((index) => addPoint(entityId, index, covered));
         });
+        if (selectedEdges.value.length) {
+            const covered = new Set<string>();
+            selectedEdges.value.forEach(({ entityId, index }) => addEdge(entityId, index, covered));
+        }
         items.forEach((item) => {
             if (!item.ruleId) return;
             const entity = document.value.entities.find((candidate) => candidate.id === item.entityId);

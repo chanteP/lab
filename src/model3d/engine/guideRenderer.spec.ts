@@ -99,3 +99,30 @@ test('active face and arrow follow the owner matrix during transform dragging', 
     assert.equal(renderer.group.children[0].position.x, 10);
     renderer.dispose();
 });
+
+test('closed sketch selection shows one signed extrusion arrow and its length input', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const profile = createEntity('sketch', 'profile');
+    Object.assign(profile, { planeId: 'plane', profileType: 'rectangle' as const, points: [[-5, -5], [5, -5], [5, 5], [-5, 5]], open: false });
+    document.entities.push(profile);
+    const overlay = new OverlayController();
+    const model = new THREE.Group();
+    model.add(buildEntityMesh(profile, document));
+    const renderer = new GuideRenderer({
+        overlay, model, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+        getSelected: () => [profile.id], getTool: () => 'select', getGeometryAnchor: () => null,
+        getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
+    });
+    renderer.update(document);
+    assert.equal(renderer.group.children.length, 1);
+    const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const [input] = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement);
+    assert.equal(input?.kind, 'dimension');
+    assert.equal(input?.kind === 'dimension' && input.target.kind, 'sketchExtrude');
+    assert.equal(input?.kind === 'dimension' && input.signed, true);
+    renderer.dispose();
+});

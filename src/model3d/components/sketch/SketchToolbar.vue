@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon } from 'naive-ui';
-import { CloseOutline, CopyOutline, CreateOutline, EllipseOutline, GridOutline, MoveOutline, NavigateOutline, RepeatOutline, ResizeOutline, ShapesOutline } from '@vicons/ionicons5';
+import { CloseOutline, CopyOutline, CreateOutline, EllipseOutline, GridOutline, MoveOutline, NavigateOutline, RepeatOutline, ResizeOutline, ShapesOutline, TrashOutline, ReloadOutline } from '@vicons/ionicons5';
 import SvgIcon from '../ui/SvgIcon.vue';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import { POLYGON_SIDES } from '../../config/configs';
@@ -8,7 +8,7 @@ import type { ProfileType } from '../../engine/profiles';
 import type { SketchPlane } from '../../types';
 import type { ViewTool } from '../../engine/Viewport';
 
-const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null; hasSelection: boolean; hasShapeSelection: boolean; linearPatternActive: boolean }>();
+const props = defineProps<{ sketchMode: boolean; activePanel: string | null; selectionTool: boolean; sketchType: ProfileType; sides: number; planes: SketchPlane[]; selectionKind: string | null; activeTool: ViewTool; symmetryStep: number | null; hasSelection: boolean; hasShapeSelection: boolean; linearPatternActive: boolean; radialPatternActive: boolean }>();
 const emit = defineEmits<{
     close: [];
     select: [];
@@ -19,6 +19,8 @@ const emit = defineEmits<{
     face: [];
     symmetry: [];
     linearPattern: [];
+    radialPattern: [];
+    delete: [];
     transform: [tool: 'translate' | 'rotate' | 'scale'];
 }>();
 const polygonOptions = POLYGON_SIDES.map(sides => ({ label: `${sides} 边`, value: sides }));
@@ -51,12 +53,17 @@ function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').repla
                 <div class="tool-group-label">高级工具</div>
                 <ViewportToolItem label="镜像" :active="symmetryStep !== null" :description-on-hover="false" @click="emit('symmetry')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem v-if="hasShapeSelection" label="线性阵列" :active="linearPatternActive" :disabled="symmetryStep !== null" :description-on-hover="false" @click="emit('linearPattern')"><NIcon><CopyOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem v-if="hasShapeSelection" label="旋转阵列" :active="radialPatternActive" :disabled="symmetryStep !== null" :description-on-hover="false" @click="emit('radialPattern')"><NIcon><ReloadOutline /></NIcon></ViewportToolItem>
             </div>
             <Transition name="tool-group-slide"><div v-if="hasSelection" class="tool-group transform-tool-group">
                 <div class="tool-group-label">变换工具</div>
                 <ViewportToolItem label="平移" :active="activeTool === 'translate'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="旋转" :active="activeTool === 'rotate'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem label="缩放" :active="activeTool === 'scale'" :disabled="toolsLocked()" :description-on-hover="false" @click="emit('transform', 'scale')"><NIcon><ResizeOutline /></NIcon></ViewportToolItem>
+            </div></Transition>
+            <Transition name="tool-group-slide"><div v-if="hasSelection" class="tool-group delete-tool-group">
+                <div class="tool-group-label">操作</div>
+                <ViewportToolItem label="删除" :danger="true" :description-on-hover="false" @click="emit('delete')"><NIcon><TrashOutline /></NIcon></ViewportToolItem>
             </div></Transition>
         </div>
     </nav>
@@ -72,6 +79,7 @@ function planeToolLabel(name: string) { return name.replace(/\s+\d+$/, '').repla
 .sketch-tool-list, .tool-group { display: flex; flex-direction: column; gap: 4px; }
 .advanced-tool-group { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e2e8e4); }
 .transform-tool-group { margin-top: 12px; }
+.delete-tool-group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--model3d-ui-e2e8e4); }
 .tool-group-label { padding: 0 5px 3px; color: var(--model3d-ui-89958e); font-size: 10px; font-weight: 600; letter-spacing: .08em; }
 .sketch-plane-picker > p { margin: 4px 3px 12px; color: var(--model3d-ui-7e8b83); font-size: 10px; }
 .inline-command-row { display: flex; gap: 5px; margin-bottom: 12px; }
