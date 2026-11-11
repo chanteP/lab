@@ -6,6 +6,8 @@ import { useShellOperations } from '../composables/useShellOperations';
 import { createDocument, createEntity, type ModelDocument, type Vec3 } from '../types';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
 import type { ViewTool } from './Viewport';
+import { buildEntityMesh } from './geometry';
+import { validateSolidGeometry } from './modeling/GeometryValidator';
 
 before(async () => { await initializeManifold(); });
 
@@ -24,10 +26,11 @@ function fixture() {
     const selectedIds = ref(['body']);
     const activeTool = ref<ViewTool>('select');
     let previews: unknown[] | null = null;
+    let previewCalls = 0;
     let history = 0;
     const viewport = {
         getGeometryAnchors: () => [anchor()],
-        setShellPreview: (value: unknown[] | null) => { previews = value; },
+        setShellPreview: (value: unknown[] | null) => { previews = value; if (value) previewCalls++; },
         setTool: (tool: ViewTool) => { activeTool.value = tool; },
         clearGeometrySelection: () => undefined,
     };
@@ -35,11 +38,11 @@ function fixture() {
         document, selectedIds, activeTool, viewport: () => viewport as any, message: { warning: () => undefined, error: () => undefined } as any,
         pushHistory: () => { history++; }, popHistory: () => { history--; }, inputLength: (value) => value || 0, canSelect: () => true,
     });
-    return { document, operations, history: () => history, previews: () => previews };
+    return { document, operations, history: () => history, previews: () => previews, previewCalls: () => previewCalls };
 }
 
 test('shell start and thickness edits preview without touching the document or history', () => {
-    const { document, operations, history, previews } = fixture();
+    const { document, operations, history, previews, previewCalls } = fixture();
     const before = JSON.stringify(document.value);
     assert.equal(operations.active.value, false);
     operations.start();
@@ -48,6 +51,8 @@ test('shell start and thickness edits preview without touching the document or h
     assert.equal(history(), 0);
     assert.equal(previews()?.length, 1);
     operations.update(1);
+    assert.equal(operations.thickness.value, 1);
+    assert.equal(previewCalls(), 1, 'typed changes debounce the expensive CSG preview');
     assert.equal(JSON.stringify(document.value), before);
     assert.equal(history(), 0);
     assert.equal(previews()?.length, 1);
@@ -55,6 +60,9 @@ test('shell start and thickness edits preview without touching the document or h
     assert.equal(history(), 1);
     assert.notEqual(JSON.stringify(document.value), before);
     assert(document.value.entities[0].meshGeometry);
+    const committed = buildEntityMesh(document.value.entities[0], document.value);
+    assert(Math.abs(validateSolidGeometry(committed.geometry).volume - 424) < 0.0002, 'commit uses the latest debounced value immediately');
+    committed.geometry.dispose();
     operations.finish();
     assert.equal(operations.active.value, false);
     assert.equal(previews(), null);

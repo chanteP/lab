@@ -25,7 +25,7 @@ const emit = defineEmits<{ close: []; done: []; update: [value: number] }>();
 .context-title span { padding-left: 6px; color: var(--model3d-ui-7e8b83); border-left: 1px solid var(--model3d-ui-e0e6e2); font-size: 9px; }
 .context-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .context-fields label { display: flex; align-items: center; gap: 4px; color: var(--model3d-ui-748078); font-size: 9px; white-space: nowrap; }
-.context-fields .n-input-number { width: 76px; }
+.context-fields .n-input-number { width: 120px; }
 .unit { color: var(--model3d-ui-748078); font-size: 10px; }
 @media (max-width: 1100px) { .context-title span { display: none; } }
 </style>

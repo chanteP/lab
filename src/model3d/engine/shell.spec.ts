@@ -32,18 +32,29 @@ test('shell retains the requested wall and opens the selected face', () => {
     const result = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0])], 1);
     const validation = validateSolidGeometry(result);
     assert(validation.valid, validation.errors.join(', '));
-    assert(Math.abs(volume(result) - 388) < 1e-4, `volume=${volume(result)}`);
+    assert(Math.abs(volume(result) - 424) < 1e-4, `volume=${volume(result)}`);
     assert.deepEqual(result.boundingBox!.min.toArray(), [-5, -5, -5]);
-    assert.deepEqual(result.boundingBox!.max.toArray(), [5, 4, 5], 'the selected outer face itself is removed');
+    assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5], 'opening the cavity must not shorten the adjacent outer walls');
 });
 
 test('multiple selected faces become independent openings in one shell', () => {
     const result = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0]), cap(-5, [0, -1, 0])], 1);
     const validation = validateSolidGeometry(result);
     assert(validation.valid, validation.errors.join(', '));
-    assert(Math.abs(volume(result) - 288) < 1e-4, `volume=${volume(result)}`);
+    assert(Math.abs(volume(result) - 360) < 1e-4, `volume=${volume(result)}`);
 });
 
 test('an excessive wall thickness fails without producing a non-manifold result', () => {
     assert.throws(() => evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0])], 6), /壁厚过大/);
+});
+
+test('increasing wall thickness hollows the interior without shrinking outer walls', () => {
+    for (const thickness of [1, 2, 3]) {
+        const result = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0])], thickness);
+        const inner = 10 - thickness * 2;
+        const expected = 1000 - inner ** 3 - inner ** 2 * thickness;
+        assert(Math.abs(volume(result) - expected) < 1e-4, `thickness=${thickness}, volume=${volume(result)}`);
+        assert.deepEqual(result.boundingBox!.min.toArray(), [-5, -5, -5]);
+        assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5]);
+    }
 });

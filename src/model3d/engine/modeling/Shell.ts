@@ -72,13 +72,26 @@ function openingShape(opening: ShellOpening) {
     return { shape, matrix };
 }
 
-/** Cuts through only the retained wall and joins the eroded cavity, leaving the selected face open. */
+/** Extend the inset cavity through the opening without shortening adjacent outer walls. */
 function openingCutter(opening: ShellOpening, thickness: number) {
     const { shape, matrix } = openingShape(opening);
-    const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness + 0.02, bevelEnabled: false, steps: 1, curveSegments: 16 });
-    geometry.translate(0, 0, -thickness);
-    geometry.applyMatrix4(matrix);
-    return geometry;
+    const { CrossSection } = getManifold();
+    const contours = [shape, ...shape.holes].map((path) => path.getPoints(12).map((point) => [point.x, point.y] as [number, number]));
+    const section = new CrossSection(contours);
+    let inset: InstanceType<typeof CrossSection> | null = null;
+    let extruded: ReturnType<InstanceType<typeof CrossSection>['extrude']> | null = null;
+    try {
+        inset = section.offset(-thickness, 'Miter', 4, 32);
+        if (inset.isEmpty()) throw new Error('壁厚过大，开口面没有可贯通的内部区域');
+        extruded = inset.extrude(thickness + 0.02);
+        const normal = new THREE.Vector3(...opening.normal).normalize();
+        matrix.setPosition(new THREE.Vector3().setFromMatrixPosition(matrix).addScaledVector(normal, -thickness));
+        return outputGeometry(extruded.getMesh(0)).applyMatrix4(matrix);
+    } finally {
+        extruded?.delete();
+        inset?.delete();
+        section.delete();
+    }
 }
 
 /** Uniform inward erosion followed by one independent opening cutter per selected face. */

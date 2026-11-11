@@ -1,4 +1,5 @@
 import { computed, ref, shallowRef, type Ref } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 import * as THREE from 'three';
 import type { useMessage } from 'naive-ui';
 import { buildEntityMesh } from '../engine/geometry';
@@ -31,6 +32,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
     const { document, selectedIds, activeTool, viewport, message, pushHistory, popHistory, inputLength } = options;
     const thickness = ref(2);
     const session = shallowRef<ShellSession | null>(null);
+    let previewGeneration = 0;
     const active = computed(() => !!session.value);
     const canShell = computed(() => options.canSelect() && !!viewport()?.getGeometryAnchors().length);
 
@@ -69,8 +71,13 @@ export function useShellOperations(options: ShellOperationsOptions) {
         const previews = buildPreviews(current, inputLength(value));
         viewport()?.setShellPreview([...previews].map(([entityId, geometry]) => ({ entityId, geometry })));
         current.previews = previews;
-        thickness.value = value;
     }
+
+    const schedulePreview = useDebounceFn((request: { value: number; generation: number }) => {
+        if (!session.value || request.generation !== previewGeneration) return;
+        try { showPreview(session.value, request.value); }
+        catch (error) { message.error(`抽壳预览失败：${error instanceof Error ? error.message : error}`); }
+    }, 120);
 
     function start() {
         const anchors = viewport()?.getGeometryAnchors().filter((anchor) => anchor.type === 'face' && anchor.planar) || [];
@@ -99,8 +106,8 @@ export function useShellOperations(options: ShellOperationsOptions) {
 
     function update(value: number) {
         if (!session.value || !(value > 0)) return;
-        try { showPreview(session.value, value); }
-        catch (error) { message.error(`抽壳预览失败：${error instanceof Error ? error.message : error}`); }
+        thickness.value = value;
+        schedulePreview({ value, generation: ++previewGeneration });
     }
 
     function bake(entity: ModelEntity, geometry: THREE.BufferGeometry) {
@@ -129,16 +136,21 @@ export function useShellOperations(options: ShellOperationsOptions) {
             if (entity) currentBodies.set(id, cloneEntity(entity));
         });
         if (currentBodies.size !== current.originals.size) return message.error('抽壳实体已不存在'), false;
+        previewGeneration++;
+        let finalPreviews: Map<string, THREE.BufferGeometry>;
+        try { finalPreviews = buildPreviews(current, inputLength(thickness.value)); }
+        catch (error) { message.error(`抽壳失败：${error instanceof Error ? error.message : error}`); return false; }
         pushHistory();
         try {
             current.originals.forEach((original, id) => {
-                const geometry = current.previews.get(id);
+                const geometry = finalPreviews.get(id);
                 const index = document.value.entities.findIndex((item) => item.id === id);
                 if (!geometry || index < 0) throw new Error('抽壳预览已失效');
                 const entity = cloneEntity(original);
                 bake(entity, geometry);
                 document.value.entities[index] = entity;
             });
+            finalPreviews.forEach((geometry) => geometry.dispose());
             return true;
         } catch (error) {
             currentBodies.forEach((entity, id) => {
@@ -146,12 +158,14 @@ export function useShellOperations(options: ShellOperationsOptions) {
                 if (index >= 0) document.value.entities[index] = entity;
             });
             popHistory();
+            finalPreviews.forEach((geometry) => geometry.dispose());
             message.error(`抽壳失败：${error instanceof Error ? error.message : error}`);
             return false;
         }
     }
 
     function finish() {
+        previewGeneration++;
         if (!session.value) return;
         session.value = null;
         viewport()?.setShellPreview(null);
