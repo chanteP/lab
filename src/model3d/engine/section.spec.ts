@@ -1,8 +1,12 @@
-import test from 'node:test';
+import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { measureSectionRadius } from './viewport/SceneSynchronizer';
 import { SectionRenderer, sectionSurfaceClipPlane } from './viewport/SectionRenderer';
+import { initializeManifold } from './modeling/ManifoldKernel';
+import { evaluateShell } from './modeling/Shell';
+
+before(async () => { await initializeManifold(); });
 
 test('section range is the smallest origin-centered sphere enclosing every vertex', () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
@@ -55,3 +59,29 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal(source.renderOrder, 7);
     assert.equal(renderer.group.children.length, 0);
 });
+
+test('hollow shell section caps keep the wall visible instead of only rendering the inner surface', () => {
+    const geometry = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [{
+        normal: [0, 1, 0],
+        vertices: [[-5, 5, -5], [-5, 5, 5], [5, 5, 5], [-5, 5, -5], [5, 5, 5], [5, 5, -5]], indices: [0, 1, 2, 3, 4, 5],
+    }], 1);
+    const material = new THREE.MeshStandardMaterial({ color: '#ffffff' });
+    const source = new THREE.Mesh(geometry, material);
+    const renderer = new SectionRenderer();
+    renderer.rebuild([source], new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+    const cap = renderer.group.children[2] as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+    assert.equal(backStencil(renderer), THREE.IncrementWrapStencilOp);
+    assert.equal(frontStencil(renderer), THREE.DecrementWrapStencilOp);
+    assert.equal(cap.material.stencilFunc, THREE.NotEqualStencilFunc);
+    assert.equal(cap.material.depthTest, false, 'the inner shell depth must not hide the physical wall cap');
+    assert.equal(cap.material.depthWrite, false);
+    assert(cap.material.color.r < material.color.r, 'wall caps use a contrasting physical-section color');
+    renderer.dispose();
+});
+
+function backStencil(renderer: SectionRenderer) {
+    return ((renderer.group.children[0] as THREE.Mesh).material as THREE.Material).stencilZPass;
+}
+function frontStencil(renderer: SectionRenderer) {
+    return ((renderer.group.children[1] as THREE.Mesh).material as THREE.Material).stencilZPass;
+}

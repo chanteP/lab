@@ -53,6 +53,9 @@ export class SectionRenderer {
                 roughness: 1,
                 metalness: 0,
                 side: THREE.DoubleSide,
+                // Section walls must remain visible in front of both the outer and inner shell surfaces.
+                depthTest: false,
+                depthWrite: false,
                 stencilWrite: true,
                 stencilRef: 0,
                 stencilFunc: THREE.NotEqualStencilFunc,
@@ -98,7 +101,7 @@ export class SectionRenderer {
             cap.lookAt(target);
             cap.scale.setScalar(radius * 2);
             const material = Array.isArray(source.material) ? source.material[0] : source.material;
-            if (material instanceof THREE.MeshStandardMaterial) cap.material.color.copy(material.color);
+            if (material instanceof THREE.MeshStandardMaterial) cap.material.color.copy(material.color).multiplyScalar(0.72);
         });
     }
 

@@ -30,7 +30,7 @@
 - 选择面后的自适应面板固定在右上角，不重复显示厚度或推拉面入口；搜索、插入、构造平面和工具的二级面板切换使用统一滑动/淡入动效。命令弹层、自适应描述和所选实体参数由 `ToolPanels.vue` 维护；顶部流程操作由 `ModelingOperationBar.vue` 维护，不在 `App.vue` 重复模板。
 - `OperationBar.vue` 统一顶部操作条结构和右侧红色 X，内部字段通过 slot 组合；对称与建模操作条必须复用该组件。操作条从工具栏右侧开始左对齐排列，空间不足时字段换行，不以画布中心为基准挤压布局。
 - 普通草图不显示顶部操作条；只有对称等明确的多步骤草图工具可以在独立覆盖层中使用 `OperationBar`。
-- 3D 默认、普通选择、多选、移动/旋转/缩放和面推拉不显示顶部操作条；只有 Extrude 与 Boolean 的执行/历史编辑流程显示。Extrude 保留方向、侧面、拔模、结果、目标和完成/取消；Boolean 只保留目标与完成/取消，距离统一在箭头旁编辑。
+- 3D 默认、普通选择、多选、移动/旋转/缩放和面推拉不显示顶部操作条；只有 Extrude、Boolean 与 Shell 的执行/历史编辑流程显示。Extrude 保留方向、侧面、拔模、结果、目标和完成/取消；Boolean 只保留目标与完成/取消，距离统一在箭头旁编辑；Shell 保留厚度、实时预览和完成/取消。
 - `AppButton.vue` 按 primary/secondary/danger/ghost、small/medium 和 disabled 统一圆角矩形按钮。OperationBar 关闭、建模完成和草图步骤按钮必须复用，不再使用圆形关闭按钮。
 - 移动、旋转、缩放直接放在独立工具分组，分组上下增加间距，不再藏入“变换”二级菜单。
 - 菜单项使用图标＋操作名／短说明，不使用整行 hover/active 背景色或大面积白色工具条背景。
@@ -255,6 +255,6 @@
 ## 3D Shell 与多面选择
 
 - `engine/modeling/Shell.ts` 负责均匀内缩与开口切割；开口柱体保留所选面的世界/局部转换后的完整边界，起切深度等于壁厚，禁止伸入相邻保留壁。
-- `useShellOperations` 保存操作前实体与开口锚点，壁厚变化从原实体重算并共享一次 history；结果烘焙为 `meshGeometry`，不叠加 parametric edge treatments。
+- `useShellOperations` 保存操作前实体与开口锚点，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，完成时才烘焙为 `meshGeometry` 并产生一步撤销，不叠加 parametric edge treatments。
 - `InteractionController.geometryAnchors` 保存多面选择，`GuideRenderer` 对每个面渲染 active feedback。Ctrl/Command 重复选择同一面只切换该面，App 不再通过 body id 的 toggle 处理这种多选。
-- `ShellThicknessInput.vue` 是指针旁的独立工作流输入，不复用箭头旁的 `directFace` 尺寸；Shell 不使用顶部 OperationBar。
+- `ShellOperationBar.vue` 提供厚度输入、完成和取消；Shell 不使用指针旁 `directFace` 尺寸输入。剖视封口同时采集提交实体与 Shell 预览网格，cap 不读写深度并使用高对比壁面材质，避免内表面遮挡截面壁。

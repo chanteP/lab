@@ -198,6 +198,7 @@ export class Viewport {
         this.engine.scene.add(
             this.sceneSynchronizer.model,
             this.sceneSynchronizer.sectionOutlines,
+            this.sceneSynchronizer.shellPreview.group,
             this.sceneSynchronizer.sectionCaps.group,
             this.sketchRenderer.faces,
             this.sketchRenderer.group,
@@ -398,6 +399,7 @@ export class Viewport {
         this.sketchRenderer.update(points, selectedIndex, profileType, curves, sides, selectedSegment, lockedPoints, sectorAngle, unit, open, startAngle, controlPoints, trimmedCurve);
     }
 
+    setShellPreview(previews: import('./viewport/ShellPreviewController').ShellPreview[] | null) { this.sceneSynchronizer.setShellPreview(previews); }
     setBooleanPreview(state: Extract<OperationState, { type: 'boolean' }> | null) { this.sceneSynchronizer.setBooleanPreview(state); }
     get booleanPreviewActive() { return !!this.sceneSynchronizer.booleanState; }
     setBooleanHover(id: string | null) { this.sceneSynchronizer.booleanPreview.setHover(id); }

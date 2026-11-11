@@ -33,7 +33,7 @@ import SketchHints from './components/sketch/SketchHints.vue';
 import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
-import ShellThicknessInput from './components/modeling/ShellThicknessInput.vue';
+import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
@@ -135,21 +135,24 @@ const {
     document, activeTool, viewport: () => viewport, message, pushHistory, popHistory, setTool,
 });
 const {
-    thickness: shellThickness, inputPosition: shellInputPosition, active: shellActive, canShell,
-    start: startShell, update: updateShellThickness, finish: finishShell,
+    thickness: shellThickness, active: shellActive, canShell,
+    start: startShell, update: updateShellThickness, commit: commitShell, finish: finishShell,
 } = useShellOperations({
     document, selectedIds, activeTool, viewport: () => viewport, message, pushHistory, popHistory, inputLength,
     canSelect: () => selectionKind.value === 'face' && selectedFacePlanar.value && selectedEntities.value.length > 0
         && selectedEntities.value.every((entity) => !['sketch', 'image'].includes(entity.kind)),
 });
-function onShell(event: MouseEvent) {
+function onShell() {
     setTool('shell');
-    startShell(event);
+    startShell();
 }
 function closeShell() {
     finishShell();
     selectionKind.value = selectedIds.value.length ? 'body' : null;
     setTool('select');
+}
+function completeShell() {
+    if (commitShell()) closeShell();
 }
 
 const canRestoreTreatment = computed(() => {
@@ -789,7 +792,7 @@ onBeforeUnmount(() => {
                     :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
                     @history="editHistory" @boolean="applyBoolean" @shell="onShell" />
-                <ShellThicknessInput v-if="shellActive" :model-value="shellThickness" :position="shellInputPosition" :unit="lengthUnit" @update="updateShellThickness" @close="closeShell" />
+                <ShellOperationBar v-if="shellActive && !sketchMode" :value="shellThickness" :unit="lengthUnit" @update="updateShellThickness" @done="completeShell" @close="closeShell" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

@@ -15,6 +15,7 @@ import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
 import { SectionRenderer, sectionSurfaceClipPlane } from './SectionRenderer';
+import { ShellPreviewController, type ShellPreview } from './ShellPreviewController';
 
 /** Render-only helper position; the document plane origin remains the modeling surface. */
 export function planeHelperPosition(plane: SketchPlane): Vec3 {
@@ -61,6 +62,7 @@ export class SceneSynchronizer {
     readonly planes = new THREE.Group();
     readonly sectionOutlines = new THREE.Group();
     readonly sectionCaps = new SectionRenderer();
+    readonly shellPreview = new ShellPreviewController();
     document: ModelDocument | null = null;
     selected: string[] = [];
     selectionKind: SelectionKind = null;
@@ -129,6 +131,7 @@ export class SceneSynchronizer {
     sync(document: ModelDocument) {
         this.document = document;
         this.booleanPreview.reset();
+        this.shellPreview.reset();
         this.options.onClearAltBorder();
         this.options.transform.detach();
         const previousTopology = new Map<string, BodyTopology>();
@@ -291,7 +294,12 @@ export class SceneSynchronizer {
         const sources = this.model.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh
             && !child.userData.selectionProxy
             && !['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || ''));
-        this.sectionCaps.rebuild(sources, this.sectionPlane);
+        const previews = this.shellPreview.group.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+        previews.forEach((preview) => {
+            const materials = Array.isArray(preview.material) ? preview.material : [preview.material];
+            materials.forEach((material) => { material.clippingPlanes = this.sectionSurfacePlane ? [this.sectionSurfacePlane] : []; });
+        });
+        this.sectionCaps.rebuild([...sources, ...previews], this.sectionPlane);
         sources.forEach((child) => {
             if (!(child instanceof THREE.Mesh) || !child.visible || child.userData.selectionProxy || ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) return;
             const outline = new THREE.LineSegments(createDisplayEdgeGeometry(child.geometry), new THREE.LineBasicMaterial({
@@ -307,7 +315,7 @@ export class SceneSynchronizer {
     }
 
     applyIsolation() {
-        if (this.booleanState) return;
+        if (this.booleanState || this.shellPreview.active) return;
         this.model.children.forEach((child) => {
             const entity = this.document?.entities.find((item) => item.id === child.userData.entityId);
             const inSketch = !this.options.isSketchMode() || (!!entity && ['sketch', 'image'].includes(entity.kind) && entity.planeId === this.activePlane?.id);
@@ -416,6 +424,13 @@ export class SceneSynchronizer {
         this.options.onRefreshSketchFaces();
     }
 
+    setShellPreview(previews: ShellPreview[] | null) {
+        this.shellPreview.reset();
+        if (previews?.length) this.shellPreview.apply(this.model, previews);
+        else this.applyIsolation();
+        if (this.sectionPlane) this.rebuildSectionOutlines();
+    }
+
     setSelected(ids: string[], kind: SelectionKind = 'body') {
         this.selected = ids;
         this.selectionKind = kind;
@@ -436,7 +451,7 @@ export class SceneSynchronizer {
 
     applySelection() {
         this.options.transform.detach();
-        if (this.booleanState) return;
+        if (this.booleanState || this.shellPreview.active) return;
         this.model.children.forEach((object) => {
             const mesh = object as THREE.Mesh;
             const material = mesh.material as THREE.MeshStandardMaterial;
@@ -477,6 +492,7 @@ export class SceneSynchronizer {
     dispose() {
         this.booleanPreview.dispose();
         this.sectionCaps.dispose();
+        this.shellPreview.dispose();
         clearGroup(this.model);
         clearGroup(this.planes);
         clearGroup(this.sectionOutlines);
