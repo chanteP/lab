@@ -251,3 +251,10 @@
 - 通用 Offset Face、Move Face 不属于已支持能力。Chamfer/Fillet 仅限上文直线凸边和三面角点的参数化实现，不得以 smooth normal 或网格雕刻冒充其他曲面处理。
 
 - 草图尺寸组合契约以 `docs/SKETCH_EDITING.md` 的 22 个 case 和 `engine/sketchDimension.spec.ts` 为准；修改尺寸或约束必须同步两者。
+
+## 3D Shell 与多面选择
+
+- `engine/modeling/Shell.ts` 负责均匀内缩与开口切割；开口柱体保留所选面的世界/局部转换后的完整边界，起切深度等于壁厚，禁止伸入相邻保留壁。
+- `useShellOperations` 保存操作前实体与开口锚点，壁厚变化从原实体重算并共享一次 history；结果烘焙为 `meshGeometry`，不叠加 parametric edge treatments。
+- `InteractionController.geometryAnchors` 保存多面选择，`GuideRenderer` 对每个面渲染 active feedback。Ctrl/Command 重复选择同一面只切换该面，App 不再通过 body id 的 toggle 处理这种多选。
+- `ShellThicknessInput.vue` 是指针旁的独立工作流输入，不复用箭头旁的 `directFace` 尺寸；Shell 不使用顶部 OperationBar。

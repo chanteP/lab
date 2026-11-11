@@ -11,7 +11,7 @@ import type { SceneSynchronizer } from './SceneSynchronizer';
 import type { SketchRenderer } from './SketchRenderer';
 import type { SketchAssetRenderer } from './SketchAssetRenderer';
 import type { GuideRenderer } from './GuideRenderer';
-import { GeometrySelector, type GeometryAnchor } from './GeometrySelector';
+import { GeometrySelector, updateGeometryAnchorSelection, type GeometryAnchor } from './GeometrySelector';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { pickLogicalEdge } from './EdgePicker';
 import { pickLogicalVertex } from './VertexPicker';
@@ -41,6 +41,7 @@ export function hasDistinctVertexPriority(vertex: GeometryAnchor | null, generat
 /** Pointer/key state machine. Event order and gesture thresholds mirror the original viewport. */
 export class InteractionController {
     geometryAnchor: GeometryAnchor | null = null;
+    geometryAnchors: GeometryAnchor[] = [];
     hoverFaceAnchor: GeometryAnchor | null = null;
     sketchDrag: { index: number; handle?: 1 | 2; sector?: boolean; center?: boolean; wholeShape?: boolean; wholePoints?: Point2[]; startX: number; startY: number; startPoint: Point2; rawStart: Point2; anchor: Point2; moved: boolean } | null = null;
     measureMode = false;
@@ -128,9 +129,10 @@ export class InteractionController {
             onEdit: options.callbacks.onDirectEdit,
             onState: options.callbacks.onDirectDragState,
             onPreview: (anchor, delta, worldNormal) => {
-                if (anchor.type !== 'face') { this.geometryAnchor = { ...anchor, edgeTreatmentId: this.geometryAnchor?.edgeTreatmentId || anchor.edgeTreatmentId }; return; }
+                if (anchor.type !== 'face') { this.geometryAnchor = { ...anchor, edgeTreatmentId: this.geometryAnchor?.edgeTreatmentId || anchor.edgeTreatmentId }; this.geometryAnchors = [this.geometryAnchor]; return; }
                 const offset = new THREE.Vector3(...worldNormal).multiplyScalar(delta);
                 this.geometryAnchor = { ...anchor, point: new THREE.Vector3(...anchor.point).add(offset).toArray(), vertices: anchor.vertices.map((point) => new THREE.Vector3(...point).add(offset).toArray()) };
+                this.geometryAnchors = [this.geometryAnchor];
             },
         });
         this.guideController = new SketchGuideController({ sketchRenderer: this.sketchRenderer,
@@ -968,7 +970,7 @@ export class InteractionController {
                 return;
             }
             const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray() as Vec3;
-            this.geometryAnchor = intersection || this.createGeometryAnchor(hit);
+            this.setGeometryAnchor(intersection || this.createGeometryAnchor(hit), additive);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(hits[0].object.userData.entityId, 'face', normal, hits[0].point.toArray() as Vec3, event.metaKey || event.ctrlKey, intersection.profilePoints);
             return;
@@ -977,7 +979,7 @@ export class InteractionController {
         if (hit) {
             const anchor = this.createGeometryAnchor(hit);
             if (anchor.generatedTreatment && !hasSourceEdgePriority(edgeHit) && !hasDistinctVertexPriority(vertexAnchor, anchor)) {
-                this.geometryAnchor = anchor;
+                this.setGeometryAnchor(anchor, additive);
                 this.hoverFaceAnchor = null;
                 this.callbacks.onGeometrySelect(anchor.id, anchor.type, anchor.normal, anchor.point, additive);
                 return;
@@ -985,19 +987,19 @@ export class InteractionController {
         }
         if (vertexHit && (vertexHit.object.userData.vertexRoundingProxy || !hit || vertexHit.distance <= hit.distance + 2)) {
             if (vertexAnchor) {
-                this.geometryAnchor = vertexAnchor;
+                this.setGeometryAnchor(vertexAnchor, additive);
                 this.hoverFaceAnchor = null;
                 this.callbacks.onGeometrySelect(vertexAnchor.id, 'vertex', vertexAnchor.normal, vertexAnchor.point, additive);
                 return;
             }
         }
         if (edgeHit && (hasSourceEdgePriority(edgeHit) || !hit || edgeHit.distance <= hit.distance + 2)) {
-            this.geometryAnchor = this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent);
+            this.setGeometryAnchor(this.geometrySelector.createEdgeAnchor(edgeHit, this.includeTangent), additive);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(this.geometryAnchor.id, 'edge', this.geometryAnchor.normal, this.geometryAnchor.point, additive);
         } else if (hit) {
             const normal = (hit.face?.normal || new THREE.Vector3(0, 1, 0)).clone().transformDirection(hit.object.matrixWorld).toArray();
-            this.geometryAnchor = this.createGeometryAnchor(hit);
+            this.setGeometryAnchor(this.createGeometryAnchor(hit), additive);
             this.hoverFaceAnchor = null;
             this.callbacks.onGeometrySelect(hit.object.userData.entityId, this.geometryAnchor.type, normal, this.geometryAnchor.point, additive);
         } else if (['extrude', 'offsetFace'].includes(this.tool)) this.callbacks.onBlankCommit();
@@ -1078,8 +1080,13 @@ export class InteractionController {
         this.clearSketchReferences();
         this.updateOrbitRotation();
     }
+    private setGeometryAnchor(anchor: GeometryAnchor, additive: boolean) {
+        this.geometryAnchors = updateGeometryAnchorSelection(this.geometryAnchors, anchor, additive);
+        this.geometryAnchor = this.geometryAnchors[this.geometryAnchors.length - 1] || null;
+    }
     clearGeometrySelection() {
         this.geometryAnchor = null;
+        this.geometryAnchors = [];
         this.hoverFaceAnchor = null;
         this.transform.detach();
         this.clearHoverFace();
@@ -1098,7 +1105,8 @@ export class InteractionController {
     }
     rebindGeometryAnchor() {
         if (!this.document) return;
-        if (this.geometryAnchor) this.geometryAnchor = this.geometrySelector.rebindAnchor(this.geometryAnchor, this.model, this.document);
+        this.geometryAnchors = this.geometryAnchors.map((anchor) => this.geometrySelector.rebindAnchor(anchor, this.model, this.document!)).filter(Boolean) as GeometryAnchor[];
+        this.geometryAnchor = this.geometryAnchors[this.geometryAnchors.length - 1] || null;
         if (this.hoverFaceAnchor) this.hoverFaceAnchor = this.geometrySelector.rebindAnchor(this.hoverFaceAnchor, this.model, this.document);
     }
     resetSketchGesture() {

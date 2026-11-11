@@ -18,7 +18,7 @@ import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
 import { guideScreenPosition, type SketchRulerFrame } from './sketchRulers';
 
-export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer';
+export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer' | 'shell';
 export type ViewportStats = { vertices: number; triangles: number; objects: number; selection: SelectionStats | null };
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
@@ -188,6 +188,7 @@ export class Viewport {
             getSelected: () => this.sceneSynchronizer.selected,
             getTool: () => this.tool,
             getGeometryAnchor: () => this.interaction?.geometryAnchor || null,
+            getGeometryAnchors: () => this.interaction?.geometryAnchors || [],
             getHoverFaceAnchor: () => this.interaction?.hoverFaceAnchor || null,
             getSectionPlane: () => this.sceneSynchronizer.sectionPlane,
             isSketchMode: () => this.sketchMode,
@@ -302,6 +303,7 @@ export class Viewport {
         this.publishStats();
     }
     getGeometryAnchor() { return this.interaction.geometryAnchor; }
+    getGeometryAnchors() { return this.interaction.geometryAnchors; }
     resolveGeometryEdgeTreatment() {
         const anchor = this.interaction.geometryAnchor;
         const entity = this.sceneSynchronizer.document?.entities.find((item) => item.id === anchor?.id);

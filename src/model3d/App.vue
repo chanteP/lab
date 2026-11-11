@@ -17,6 +17,7 @@ import { useProjectLibrary } from './composables/useProjectLibrary';
 import { useDocumentEntities } from './composables/useDocumentEntities';
 import { useModelingOperations } from './composables/useModelingOperations';
 import { useEdgeTreatmentOperations } from './composables/useEdgeTreatmentOperations';
+import { useShellOperations } from './composables/useShellOperations';
 import { useSketchState } from './composables/sketch/useSketchState';
 import { useSketchConstraints } from './composables/sketch/useSketchConstraints';
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
@@ -32,6 +33,7 @@ import SketchHints from './components/sketch/SketchHints.vue';
 import SketchAdvancedOverlay from './components/sketch/SketchAdvancedOverlay.vue';
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
+import ShellThicknessInput from './components/modeling/ShellThicknessInput.vue';
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
@@ -132,6 +134,24 @@ const {
 } = useEdgeTreatmentOperations({
     document, activeTool, viewport: () => viewport, message, pushHistory, popHistory, setTool,
 });
+const {
+    thickness: shellThickness, inputPosition: shellInputPosition, active: shellActive, canShell,
+    start: startShell, update: updateShellThickness, finish: finishShell,
+} = useShellOperations({
+    document, selectedIds, activeTool, viewport: () => viewport, message, pushHistory, popHistory, inputLength,
+    canSelect: () => selectionKind.value === 'face' && selectedFacePlanar.value && selectedEntities.value.length > 0
+        && selectedEntities.value.every((entity) => !['sketch', 'image'].includes(entity.kind)),
+});
+function onShell(event: MouseEvent) {
+    setTool('shell');
+    startShell(event);
+}
+function closeShell() {
+    finishShell();
+    selectionKind.value = selectedIds.value.length ? 'body' : null;
+    setTool('select');
+}
+
 const canRestoreTreatment = computed(() => {
     selectionKind.value;
     selectedIds.value;
@@ -319,8 +339,8 @@ function onHoverSketch(id: string, normal: Vec3, point: Vec3) {
     createPlane();
     beginSketch(activePlaneId.value!);
 }
-function undoModel() { cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
-function redoModel() { cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
+function undoModel() { finishShell(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; undo(); }
+function redoModel() { finishShell(); cancelDirectEdit(); cancelEdgeTreatment(); if (sketchMode.value) { viewport?.cancelSketchGesture(); clearSketchSelection(); } viewport?.clearGeometrySelection(); selectedSketchGuideId.value = null; redo(); }
 
 function onMarqueeSelect(ids: string[], additive: boolean) {
     selectedIds.value = additive ? [...new Set([...selectedIds.value, ...ids])] : ids;
@@ -340,6 +360,7 @@ function onBlankCommit() {
 }
 
 function setTool(tool: ViewTool) {
+    if (tool !== 'shell') finishShell();
     finishDirectEdit();
     finishEdgeTreatment();
     if (operation.value && activeTool.value !== tool) doneOperation();
@@ -389,6 +410,7 @@ function selectRangeFromItems(ids: string[]) {
     setTool('select');
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
+    finishShell();
     finishDirectEdit();
     finishEdgeTreatment();
     const picked = document.value.entities.find((item) => item.id === id);
@@ -399,11 +421,18 @@ function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: 
     }
     lastFace.value = { bodyId: id, normal, point };
     selectedProfileFace.value = profileFace?.map((point) => [...point]) || null;
-    selectedFacePlanar.value = type === 'face' && !!viewport?.getGeometryAnchor()?.planar;
-    selectEntity(id, additive);
-    selectionKind.value = additive ? 'mixed' : profileFace ? 'face' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
+    const anchors = viewport?.getGeometryAnchors() || [];
+    selectedFacePlanar.value = type === 'face' && anchors.length > 0 && anchors.every((anchor) => anchor.type === 'face' && anchor.planar);
     activePanel.value = null;
     parameterCardOpen.value = true;
+    if (additive && type === 'face' && !profileFace) {
+        selectedIds.value = [...new Set(anchors.map((anchor) => anchor.id))];
+        selectionKind.value = anchors.length ? 'face' : null;
+        setTool('select');
+        return;
+    }
+    selectEntity(id, additive);
+    selectionKind.value = additive ? 'mixed' : profileFace ? 'face' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
     if (additive) { setTool('select'); return; }
     setTool('select');
 }
@@ -757,9 +786,10 @@ onBeforeUnmount(() => {
                 <ViewportView :callbacks="viewportCallbacks" :suspended="overlayActive" :selected-guide-id="selectedSketchGuideId" :sketch-selection-tool="sketchSelectionTool" @ready="onViewportReady" />
                 <SketchAdvancedOverlay v-if="sketchMode && overlayActive" :advanced="sketchAdvanced" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
-                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :selected-count="selectedIds.length" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
-                    @history="editHistory" @boolean="applyBoolean" />
+                    @history="editHistory" @boolean="applyBoolean" @shell="onShell" />
+                <ShellThicknessInput v-if="shellActive" :model-value="shellThickness" :position="shellInputPosition" :unit="lengthUnit" @update="updateShellThickness" @close="closeShell" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

@@ -23,7 +23,7 @@ const props = withDefaults(defineProps<{
     descriptionOnHover: true,
     options: () => [],
 });
-const emit = defineEmits<{ click: []; select: [value: string | number] }>();
+const emit = defineEmits<{ click: [event: MouseEvent]; select: [value: string | number] }>();
 
 const hasDropdown = computed(() => props.options.length > 0);
 const selectedOption = computed(() => props.options.find(option => option.value === props.modelValue));
@@ -39,7 +39,7 @@ const subtitleLabel = computed(() => selectedOption.value?.label ?? props.subtit
                 :class="{ active, danger, large, 'description-on-hover': descriptionOnHover }"
                 :aria-label="label"
                 :disabled="disabled"
-                @click="emit('click')"
+                @click="emit('click', $event)"
             >
                 <span class="viewport-tool-item__icon" aria-hidden="true"><slot /></span>
                 <span class="viewport-tool-item__description">

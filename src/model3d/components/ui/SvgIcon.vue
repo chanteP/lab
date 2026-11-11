@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'section' | 'render' | 'clay' | 'wireframe' | 'xray' | 'lock' }>();
+defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'section' | 'render' | 'clay' | 'wireframe' | 'xray' | 'lock' | 'shell' }>();
 </script>
 
 <template>
@@ -28,6 +28,11 @@ defineProps<{ name: 'pencil' | 'ruler' | 'ellipse' | 'freehand' | 'section' | 'r
         </template>
         <template v-else-if="name === 'wireframe'">
             <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Zm0 0v9m-8-4.5 8 4.5 8-4.5M4 12l8 4.5 8-4.5M8 5.25l8 4.5v9m0-13.5-8 4.5v9M12 12v9" />
+        </template>
+        <template v-else-if="name === 'shell'">
+            <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" />
+            <path d="m4 7.5 8 4.5 8-4.5M12 12v9M8 5.25l8 4.5" />
+            <path d="m8 14.5 4 2.25 4-2.25M12 12V8.5" stroke-width="2.2" />
         </template>
         <template v-else-if="name === 'lock'">
             <rect x="5" y="10" width="14" height="11" rx="2" />

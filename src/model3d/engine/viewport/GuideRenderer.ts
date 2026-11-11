@@ -22,6 +22,7 @@ interface GuideRendererOptions {
     getSelected: () => string[];
     getTool: () => ViewTool;
     getGeometryAnchor: () => GeometryAnchor | null;
+    getGeometryAnchors?: () => GeometryAnchor[];
     getHoverFaceAnchor: () => GeometryAnchor | null;
     getSectionPlane: () => THREE.Plane | null;
     isSketchMode: () => boolean;
@@ -220,10 +221,11 @@ export class GuideRenderer {
     refreshFaceFeedback() {
         clearGroup(this.faceFeedback);
         if (this.options.isSketchMode()) return;
-        const selected = this.options.getGeometryAnchor();
+        const primary = this.options.getGeometryAnchor();
+        const selected = this.options.getGeometryAnchors?.() || (primary ? [primary] : []);
         const hovered = this.options.getHoverFaceAnchor();
-        if (selected && this.options.getSelected().includes(selected.id) && !this.sourceTreatmentActive(selected)) this.renderAnchor(selected, true);
-        if (hovered && hovered.key !== selected?.key && !this.sourceTreatmentActive(hovered)) this.renderAnchor(hovered, false);
+        selected.filter((anchor) => this.options.getSelected().includes(anchor.id) && !this.sourceTreatmentActive(anchor)).forEach((anchor) => this.renderAnchor(anchor, true));
+        if (hovered && !selected.some((anchor) => anchor.key === hovered.key) && !this.sourceTreatmentActive(hovered)) this.renderAnchor(hovered, false);
     }
 
     private renderAnchor(anchor: GeometryAnchor, active: boolean) {

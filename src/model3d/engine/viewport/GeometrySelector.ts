@@ -45,6 +45,16 @@ function anchorSource(mesh: THREE.Mesh) {
     return { sourceObject: mesh, sourceMatrixWorld: mesh.matrixWorld.clone(), sourceProxy: !!mesh.userData.selectionProxy };
 }
 
+/** Cmd/Ctrl adds planar faces independently of body selection; a repeated chord toggles that face off. */
+export function updateGeometryAnchorSelection(current: GeometryAnchor[], anchor: GeometryAnchor, additive: boolean) {
+    if (!additive || anchor.type !== 'face' || current.some((item) => item.type !== 'face')) return [anchor];
+    const next = [...current];
+    const index = next.findIndex((item) => item.key === anchor.key);
+    if (index >= 0) next.splice(index, 1);
+    else next.push(anchor);
+    return next;
+}
+
 /** Applies only the owner's latest matrix delta; local geometry is rebound separately after topology sync. */
 export function refreshAnchorTransform(anchor: GeometryAnchor) {
     if (!anchor.sourceObject || !anchor.sourceMatrixWorld) return false;

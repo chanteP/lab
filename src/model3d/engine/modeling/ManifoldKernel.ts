@@ -24,7 +24,7 @@ export function getManifold() {
     return kernel;
 }
 
-function inputMesh(geometry: THREE.BufferGeometry) {
+export function inputMesh(geometry: THREE.BufferGeometry) {
     const position = geometry.attributes.position;
     const indices = geometry.index ? Array.from(geometry.index.array) : Array.from({ length: position.count }, (_, index) => index);
     const merge = geometryMergeVectors(geometry);
@@ -51,7 +51,7 @@ function inputMesh(geometry: THREE.BufferGeometry) {
     return mesh;
 }
 
-function outputGeometry(mesh: InstanceType<ManifoldToplevel['Mesh']>) {
+export function outputGeometry(mesh: InstanceType<ManifoldToplevel['Mesh']>) {
     // Copy before deleting WASM objects or allowing a later operation to grow its heap.
     const properties = new Float32Array(mesh.vertProperties);
     const indices = new Uint32Array(mesh.triVerts);

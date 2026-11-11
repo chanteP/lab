@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { GeometrySelector, measureSelectionStats, type GeometryAnchor } from './viewport/GeometrySelector';
+import { GeometrySelector, measureSelectionStats, updateGeometryAnchorSelection, type GeometryAnchor } from './viewport/GeometrySelector';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { createTopologyEdgeGeometry } from './viewport/TopologyEdges';
 import { planeHelperPosition } from './viewport/SceneSynchronizer';
@@ -190,4 +190,17 @@ test('construction plane helpers offset only their display position in the negat
     const plane = { id: 'p', name: 'P', kind: 'XZ' as const, origin: [1, 2, 3] as [number, number, number], normal: [0, 0, 1] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 1, 0] as [number, number, number], visible: true };
     assert.deepEqual(planeHelperPosition(plane), [1, 2, 3 - INTERACTION.planeHelperOffset]);
     assert.deepEqual(plane.origin, [1, 2, 3], 'the modeling plane coordinates must not be changed');
+});
+
+test('Cmd/Ctrl multi-face selection adds and toggles faces without duplicating a body', () => {
+    const base: GeometryAnchor = { id: 'body', key: 'body:face:top', normal: [0, 1, 0], localNormal: [0, 1, 0], point: [0, 0, 0], type: 'face', planar: true, vertices: [], indices: [] };
+    const first = { ...base };
+    const second = { ...base, key: 'body:face:side' };
+    let selected = updateGeometryAnchorSelection([], first, false);
+    selected = updateGeometryAnchorSelection(selected, second, true);
+    assert.deepEqual(selected.map((anchor) => anchor.key), ['body:face:top', 'body:face:side']);
+    selected = updateGeometryAnchorSelection(selected, first, true);
+    assert.deepEqual(selected.map((anchor) => anchor.key), ['body:face:side']);
+    selected = updateGeometryAnchorSelection(selected, second, true);
+    assert.deepEqual(selected, []);
 });

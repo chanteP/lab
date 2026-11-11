@@ -13,6 +13,7 @@ defineProps<{
     selectionKind: string | null;
     canIsolate: boolean;
     canBoolean: boolean;
+    canShell: boolean;
     selectedCount: number;
     historySteps: HistoryStep[];
 }>();
@@ -24,6 +25,7 @@ const emit = defineEmits<{
     history: [id: string];
     import: [];
     boolean: [type: 'union' | 'subtract' | 'intersect'];
+    shell: [event: MouseEvent];
 }>();
 const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉伸', boolean: '布尔' };
 </script>
@@ -37,6 +39,9 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
                 <ViewportToolItem :description-on-hover="false" label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="导入" @click="emit('import')"><NIcon><FolderOpenOutline /></NIcon></ViewportToolItem>
             </div>
+            <Transition name="tool-group-slide"><div v-if="canShell" class="tool-group advanced-tools" aria-label="高级工具">
+                <ViewportToolItem :description-on-hover="false" label="抽壳" :active="activeTool === 'shell'" @click="emit('shell', $event)"><SvgIcon name="shell" /></ViewportToolItem>
+            </div></Transition>
             <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
                 <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="旋转" :active="activeTool === 'rotate'" @click="emit('tool', 'rotate')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
@@ -73,6 +78,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 .menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
 .tool-group { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
 .vertical-toolbar .primary-tools :deep(.viewport-tool-item) { height: auto; min-height: 40px; }
+.advanced-tools { margin-top: 8px; padding-top: 8px !important; border-top: 1px solid var(--model3d-ui-e3e8e5); }
 .transform-tools { margin: 8px 0; padding: 8px 0 !important; border-top: 1px solid var(--model3d-ui-e3e8e5); border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .history-trigger { display: block; }
 .boolean-tools { margin-top: 8px; padding-top: 8px !important; border-top: 1px solid var(--model3d-ui-e3e8e5); }
