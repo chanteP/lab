@@ -3,7 +3,7 @@ import { useMessage } from 'naive-ui';
 import type { ViewTool, Viewport } from '../../engine/Viewport';
 import type { ProfileType } from '../../engine/profiles';
 import {
-    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, supportsMirrorSymmetry, symmetryRayAngles,
+    cloneProfilePart, entityProfileParts, hitProfilePart, profilePartCenter, profilePartsCenter, radialSymmetry, sketchTransformCenter, supportsMirrorSymmetry, symmetryRayAngles,
     regenerateProfilePart, rotateProfilePart, scaleProfilePart, sectorAtPoint, translateProfilePart,
     symmetryGuideEntities,
     snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides,
@@ -109,12 +109,12 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         return selectedEntities().flatMap((entity) => entityProfileParts(entity));
     }
     function resetTransformValue() {
-        const center = profilePartsCenter(currentParts());
+        const center = symmetry.value ? profilePartsCenter(currentParts()) : sketchTransformCenter(selectedEntities(), currentParts());
         transformCenter.value = center;
         transformInput.value = { x: center[0], y: center[1], angle: 0, scale: 1 };
     }
     function updateTranslationInput() {
-        const center = profilePartsCenter(currentParts());
+        const center = symmetry.value ? profilePartsCenter(currentParts()) : sketchTransformCenter(selectedEntities(), currentParts());
         transformInput.value.x = center[0];
         transformInput.value.y = center[1];
     }

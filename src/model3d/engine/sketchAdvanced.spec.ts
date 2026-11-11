@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-    clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart,
+    clipProfileToSector, clockwiseRotation, entityProfileParts, hitProfilePart, profilePartsCenter, sketchTransformCenter,
     radialSymmetry, reflection, regenerateProfilePart, scaleProfilePart, sectorAtPoint, snapRotationToGuides, snapScaleToGuides, snapTranslationToGuides, supportsMirrorSymmetry, symmetryGuideEntities, symmetryRayAngles, symmetryTransform,
 } from './sketchAdvanced';
-import type { ModelEntity, Point2, SketchProfilePart } from '../types';
+import { createEntity, type ModelEntity, type Point2, type SketchProfilePart } from '../types';
 import { computeSketchFaces } from './sketchFaces';
 
 const closePoint = (actual: Point2, expected: Point2) => {
@@ -120,4 +120,13 @@ test('selection editing retains semantic center and radius handles', () => {
     const regenerated = regenerateProfilePart(scaled.editor!, true);
     assert.equal(regenerated.points.length, 64);
     assert.ok(regenerated.points.every(([x, y]) => Math.abs(Math.hypot(x, y) - 20) < 1e-7));
+});
+
+test('single centered shapes use their semantic center for rotate and scale transforms', () => {
+    const circle = Object.assign(createEntity('sketch', 'circle'), { profileType: 'circle' as const, points: [[20, 10], [25, 10]], sectorAngle: 90 });
+    const parts = entityProfileParts(circle);
+    assert.notDeepEqual(profilePartsCenter(parts), [20, 10]);
+    assert.deepEqual(sketchTransformCenter([circle], parts), [20, 10]);
+    const other = Object.assign(createEntity('sketch', 'other'), { profileType: 'circle' as const, points: [[0, 0], [5, 0]] });
+    assert.deepEqual(sketchTransformCenter([circle, other], parts), profilePartsCenter(parts));
 });

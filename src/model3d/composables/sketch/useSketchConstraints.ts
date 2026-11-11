@@ -9,6 +9,7 @@ import { borderEditingPoints, borderSegments } from '../../engine/sketchBorders'
 import { cloneDocument, type ModelDocument, type ModelEntity, type Point2, type SketchElementRef } from '../../types';
 import type { SketchState } from './useSketchState';
 import { convertSemanticShapeToConstrainedPolygon } from '../../engine/sketchShapes';
+import { inferSketchTangentMode } from '../../engine/sketchGeometricConstraints';
 import type { Ref } from 'vue';
 
 interface SketchConstraintsOptions {
@@ -35,6 +36,7 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         constraintAnchorSelection, rememberConstraintEdges,
         sketchLockedPoints, sketchSectorAngle, sketchOpen,
         sketchProfileStartAngle, selectedConstraintRuleItems, constraintLimit, sketchGesture,
+        tangentConstraintAvailable, concentricConstraintAvailable,
     } = state;
     function ensureShapeConstraints(entity: ModelEntity) {
         convertSemanticShapeToConstrainedPolygon(entity);
@@ -135,7 +137,47 @@ export function useSketchConstraints(options: SketchConstraintsOptions) {
         }
         refreshSketch();
     }
+    function applyGeometricConstraint(type: 'tangent' | 'concentric') {
+        const available = type === 'tangent' ? tangentConstraintAvailable.value : concentricConstraintAvailable.value;
+        if (!available) return message.warning(type === 'tangent' ? '请选择直线与圆/椭圆，或两个圆形' : '请选择至少两个带中心点的形状');
+        const selected = selectedEdges.value.length ? selectedEdges.value : selectedShapes.value.map((entityId) => ({ entityId, index: 0 }));
+        const before = cloneDocument(document.value);
+        const cancel = selected.some(({ entityId, index }) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => rule.type === type);
+        });
+        pushHistory();
+        if (cancel) {
+            selected.forEach(({ entityId, index }) => {
+                const entity = document.value.entities.find((item) => item.id === entityId);
+                if (!entity?.edgeConstraints) return;
+                const remaining = constraintRules(entity.edgeConstraints[index]).filter((rule) => rule.type !== type);
+                if (remaining.length) entity.edgeConstraints[index] = remaining;
+                else delete entity.edgeConstraints[index];
+            });
+            refreshSketch();
+            return;
+        }
+        const reference = selected[0];
+        selected.slice(1).forEach(({ entityId, index }) => {
+            const entity = document.value.entities.find((item) => item.id === entityId)!;
+            upsertSketchConstraintRule(entity, index, {
+                id: uid(), type, reference,
+                tangentMode: type === 'tangent' ? inferSketchTangentMode(entity, index, document.value.entities.find((item) => item.id === reference.entityId)!, reference.index) : undefined,
+            });
+        });
+        if (!enforceSketchConstraints(editingSketchId.value || reference.entityId, before)) {
+            popHistory();
+            refreshSketch();
+            return;
+        }
+        syncLocalSketchFromDocument();
+        viewport()?.refreshSketchFaces();
+        refreshSketch();
+    }
+
     function applySketchConstraint(type: SketchConstraintType) {
+        if (type === 'tangent' || type === 'concentric') return applyGeometricConstraint(type);
         const selected = selectedEdges.value;
         if (!selected.length) return;
         const before = cloneDocument(document.value);

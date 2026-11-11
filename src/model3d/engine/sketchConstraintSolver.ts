@@ -3,6 +3,7 @@ import type { ModelDocument, ModelEntity, Point2, SketchEdgeConstraint, SketchEl
 import type { SketchDimensionOperation } from './sketchDimension';
 import { rebaseEntityCubicCurves } from './sketchCurves';
 import { standardShapeCenter } from './sketchWholeShapeSnap';
+import { sketchConstraintCenter, sketchConstraintGeometry, sketchGeometricResidual } from './sketchGeometricConstraints';
 
 export const SKETCH_CONSTRAINT_TOLERANCE = 0.0001;
 
@@ -42,7 +43,12 @@ function ruleType(rule: Rule) {
 }
 
 function residual(rule: Rule, document: ModelDocument) {
-    const type = ruleType(rule), current = vector(rule.entity, rule.index);
+    const type = ruleType(rule);
+    if (type === 'tangent' || type === 'concentric') {
+        const reference = ruleReference(rule, document);
+        return reference ? sketchGeometricResidual(rule.entity, rule.index, rule.rule, reference.entity, reference.index) : null;
+    }
+    const current = vector(rule.entity, rule.index);
     if (!current) return null;
     if (type === 'horizontal') return current.dy;
     if (type === 'vertical') return current.dx;
@@ -65,8 +71,7 @@ function residual(rule: Rule, document: ModelDocument) {
 }
 
 function derivatives(rule: Rule, document: ModelDocument): Derivative[] {
-    const type = ruleType(rule), current = vector(rule.entity, rule.index);
-    if (!current) return [];
+    const type = ruleType(rule);
     const result: Derivative[] = [];
     const add = (entity: ModelEntity, index: number, axis: Axis, value: number) => {
         if (Math.abs(value) > 1e-14) result.push({ variable: { entityId: entity.id, index, axis, initial: 0 }, value });
@@ -79,6 +84,26 @@ function derivatives(rule: Rule, document: ModelDocument): Derivative[] {
         add(entity, (index + 1) % entity.points!.length, 0, sign * (b[0] - a[0]) / length);
         add(entity, (index + 1) % entity.points!.length, 1, sign * (b[1] - a[1]) / length);
     };
+    if (type === 'tangent' || type === 'concentric') {
+        const reference = ruleReference(rule, document);
+        if (!reference) return [];
+        const numeric = (entity: ModelEntity) => entity.points?.forEach((point, index) => {
+            for (const axis of [0, 1] as Axis[]) {
+                const original = point[axis], epsilon = 1e-6;
+                point[axis] = original + epsilon;
+                const plus = residual(rule, document) || 0;
+                point[axis] = original - epsilon;
+                const minus = residual(rule, document) || 0;
+                point[axis] = original;
+                add(entity, index, axis, (plus - minus) / (2 * epsilon));
+            }
+        });
+        numeric(rule.entity);
+        numeric(reference.entity);
+        return result;
+    }
+    const current = vector(rule.entity, rule.index);
+    if (!current) return [];
     if (type === 'horizontal') {
         add(rule.entity, rule.index, 1, -1); add(rule.entity, (rule.index + 1) % rule.entity.points!.length, 1, 1);
     } else if (type === 'vertical') {
@@ -194,7 +219,8 @@ function relatedRules(document: ModelDocument, rootId: string | null) {
         const rules: Rule[] = [];
         Object.entries(entity.edgeConstraints || {}).forEach(([key, value]) => constraintRules(value).forEach((rule) => {
             const index = Number(key);
-            if (entityConstraintSegment(entity, index)) rules.push({ entity, index, rule });
+            const geometric = rule.type === 'concentric' ? !!sketchConstraintCenter(entity) : rule.type === 'tangent' ? !!sketchConstraintGeometry(entity, index) : false;
+            if (entityConstraintSegment(entity, index) || geometric) rules.push({ entity, index, rule });
         }));
         if (rules.length) all.set(entity.id, rules);
     });

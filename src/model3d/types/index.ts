@@ -20,8 +20,8 @@ export type SketchElementRef = { entityId: string; index: number };
 export type SketchRulerSide = 'top' | 'left';
 /** Persistent construction lines owned by a sketch plane; they never enter profile geometry. */
 export type SketchReferenceGuide = { id: string; axis: 'u' | 'v'; offset: number };
-export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length' | 'angle';
-export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number; angle?: number };
+export type SketchConstraintKind = 'auto' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'equal' | 'length' | 'angle' | 'tangent' | 'concentric';
+export type SketchEdgeConstraint = { id?: string; type: SketchConstraintKind; reference?: SketchElementRef; length?: number; angle?: number; tangentMode?: 'external' | 'internal' };
 export type LengthUnit = 'mm' | 'cm' | 'm';
 export type DisplayMode = 'shaded' | 'clay' | 'wireframe' | 'xray';
 export type EntityKind = 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'sketch' | 'image' | 'extrude' | 'boolean';

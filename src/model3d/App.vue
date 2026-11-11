@@ -95,7 +95,7 @@ const {
     activeConstraintRule, hoverConstraintRule, sketchSelectionTool, constraintLimit, sketchGuideSnapEnabled, selectedSketchGuideId,
     sketchClosed, constraintSegmentCount,
     selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
-    autoConstraintActive, selectedConstraintRuleItems,
+    autoConstraintActive, selectedConstraintRuleItems, tangentConstraintAvailable, concentricConstraintAvailable,
 } = sketchState;
 const hintSketchEntity = computed(() => {
     const id = selectedShapes.value[selectedShapes.value.length - 1]
@@ -806,7 +806,7 @@ onBeforeUnmount(() => {
                     :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"
                     @type="chooseSketchType" @sides="setSketchSides" @plane="beginSketch" @construct="createPlaneAndSketch" @face="beginSketch()" @symmetry="startSymmetry" @transform="chooseSketchTransform" />
                 <SketchConstraints v-if="sketchMode && !symmetryActive" :segment-count="constraintSegmentCount" :selected-point="selectedSketchPoint" :selection-locked="selectionLocked" :length-locked="selectionLengthLocked" :edge-selected="selectedEdges.length > 0 || selectedShapes.length > 0"
-                    :rules="selectedConstraintRuleItems" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
+                    :rules="selectedConstraintRuleItems" :tangent-available="tangentConstraintAvailable" :concentric-available="concentricConstraintAvailable" :constraint-limit="constraintLimit" :asset-selected="!!selectedAsset" :aspect-locked="selectedAsset?.aspectLocked ?? true" :guide-snap-enabled="sketchGuideSnapEnabled" :auto-active="autoConstraintActive" :horizontal-active="horizontalConstraintActive" :vertical-active="verticalConstraintActive"
                     @constraint="applySketchConstraint" @lock="toggleSketchPointLock" @aspect="toggleAssetAspect" @delete-rule="deleteSelectedConstraintRule" @select-rule="onSketchConstraintItemSelect" @hover-rule="onSketchConstraintRuleHover" @update:constraint-limit="constraintLimit = $event" @update:guide-snap-enabled="sketchGuideSnapEnabled = $event" />
                 <SketchHints v-if="sketchMode && !overlayActive && !measureMode" :profile-type="sketchType" :selection-tool="sketchSelectionTool"
                     :selected-profile-type="hintSketchProfileType" :has-selection="hintSketchHasSelection" />

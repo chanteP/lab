@@ -2,6 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { STORAGE_KEYS } from '../../config/const';
 import { constraintRules, entityConstraintSegment, type SketchConstraintType } from '../../engine/sketchConstraints';
+import { sketchGeometricSelection } from '../../engine/sketchGeometricConstraints';
 import type { ProfileCurves, ProfileType } from '../../engine/profiles';
 import type {
     ConstraintRuleListItem, ModelDocument, Point2, SketchElementRef, TrimmedSelection,
@@ -111,9 +112,21 @@ export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref
         const entity = document.value.entities.find((item) => item.id === entityId);
         return constraintRules(entity?.edgeConstraints?.[index]).some((rule) => ['horizontal', 'vertical'].includes(rule.type));
     }));
+    const geometricSelection = computed<SketchElementRef[]>(() => selectedEdges.value.length
+        ? selectedEdges.value
+        : selectedShapes.value.map((entityId) => ({ entityId, index: 0 })));
+    const tangentConstraintAvailable = computed(() => {
+        if (!selectedEdges.value.length && selectedShapes.value.some((entityId) => {
+            const entity = document.value.entities.find((item) => item.id === entityId);
+            return !['circle', 'ellipse'].includes(entity?.profileType || '');
+        })) return false;
+        return sketchGeometricSelection(document.value.entities, geometricSelection.value).tangent;
+    });
+    const concentricConstraintAvailable = computed(() => sketchGeometricSelection(document.value.entities, geometricSelection.value).concentric);
+
     const selectedConstraintRuleItems = computed<ConstraintRuleListItem[]>(() => {
         const items: ConstraintRuleListItem[] = [];
-        const labels: Record<SketchConstraintType, string> = { auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度', angle: '角度' };
+        const labels: Record<SketchConstraintType, string> = { auto: '水平 / 垂直', horizontal: '水平', vertical: '垂直', parallel: '平行', perpendicular: '正交', equal: '等长', length: '固定长度', angle: '角度', tangent: '相切', concentric: '同心' };
         const addPoint = (entityId: string, index: number, covered?: Set<string>) => {
             const entity = document.value.entities.find((item) => item.id === entityId);
             if (!entity?.lockedPoints?.includes(index) || covered?.has(`${entityId}:${index}`)) return;
@@ -159,7 +172,7 @@ export function useSketchState(document: Ref<ModelDocument>, activePlaneId?: Ref
         sketchGuideSnapEnabled, selectedSketchGuideId, sketchGesture, sketchClosed, selectedPointLocked, constraintSegmentCount,
         constraintAnchorSelection, rememberConstraintEdges, rememberConstraintShapes, clearConstraintAnchorSelection,
         selectionLocked, selectionLengthLocked, horizontalConstraintActive, verticalConstraintActive,
-        autoConstraintActive, selectedConstraintRuleItems,
+        autoConstraintActive, selectedConstraintRuleItems, tangentConstraintAvailable, concentricConstraintAvailable,
     };
 }
 

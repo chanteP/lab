@@ -1,5 +1,6 @@
 import { entityProfileClosed, profilePoints } from './profiles';
 import type { ModelEntity, Point2, SketchProfileEditor, SketchProfilePart } from '../types';
+import { standardShapeCenter } from './sketchWholeShapeSnap';
 
 export type SymmetryMode = 'mirror' | 'rotate';
 export type PointTransform = (point: Point2) => Point2;
@@ -292,4 +293,13 @@ export function hitProfilePart(part: SketchProfilePart, point: Point2, tolerance
         if ((a[1] > point[1]) !== (b[1] > point[1]) && point[0] < (b[0] - a[0]) * (point[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
     }
     return inside;
+}
+
+/** A single semantic shape rotates/scales about its own center; multi-selection keeps the combined bounds center. */
+export function sketchTransformCenter(entities: ModelEntity[], parts: SketchProfilePart[]): Point2 {
+    if (entities.length === 1) {
+        const center = standardShapeCenter(entities[0]);
+        if (center) return center;
+    }
+    return profilePartsCenter(parts);
 }

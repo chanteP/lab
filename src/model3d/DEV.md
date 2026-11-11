@@ -258,3 +258,10 @@
 - `useShellOperations` 保存操作前实体与开口锚点，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，完成时才烘焙为 `meshGeometry` 并产生一步撤销，不叠加 parametric edge treatments。
 - `InteractionController.geometryAnchors` 保存多面选择，`GuideRenderer` 对每个面渲染 active feedback。Ctrl/Command 重复选择同一面只切换该面，App 不再通过 body id 的 toggle 处理这种多选。
 - `ShellOperationBar.vue` 提供厚度输入、完成和取消；Shell 不使用指针旁 `directFace` 尺寸输入。剖视封口同时采集提交实体与 Shell 预览网格，cap 不读写深度并使用高对比壁面材质，避免内表面遮挡截面壁。
+
+## 草图几何约束与变换中心
+
+- 单个带语义中心的形状进入 Rotate/Scale 时，`sketchTransformCenter` 优先采用 `standardShapeCenter`；多选或无中心形状仍使用组合包围盒中心，用户拖动中心后保持新中心。
+- `sketchGeometricConstraints.ts` 统一描述直线、圆和椭圆约束几何。相切支持直线—圆/椭圆及曲线间关系，同心支持圆、椭圆、标准矩形和正多边形；规则保存在现有 `edgeConstraints`，进入同一 Gauss-Newton 关联链、固定点保护、删除、高亮与撤销。
+- 曲线相切使用法向支撑半径计算残差，圆/椭圆的中心、半径点和方向点均参与数值求导；不得退化为点击时一次性移动。`tangentMode` 记录创建时的内切/外切关系。
+- 约束面板按方向、几何关系和固定分区使用三列网格；全部规则独立滚动，列表使用 `scrollbar-gutter: stable`、右侧 padding 和固定删除列，滚动条不得覆盖删除按钮。
