@@ -2,8 +2,7 @@ import { computed, ref, watch, type Ref } from 'vue';
 import { useMessage } from 'naive-ui';
 import { SKETCH_COLORS } from '../../config/colors';
 import { entityProfileParts, profilePartsCenter, rotateProfilePart } from '../../engine/sketchAdvanced';
-import { matchSketchGuide, type SketchGuideMatch } from '../../engine/sketchGuides';
-import { radialPatternCopies, radialPatternEntities, type RadialPatternValue } from '../../engine/sketchRadialPattern';
+import { radialPatternCenterReferences, radialPatternCopies, radialPatternEntities, snapRadialPatternCenter, type RadialPatternValue } from '../../engine/sketchRadialPattern';
 import type { ViewTool, Viewport } from '../../engine/Viewport';
 import type { ModelDocument, ModelEntity, Point2, SketchProfilePart } from '../../types';
 
@@ -33,7 +32,7 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
         viewport, message, pushHistory, clearSketchSelection, selectSketchEntity, activateSketchSelectionTool,
     } = options;
     const session = ref<RadialSession | null>(null);
-    const snapMatches = ref<SketchGuideMatch[]>([]);
+    const snapPoint = ref<Point2 | null>(null);
     const handles: { center: { x: number; y: number } | null; angle: { x: number; y: number } | null } = { center: null, angle: null };
     let drag: Drag | null = null;
     let viewGesture = false;
@@ -60,7 +59,7 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
         drag = null;
         viewGesture = false;
         session.value = null;
-        snapMatches.value = [];
+        snapPoint.value = null;
         handles.center = handles.angle = null;
     }
     function updateCount(value: number) {
@@ -73,21 +72,11 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
     function reverse() { if (session.value) session.value.angle *= -1; }
 
     function snapCenter(point: Point2) {
-        snapMatches.value = [];
+        snapPoint.value = null;
         if (!sketchGuideSnapEnabled.value) return point;
-        const plane = document.value.planes.find((item) => item.id === activePlaneId.value);
-        if (!plane) return point;
-        const offset = [-plane.origin[0], -plane.origin[1], -plane.origin[2]];
-        const match = matchSketchGuide({
-            entities: document.value.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === plane.id),
-            point, excludeEntityIds: session.value?.sourceIds || [], guides: plane.guides,
-            origins: [{ id: 'plane', point: [0, 0] }, { id: 'world', point: [
-                offset[0] * plane.u[0] + offset[1] * plane.u[1] + offset[2] * plane.u[2],
-                offset[0] * plane.v[0] + offset[1] * plane.v[1] + offset[2] * plane.v[2],
-            ] }], threshold: (viewport()?.sketchUnitsPerPixel() || 0.1) * 8,
-        });
-        if (!match) return point;
-        snapMatches.value = match.matches;
+        const references = radialPatternCenterReferences(document.value.entities, activePlaneId.value, session.value?.sourceIds || []);
+        const match = snapRadialPatternCenter(point, references, (viewport()?.sketchUnitsPerPixel() || 0.1) * 8);
+        snapPoint.value = match.reference;
         return match.point;
     }
     function pointerAngle(point: Point2) {
@@ -152,10 +141,10 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
         }
         if (!drag || event.pointerId !== drag.pointerId) return;
         drag = null;
-        snapMatches.value = [];
+        snapPoint.value = null;
         event.preventDefault();
     }
-    function pointerLeave() { if (!drag) snapMatches.value = []; }
+    function pointerLeave() { if (!drag) snapPoint.value = null; }
     function wheel(event: WheelEvent) { event.preventDefault(); event.stopPropagation(); viewport()?.forwardWheel(event); }
     function contextMenu(event: MouseEvent) { event.preventDefault(); }
 
@@ -167,7 +156,7 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
         pushHistory();
         document.value.entities.push(...copies);
         session.value = null;
-        snapMatches.value = [];
+        snapPoint.value = null;
         clearSketchSelection();
         copies.forEach((entity) => selectSketchEntity(entity.id, true));
         selectedIds.value = copies.map((entity) => entity.id);
@@ -223,12 +212,11 @@ export function useSketchRadialPattern(options: RadialPatternOptions) {
         context.beginPath(); context.arc(center.x, center.y, 8, 0, Math.PI * 2); context.fill(); context.stroke();
         handles.center = center;
         handles.angle = end;
-        if (snapMatches.value.length) {
-            snapMatches.value.forEach((match) => {
-                const a = project(match.a), b = project(match.b);
-                context.strokeStyle = SKETCH_COLORS.reference; context.lineWidth = 1.5;
-                context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
-            });
+        if (snapPoint.value) {
+            const reference = project(snapPoint.value);
+            context.strokeStyle = SKETCH_COLORS.reference;
+            context.lineWidth = 2;
+            context.beginPath(); context.arc(reference.x, reference.y, 11, 0, Math.PI * 2); context.stroke();
         }
     }
 

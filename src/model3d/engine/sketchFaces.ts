@@ -1,4 +1,5 @@
 import { borderSegments } from './sketchBorders';
+import { entityProfileParts } from './sketchAdvanced';
 import type { ModelEntity, Point2 } from '../types';
 
 export interface SketchFace {
@@ -144,5 +145,12 @@ export function computeSketchFaces(entities: ModelEntity[], planeId: string): Sk
         }, 0) / 2;
         if (area > 0.0001) faces.push({ points, entityIds: [...new Set(walk.map((index) => directed[index].entityId))] });
     });
-    return [...compoundFaces, ...faces].map((face) => ({ points: face.points.map((point) => [...point] as Point2), entityIds: [...face.entityIds] }));
+    // Intersected standard shapes still need their own complete face for fill and whole-shape picking.
+    // Trimmed/fused shapes lose standardShape and continue through arrangement faces only.
+    const standardFaces = sketches.filter((entity) => entity.standardShape && !entity.parts?.length
+        && faces.some((face) => face.entityIds.length > 1 && face.entityIds.includes(entity.id))).flatMap((entity) =>
+        entityProfileParts(entity).filter((part) => part.closed && part.points.length >= 3)
+            .map((part) => ({ points: part.points.map((point) => [...point] as Point2), entityIds: [entity.id] })),
+    );
+    return [...compoundFaces, ...standardFaces, ...faces].map((face) => ({ points: face.points.map((point) => [...point] as Point2), entityIds: [...face.entityIds] }));
 }

@@ -57,3 +57,33 @@ export function radialPatternEntities(document: ModelDocument, sourceIds: string
     });
     return pending;
 }
+
+/** Pivot targets are explicit user-visible handles only, never inferred centers or axis projections. */
+export function radialPatternCenterReferences(entities: ModelEntity[], planeId: string | null, excludedIds: string[] = []) {
+    const excluded = new Set(excludedIds);
+    const references: Point2[] = [];
+    entities.filter((entity) => entity.kind === 'sketch' && entity.visible && !excluded.has(entity.id) && (!planeId || entity.planeId === planeId)).forEach((entity) => {
+        if (entity.parts?.length) {
+            entity.parts.forEach((part) => part.points.forEach((point) => references.push([...point])));
+            return;
+        }
+        const controls = entity.controlPoints || (entity.points || []).map((_, index) => index);
+        controls.forEach((index) => {
+            const point = entity.points?.[index];
+            if (point) references.push([...point]);
+        });
+    });
+    return references.filter((point, index) => references.findIndex((candidate) => Math.hypot(point[0] - candidate[0], point[1] - candidate[1]) < 1e-7) === index);
+}
+
+export function snapRadialPatternCenter(point: Point2, references: Point2[], threshold: number) {
+    let reference: Point2 | null = null;
+    let distance = threshold;
+    references.forEach((candidate) => {
+        const candidateDistance = Math.hypot(point[0] - candidate[0], point[1] - candidate[1]);
+        if (candidateDistance > distance) return;
+        reference = candidate;
+        distance = candidateDistance;
+    });
+    return { point: reference ? [...reference] as Point2 : [...point] as Point2, reference: reference ? [...reference] as Point2 : null };
+}
