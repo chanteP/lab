@@ -58,3 +58,16 @@ test('increasing wall thickness hollows the interior without shrinking outer wal
         assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5]);
     }
 });
+
+test('adjacent selected faces open through their shared edge without leaving a beam', () => {
+    const side: ShellOpening = {
+        normal: [1, 0, 0],
+        vertices: [[5, -5, -5], [5, -5, 5], [5, 5, 5], [5, -5, -5], [5, 5, 5], [5, 5, -5]], indices: [0, 1, 2, 3, 4, 5],
+    };
+    const result = evaluateShell(new THREE.BoxGeometry(10, 10, 10), [cap(5, [0, 1, 0]), side], 1);
+    const validation = validateSolidGeometry(result);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(volume(result) - 350) < 1e-4, `shared rim must be removed, volume=${volume(result)}`);
+    assert.deepEqual(result.boundingBox!.min.toArray(), [-5, -5, -5]);
+    assert.deepEqual(result.boundingBox!.max.toArray(), [5, 5, 5]);
+});

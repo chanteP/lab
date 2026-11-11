@@ -72,24 +72,71 @@ function openingShape(opening: ShellOpening) {
     return { shape, matrix };
 }
 
+
+type ShellSharedEdge = { a: Vec3; b: Vec3 };
+
+function openingBoundaryEdges(opening: ShellOpening): ShellSharedEdge[] {
+    const points = opening.vertices.map((point) => new THREE.Vector3(...point));
+    const welded: number[] = [], unique: THREE.Vector3[] = [], keys = new Map<string, number>();
+    points.forEach((point) => {
+        const key = point.toArray().map((value) => Math.round(value * 1e6)).join(',');
+        if (!keys.has(key)) { keys.set(key, unique.length); unique.push(point); }
+        welded.push(keys.get(key)!);
+    });
+    const edges = new Map<string, { a: number; b: number; count: number }>();
+    for (let index = 0; index < opening.indices.length; index += 3) {
+        for (let corner = 0; corner < 3; corner++) {
+            const a = welded[opening.indices[index + corner]], b = welded[opening.indices[index + (corner + 1) % 3]];
+            const key = [a, b].sort((x, y) => x - y).join(':');
+            const edge = edges.get(key);
+            if (edge) edge.count++;
+            else edges.set(key, { a, b, count: 1 });
+        }
+    }
+    return [...edges.values()].filter((edge) => edge.count === 1).map((edge) => ({ a: unique[edge.a].toArray(), b: unique[edge.b].toArray() }));
+}
+
+function sharedOpeningEdges(openings: ShellOpening[]) {
+    const boundaries = openings.map(openingBoundaryEdges);
+    const same = (a: Vec3, b: Vec3) => new THREE.Vector3(...a).distanceTo(new THREE.Vector3(...b)) < 1e-5;
+    return boundaries.map((edges, index) => edges.filter((edge) => boundaries.some((other, otherIndex) => otherIndex !== index && other.some((candidate) =>
+        (same(edge.a, candidate.a) && same(edge.b, candidate.b)) || (same(edge.a, candidate.b) && same(edge.b, candidate.a))))));
+}
+
 /** Extend the inset cavity through the opening without shortening adjacent outer walls. */
-function openingCutter(opening: ShellOpening, thickness: number) {
+function openingCutter(opening: ShellOpening, thickness: number, sharedEdges: ShellSharedEdge[]) {
     const { shape, matrix } = openingShape(opening);
     const { CrossSection } = getManifold();
     const contours = [shape, ...shape.holes].map((path) => path.getPoints(12).map((point) => [point.x, point.y] as [number, number]));
     const section = new CrossSection(contours);
-    let inset: InstanceType<typeof CrossSection> | null = null;
+    let opened: InstanceType<typeof CrossSection> | null = null;
     let extruded: ReturnType<InstanceType<typeof CrossSection>['extrude']> | null = null;
     try {
-        inset = section.offset(-thickness, 'Miter', 4, 32);
-        if (inset.isEmpty()) throw new Error('壁厚过大，开口面没有可贯通的内部区域');
-        extruded = inset.extrude(thickness + 0.02);
+        opened = section.offset(-thickness, 'Miter', 4, 32);
+        if (opened.isEmpty()) throw new Error('壁厚过大，开口面没有可贯通的内部区域');
+        const inverse = matrix.clone().invert();
+        sharedEdges.forEach((edge) => {
+            const a = new THREE.Vector3(...edge.a).applyMatrix4(inverse), b = new THREE.Vector3(...edge.b).applyMatrix4(inverse);
+            const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+            if (length < 1e-8) return;
+            const px = -dy / length * thickness, py = dx / length * thickness;
+            const contour: [number, number][] = [[a.x + px, a.y + py], [b.x + px, b.y + py], [b.x - px, b.y - py], [a.x - px, a.y - py]];
+            if (THREE.ShapeUtils.isClockWise(contour.map((point) => new THREE.Vector2(...point)))) contour.reverse();
+            const band = new CrossSection([contour]);
+            const strip = band.intersect(section);
+            const next = opened!.add(strip);
+            opened!.delete();
+            opened = next;
+            strip.delete();
+            band.delete();
+        });
+        extruded = opened.extrude(thickness + 0.02);
         const normal = new THREE.Vector3(...opening.normal).normalize();
         matrix.setPosition(new THREE.Vector3().setFromMatrixPosition(matrix).addScaledVector(normal, -thickness));
         return outputGeometry(extruded.getMesh(0)).applyMatrix4(matrix);
     } finally {
         extruded?.delete();
-        inset?.delete();
+        opened?.delete();
         section.delete();
     }
 }
@@ -110,8 +157,9 @@ export function evaluateShell(base: THREE.BufferGeometry, openings: ShellOpening
         cavity = solid.minkowskiDifference(sphere);
         if (cavity.status() !== 'NoError' || cavity.isEmpty()) throw new Error('壁厚过大，实体内部没有可用空间');
         result = solid.subtract(cavity);
-        for (const opening of openings) {
-            const cutterGeometry = openingCutter(opening, thickness);
+        const sharedEdges = sharedOpeningEdges(openings);
+        for (const [index, opening] of openings.entries()) {
+            const cutterGeometry = openingCutter(opening, thickness, sharedEdges[index]);
             let cutter: InstanceType<typeof Manifold> | null = null;
             let next: InstanceType<typeof Manifold> | null = null;
             try {
