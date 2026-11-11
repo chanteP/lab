@@ -8,6 +8,13 @@ type SectionEntry = {
     renderOrder: number;
 };
 
+/** Clip only the retained source surface; the cap remains on the exact physical section plane. */
+export function sectionSurfaceClipPlane(plane: THREE.Plane, epsilon = 0.0001) {
+    const clipped = plane.clone();
+    clipped.constant -= epsilon;
+    return clipped;
+}
+
 /** Draws solid section caps with a per-body stencil pass; source geometry remains shared and editable. */
 export class SectionRenderer {
     readonly group = new THREE.Group();
@@ -86,9 +93,7 @@ export class SectionRenderer {
                 ? source.geometry.boundingSphere.center.clone().applyMatrix4(source.matrixWorld)
                 : source.getWorldPosition(new THREE.Vector3());
             plane.projectPoint(center, point);
-            // A coplanar source face must not fight the cap for depth at the exact section boundary.
-            const surfaceOffset = Math.max(0.00001, radius * 0.00001);
-            cap.position.copy(point).addScaledVector(plane.normal, -surfaceOffset);
+            cap.position.copy(point);
             target.copy(point).sub(plane.normal);
             cap.lookAt(target);
             cap.scale.setScalar(radius * 2);

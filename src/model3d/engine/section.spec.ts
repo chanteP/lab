@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { measureSectionRadius } from './viewport/SceneSynchronizer';
-import { SectionRenderer } from './viewport/SectionRenderer';
+import { SectionRenderer, sectionSurfaceClipPlane } from './viewport/SectionRenderer';
 
 test('section range is the smallest origin-centered sphere enclosing every vertex', () => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
@@ -39,7 +39,10 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal((front.material as THREE.Material).stencilZPass, THREE.DecrementWrapStencilOp);
     assert.equal(source.renderOrder, 1000);
     assert.equal(cap.position.x, 10);
-    assert.ok(cap.position.z < 0 && cap.position.z > -0.001);
+    assert.equal(cap.position.z, 0);
+    const surfacePlane = sectionSurfaceClipPlane(plane);
+    assert.ok(surfacePlane.distanceToPoint(new THREE.Vector3(10, 0, 0)) < 0);
+    assert.equal(plane.distanceToPoint(new THREE.Vector3(10, 0, 0)), 0);
     assert.equal((cap.material as THREE.Material).stencilFunc, THREE.NotEqualStencilFunc);
     assert.equal((cap.material as THREE.Material).stencilZPass, THREE.ReplaceStencilOp);
 

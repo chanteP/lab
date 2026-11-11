@@ -14,7 +14,7 @@ import type { BodyTopology } from '../topology/types';
 import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
-import { SectionRenderer } from './SectionRenderer';
+import { SectionRenderer, sectionSurfaceClipPlane } from './SectionRenderer';
 
 /** Render-only helper position; the document plane origin remains the modeling surface. */
 export function planeHelperPosition(plane: SketchPlane): Vec3 {
@@ -73,6 +73,7 @@ export class SceneSynchronizer {
     private displayMode: DisplayMode = 'shaded';
     private showEdges = true;
     sectionPlane: THREE.Plane | null = null;
+    private sectionSurfacePlane: THREE.Plane | null = null;
     private sectionInversePlane: THREE.Plane | null = null;
     private sectionOffset = 0;
     private isolateIds: Set<string> | null = null;
@@ -213,7 +214,7 @@ export class SceneSynchronizer {
                 const material = (child as THREE.LineSegments).material as THREE.LineBasicMaterial;
                 material.depthTest = this.displayMode !== 'xray';
                 material.opacity = 0.48;
-                material.clippingPlanes = this.sectionPlane ? [this.sectionPlane] : [];
+                material.clippingPlanes = this.sectionSurfacePlane ? [this.sectionSurfacePlane] : [];
                 return;
             }
             if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.Line)) return;
@@ -231,7 +232,7 @@ export class SceneSynchronizer {
                 material.transparent = this.displayMode === 'xray' || material.userData.baseTransparent;
                 material.opacity = this.displayMode === 'xray' ? Math.min(0.28, material.userData.baseOpacity) : material.userData.baseOpacity;
                 material.depthWrite = this.displayMode === 'xray' ? false : material.userData.baseDepthWrite;
-                material.clippingPlanes = this.sectionPlane ? [this.sectionPlane] : [];
+                material.clippingPlanes = this.sectionSurfacePlane ? [this.sectionSurfacePlane] : [];
                 material.needsUpdate = true;
             });
         });
@@ -247,6 +248,7 @@ export class SceneSynchronizer {
     setSection(active: boolean, offset = 0) {
         this.sectionOffset = offset;
         this.sectionPlane = active ? new THREE.Plane(new THREE.Vector3(0, -1, 0), offset) : null;
+        this.sectionSurfacePlane = this.sectionPlane ? sectionSurfaceClipPlane(this.sectionPlane) : null;
         this.sectionInversePlane = active ? new THREE.Plane(new THREE.Vector3(0, 1, 0), -offset) : null;
         this.sectionOutlines.visible = active;
         this.sectionCaps.group.visible = active;
@@ -273,6 +275,7 @@ export class SceneSynchronizer {
         const point = normal.clone().multiplyScalar(this.sectionOffset);
         this.sectionPlane.normal.copy(normal);
         this.sectionPlane.constant = -normal.dot(point);
+        if (this.sectionSurfacePlane) this.sectionSurfacePlane.copy(sectionSurfaceClipPlane(this.sectionPlane));
         this.sectionInversePlane.normal.copy(normal).negate();
         this.sectionInversePlane.constant = -this.sectionInversePlane.normal.dot(point);
         this.sectionCaps.update(this.sectionPlane);

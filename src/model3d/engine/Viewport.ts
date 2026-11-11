@@ -281,7 +281,10 @@ export class Viewport {
         this.guideRenderer.group.visible = !active;
         if (active) this.overlay.clear('guide-label:');
     }
-    setSectionOffset(offset: number) { this.sceneSynchronizer.setSectionOffset(offset); }
+    setSectionOffset(offset: number) {
+        this.sceneSynchronizer.setSectionOffset(offset);
+        this.sceneSynchronizer.updateSection(this.cameraController.camera);
+    }
     getSectionRadius() { return this.sceneSynchronizer.getSectionRadius(); }
     setIsolate(ids: string[] | null) { this.sceneSynchronizer.setIsolate(ids); }
     setSketchEditing(id: string | null) { this.sceneSynchronizer.setSketchEditing(id); }
