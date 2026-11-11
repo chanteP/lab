@@ -145,16 +145,17 @@ export class SketchRenderer {
         const activePlane = this.options.getActivePlane();
         if (!this.options.isSketchMode() || !document) return;
         document.entities.filter((entity) => entity.kind === 'sketch' && entity.planeId === activePlane?.id).forEach((entity) => {
+            const points = entity.id === this.options.getEditingSketchId() ? this.currentPoints : entity.points;
             (entity.lockedPoints || []).forEach((index) => {
-                const point = entity.points?.[index];
+                const point = points?.[index];
                 if (point) this.addLockBadge(point, entity.id, index, false);
             });
             (entity.constraintEdges || []).forEach((index) => {
-                const a = entity.points?.[index], b = entity.points?.[(index + 1) % (entity.points?.length || 0)];
+                const a = points?.[index], b = points?.[(index + 1) % (points?.length || 0)];
                 if (a && b) this.addLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true);
             });
             Object.entries(entity.edgeConstraints || {}).forEach(([key, value]) => {
-                const index = Number(key), a = entity.points?.[index], b = entity.points?.[(index + 1) % (entity.points?.length || 0)];
+                const index = Number(key), a = points?.[index], b = points?.[(index + 1) % (points?.length || 0)];
                 if (!a || !b) return;
                 const rules = Array.isArray(value) ? value : [value];
                 rules.forEach((rule, order) => this.addLockBadge([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], entity.id, index, true, rule, order));
@@ -433,6 +434,7 @@ export class SketchRenderer {
         this.clearAltBorder();
         clearGroup(this.group);
         this.options.overlay.clear('sketch-dimension:');
+        this.options.overlay.clear('sketch-lock:');
         this.currentPoints = points.map((point) => [...point]);
         this.selectedSketchPoint = selectedIndex;
         this.activeSketchSegment = selectedSegment;
@@ -535,6 +537,8 @@ export class SketchRenderer {
                 sides, sectorAngle, open, profileStartAngle: startAngle,
             });
         }
+        // Constraint badges are world-positioned and must be rebuilt from the latest draft geometry.
+        this.refreshSelectionFeedback();
     }
 
     dispose() {
