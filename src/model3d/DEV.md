@@ -255,7 +255,7 @@
 ## 3D Shell 与多面选择
 
 - `engine/modeling/Shell.ts` 负责均匀内缩与开口切割；开口轮廓先内缩一个壁厚再贯通内腔，禁止用完整外面轮廓切断相邻侧壁。增大厚度只能改变内部空腔，外壁和整体包围盒不得缩小。单面及互不相邻的开口使用内缩轮廓；共面相邻开口仅在公共边补充条带。存在非共面相邻关系的选中面统一使用旧的整面贯通，禁止改用局部交集或角楔体，确保直角/斜角开口都不留梁，且正五边形不会出现额外 V 形凹陷。
-- `useShellOperations` 使用 `shallowRef` 保存 session，确保 OperationBar 的 `shellActive` 响应开始/取消；操作前实体与开口锚点随 session 保存，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，厚度输入通过 120ms debounce 合并 CSG 预览并以 generation 忽略旧请求，完成时始终按最新数值重算后烘焙为 `meshGeometry`，只产生一步撤销，不叠加 parametric edge treatments。
+- `useShellOperations` 使用 `shallowRef` 保存 session，确保 OperationBar 的 `shellActive` 响应开始/取消；操作前实体与开口锚点随 session 保存，壁厚变化从原实体重算并只写入 `ShellPreviewController`；预览阶段不改 document、不保存、不写 history，厚度输入通过 120ms debounce 合并 CSG 预览并以 generation 忽略旧请求，完成时始终按最新数值重算后烘焙为 `meshGeometry`，只产生一步撤销，不叠加 parametric edge treatments。输入 blur/Enter 调用完成，操作条内部 pointer 操作必须抑制 blur，避免取消被误提交。壳体内底面复用 `evaluateFaceExtrusion` 的完整平面区域，正五边形回归需验证体积增量为内底面积乘拖动距离。
 - `InteractionController.geometryAnchors` 保存多面选择，`GuideRenderer` 对每个面渲染 active feedback。Ctrl/Command 重复选择同一面只切换该面，App 不再通过 body id 的 toggle 处理这种多选。
 - `ShellOperationBar.vue` 提供厚度输入、完成和取消；Shell 不使用指针旁 `directFace` 尺寸输入。剖视封口同时采集提交实体与 Shell 预览网格，cap 不读写深度并使用高对比壁面材质，避免内表面遮挡截面壁。
 

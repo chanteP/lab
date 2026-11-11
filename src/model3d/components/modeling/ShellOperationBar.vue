@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import OperationBar from '../ui/OperationBar.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
 import AppButton from '../ui/AppButton.vue';
@@ -6,13 +7,15 @@ import type { LengthUnit } from '../../types';
 
 defineProps<{ value: number; unit: LengthUnit }>();
 const emit = defineEmits<{ close: []; done: []; update: [value: number] }>();
+const internalAction = ref(false);
+function confirmBlur() { if (!internalAction.value) emit('done'); }
 </script>
 
 <template>
-    <OperationBar label="抽壳操作" close-label="取消抽壳" @close="emit('close')">
+    <OperationBar label="抽壳操作" close-label="取消抽壳" @close="emit('close')" @pointerdown.capture="internalAction = true" @pointerup.capture="internalAction = false" @pointercancel.capture="internalAction = false">
         <div class="context-title"><strong>抽壳</strong><span>调整厚度实时预览</span></div>
         <div class="context-fields">
-            <label>厚度<IntegerInputNumber :precision="2" :value="value" :min="0.01" size="small" @update:value="emit('update', $event)" /></label>
+            <label>厚度<IntegerInputNumber :precision="2" :value="value" :min="0.01" size="small" @update:value="emit('update', $event)" @blur="confirmBlur" @keydown.enter.prevent="emit('done')" /></label>
             <span class="unit">{{ unit }}</span>
             <AppButton type="primary" size="small" @click="emit('done')">完成</AppButton>
         </div>

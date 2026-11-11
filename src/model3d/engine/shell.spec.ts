@@ -5,6 +5,7 @@ import { initializeManifold } from './modeling/ManifoldKernel';
 import { evaluateShell, type ShellOpening } from './modeling/Shell';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { buildEntityMesh } from './geometry';
+import { evaluateFaceExtrusion } from './modeling/FaceExtrusion';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { createDocument, createEntity } from '../types';
 
@@ -73,7 +74,7 @@ test('adjacent selected faces open through their shared edge without leaving a b
     assert(Math.abs(volume(result) - 298) < 1e-4, `adjacent full openings must not leave a beam, volume=${volume(result)}`);
 });
 
-test('adjacent sides of a regular pentagonal prism join without an extra recessed notch', () => {
+test('adjacent pentagon sides join cleanly and the inner bottom thickens as one full face', () => {
     const document = createDocument();
     document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
     const body = createEntity('extrude', 'pentagon');
@@ -103,4 +104,18 @@ test('adjacent sides of a regular pentagonal prism join without an extra recesse
     assert(Math.abs(validation.volume - 688.5284340352495) < 1e-4, `legacy adjacent opening volume=${validation.volume}`);
     assert(Math.abs(result.boundingBox!.min.z - -8.334994316101074) < 1e-6, 'the joint must match the previous full-face opening instead of adding a V notch');
     assert.deepEqual(result.boundingBox!.max.toArray(), mesh.geometry.boundingBox!.max.toArray());
+
+    // The inner bottom is an ordinary full planar region: dragging along its cavity normal adds a complete slab.
+    const shellTopology = buildMeshTopology(result, body.id, body, document);
+    const innerBottom = shellTopology.faces.find((face) => face.planar && face.normal[1] > 0.999 && Math.abs(face.point[1] + 4) < 1e-5)!;
+    const vertices: [number, number, number][] = [], indices: number[] = [];
+    innerBottom.triangleIds.forEach((triangleId) => shellTopology.triangles[triangleId].renderVertices.forEach((renderVertex) => {
+        vertices.push(new THREE.Vector3().fromBufferAttribute(result.attributes.position, renderVertex).toArray());
+        indices.push(indices.length);
+    }));
+    let area = 0;
+    for (let index = 0; index < vertices.length; index += 3) area += new THREE.Vector3(...vertices[index + 1]).sub(new THREE.Vector3(...vertices[index])).cross(new THREE.Vector3(...vertices[index + 2]).sub(new THREE.Vector3(...vertices[index]))).length() / 2;
+    const thickened = evaluateFaceExtrusion(result, { normal: innerBottom.normal, distance: 1, vertices, indices, faceIds: [innerBottom.id] });
+    assert(thickened.validation.valid, thickened.validation.errors.join(', '));
+    assert(Math.abs(thickened.validation.volume - (validation.volume + area)) < 1e-4, 'inner-bottom drag thickens the entire bottom instead of making a local boss');
 });
