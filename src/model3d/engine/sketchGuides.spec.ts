@@ -9,6 +9,37 @@ test('origin and operation point snapping is exact instead of pointer-rounded', 
     assert.deepEqual(result?.point, [0, 0]);
 });
 
+test('origin outranks ruler guides and operation points even when they are closer', () => {
+    const entity = createEntity('sketch', 'point');
+    entity.points = [[0.3, 0.3]];
+    const result = matchSketchGuide({
+        entities: [entity], point: [0.4, 0.4], threshold: 2,
+        origins: [{ id: 'world', point: [0, 0] }], guides: [{ id: 'near', axis: 'u', offset: 0.4 }],
+    });
+    assert.deepEqual(result?.point, [0, 0]);
+    assert.equal(result?.matches[0].reference.kind, 'origin');
+});
+
+test('origin axes outrank a nearer persistent guide', () => {
+    const result = matchSketchGuide({
+        entities: [], point: [0.4, 5], threshold: 1,
+        origins: [{ id: 'world', point: [0, 0] }], guides: [{ id: 'near', axis: 'u', offset: 0.45 }],
+    });
+    assert.deepEqual(result?.point, [0, 5]);
+    assert.equal(result?.matches[0].reference.kind, 'origin');
+});
+
+test('persistent guides outrank a nearer operation point', () => {
+    const entity = createEntity('sketch', 'point');
+    entity.points = [[10.35, 5]];
+    const result = matchSketchGuide({
+        entities: [entity], point: [10.4, 5], threshold: 1,
+        guides: [{ id: 'guide', axis: 'u', offset: 10.45 }],
+    });
+    assert.deepEqual(result?.point, [10.45, 5]);
+    assert.equal(result?.matches[0].reference.kind, 'ruler');
+});
+
 test('two reference axes produce a precise intersection', () => {
     const result = matchSketchGuide({ entities: [], point: [10.1, 20.1], origins: [{ id: 'world', point: [10, 20] }], threshold: 1 });
     assert.deepEqual(result?.point, [10, 20]);

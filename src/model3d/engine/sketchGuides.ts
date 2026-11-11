@@ -106,11 +106,12 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
         ...(request.origins || []).map((origin) => ({ kind: 'origin' as const, id: origin.id, point: origin.point })),
     ];
     pointReferences.forEach((reference) => {
-        candidates.push({ point: [...reference.point], a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: length(subtract(point, reference.point)), priority: 0 });
+        const origin = reference.kind === 'origin';
+        candidates.push({ point: [...reference.point], a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: length(subtract(point, reference.point)), priority: origin ? 0 : 4 });
         const vertical: Point2 = [reference.point[0], point[1]];
-        candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]), axis: 'vertical', priority: 2 });
+        candidates.push({ point: vertical, a: reference.point, b: [reference.point[0], reference.point[1] + 1], reference, distance: Math.abs(point[0] - reference.point[0]), axis: 'vertical', priority: origin ? 1 : 5 });
         const horizontal: Point2 = [point[0], reference.point[1]];
-        candidates.push({ point: horizontal, a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: Math.abs(point[1] - reference.point[1]), axis: 'horizontal', priority: 2 });
+        candidates.push({ point: horizontal, a: reference.point, b: [reference.point[0] + 1, reference.point[1]], reference, distance: Math.abs(point[1] - reference.point[1]), axis: 'horizontal', priority: origin ? 1 : 5 });
     });
     (request.guides || []).forEach((guide) => {
         const reference: SketchGuideReference = { kind: 'ruler', id: guide.id, axis: guide.axis, offset: guide.offset };
@@ -121,7 +122,7 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
         candidates.push({
             point: projected, a, b, reference,
             distance: vertical ? Math.abs(point[0] - guide.offset) : Math.abs(point[1] - guide.offset),
-            axis: vertical ? 'vertical' : 'horizontal', priority: 1,
+            axis: vertical ? 'vertical' : 'horizontal', priority: 2,
         });
     });
     if (edgeStart) refs.lines.forEach((reference) => {
@@ -134,7 +135,7 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
                 b: [edgeStart[0] + axis[0], edgeStart[1] + axis[1]],
                 reference,
                 distance: length(subtract(point, projected)),
-                priority: 1,
+                priority: 3,
             });
         });
     });
@@ -142,7 +143,7 @@ export function matchSketchGuide(request: SketchGuideRequest): SketchGuideResult
     if (!eligible.length) return null;
     const exact = eligible.find((candidate) => candidate.priority === 0 && candidate.distance <= Math.min(1, threshold * 0.25));
     if (exact) return { point: [...exact.point], matches: [exact] };
-    const bestPriority = (eligible.find((candidate) => candidate.priority > 0) || eligible[0]).priority;
+    const bestPriority = eligible[0].priority;
     const bestCandidates = eligible.filter((candidate) => candidate.priority === bestPriority);
     const vertical = eligible.find((candidate) => candidate.axis === 'vertical' && candidate.priority === bestPriority);
     const horizontal = eligible.find((candidate) => candidate.axis === 'horizontal' && candidate.priority === bestPriority);
