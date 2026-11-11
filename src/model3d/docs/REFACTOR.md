@@ -36,7 +36,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `components/viewport/Viewport.vue` 只负责创建/销毁 `Viewport`、传递原有 callbacks，并渲染投影后的 Vue 覆盖层。
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
-- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 10 倍主线，原点 X/Z 轴分别读取 `AXIS_COLORS.x` / `AXIS_COLORS.z`；`gridScale` 计算格距与约 150px 整数段比例尺，网格以 orbit target 的世界半径在 200%–300% 区间淡出。
+- `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 5 倍主线，格距在每个数量级只取 1 和 5，原点 X/Z 轴分别读取 `AXIS_COLORS.x` / `AXIS_COLORS.z`；`gridScale` 计算格距与约 150px 整数段比例尺，网格以 orbit target 的世界半径在 200%–300% 区间淡出。
 - `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SectionRenderer` 使用逐实体 stencil 正反面计数与平面封口生成实心断面，共享源几何但不进入选择和导出。`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据、实际轮廓边拾取结果和所选实体/面的统计。
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
@@ -69,6 +69,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 
 ## Changelog
 
+- 2026-11-11：Grid 格距限定为每个数量级的 1 和 5，移除 0.4、2、250 等非预期档位。
 - 2026-11-10：参考线点线优先，对称第三步支持空格平移和全副本独立磁吸；Grid 改为 5x 步进，移除渲染区右键菜单，Section cap 偏移避免共面冲突并保留空腔。
 - 2026-11-10：标尺参考线拖动移除主刻度硬吸附，保留操作点、参考线和交点磁吸。
 - 2026-11-10：草图约束选中关系持续至 blur/删除，按操作点、选中边、对齐端点及同轴、中心、形状变动数、相邻点及递归层严格选优，全部约束保持硬性。
