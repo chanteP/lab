@@ -118,7 +118,7 @@ body { background: #101516; }
     position: relative; color: #f3f5ef;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
-    button, input, textarea { font: inherit; }
+    button, input, textarea { font-family: inherit; }
 }
 .mcp-info {
     position: absolute; z-index: 800; right: 22px; bottom: 38px; display: grid; place-items: center;
