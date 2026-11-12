@@ -67,6 +67,7 @@ function volume(entity: ModelEntity, document: any) {
 
 test('agent API exposes project, entity, sketch, generation, tool and history domains', () => {
     assert.deepEqual(listModel3dTools().map((tool) => tool.name), ['model3d_project', 'model3d_entity', 'model3d_sketch', 'model3d_generate', 'model3d_tool', 'model3d_history']);
+    assert.match(listModel3dTools().find((tool) => tool.name === 'model3d_sketch')!.description, /XZ.*Y-top/);
 });
 
 test('agent creates a project and a parametric primitive', async () => {
@@ -85,6 +86,11 @@ test('agent creates a sketch and extrudes it into a solid', async () => {
     const sketch = await callModel3dTool(bridge, 'model3d_sketch', { action: 'create', profile: { type: 'rectangle', points: [[0, 0], [20, 0], [20, 10], [0, 10]] } });
     assert.equal(sketch.isError, undefined);
     const profileId = data(sketch).id;
+    const plane = document.value.planes[0];
+    assert.equal(plane.kind, 'XZ');
+    assert.deepEqual(plane.normal, [0, 1, 0]);
+    assert.deepEqual(plane.u, [1, 0, 0]);
+    assert.deepEqual(plane.v, [0, 0, -1]);
     const extruded = await callModel3dTool(bridge, 'model3d_generate', { action: 'extrude', profileId, depth: 5 });
     assert.equal(extruded.isError, undefined, extruded.content[0].text);
     const body = document.value.entities.find((item) => item.kind === 'extrude')!;

@@ -195,10 +195,10 @@ const tools: ToolDefinition[] = [
         },
     },
     {
-        name: 'model3d_sketch', description: '草图编辑：create/update/delete/constrain。profile 使用平面局部坐标；支持 polygon/rectangle/circle/ellipse/regular/line/arc 及约束类型。',
+        name: 'model3d_sketch', description: '草图编辑：create/update/delete/constrain。默认 XZ 平面、Y-top（+Y 向上），u=+X、v=-Z；profile 使用平面局部坐标，支持 polygon/rectangle/circle/ellipse/regular/line/arc 及约束类型。',
         inputSchema: { type: 'object', properties: {
-            action: { type: 'string', enum: ['create', 'update', 'delete', 'constrain'] }, id: { type: 'string' }, planeId: { type: 'string' }, plane: { type: 'object' }, name: { type: 'string' },
-            profile: { type: 'object' }, changes: { type: 'object' }, constraint: { type: 'string' }, edges: { type: 'array', items: { type: 'object' } }, shapeIds: { type: 'array', items: { type: 'string' } },
+            action: { type: 'string', enum: ['create', 'update', 'delete', 'constrain'] }, id: { type: 'string' }, planeId: { type: 'string' }, plane: { type: 'object', description: '省略时创建 XZ 原点平面：Y-top（+Y 向上），u=+X、v=-Z。' }, name: { type: 'string' },
+            profile: { type: 'object', description: '平面局部二维坐标；默认 XZ、Y-top，不使用世界三维坐标。' }, changes: { type: 'object' }, constraint: { type: 'string' }, edges: { type: 'array', items: { type: 'object' } }, shapeIds: { type: 'array', items: { type: 'string' } },
         }, required: ['action'] },
         execute: (bridge, args) => {
             if (args.action === 'create') return createSketch(bridge, args);

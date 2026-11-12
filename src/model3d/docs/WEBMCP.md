@@ -21,7 +21,7 @@ console.log(response.structuredContent);
 | `model3d_tool` | `shell/boolean/offsetFace/rotateAxis/revolve` | 封闭或开口抽壳、布尔运算、完整平面推拉、全局轴旋转偏移和草图车削 |
 | `model3d_history` | `undo/redo` | 撤销和重做 |
 
-所有长度使用当前项目 `lengthUnit`。草图 `profile.points` 使用所属平面的二维局部坐标，不是世界坐标。修改会进入与手工操作相同的场景同步、自动保存和撤销流程。
+所有长度使用当前项目 `lengthUnit`。默认草图平面为 **XZ、Y-top（+Y 向上）**，局部 `u=+X`、`v=-Z`；草图 `profile.points` 使用所属平面的二维局部坐标，不是世界三维坐标。修改会进入与手工操作相同的场景同步、自动保存和撤销流程。
 
 ## 示例：草图拉伸、检查面并抽壳
 
@@ -81,7 +81,7 @@ await model3dMCP.callTool('model3d_tool', {
 
 ## 草图参数
 
-- `planeId` 复用已有平面；省略时通过 `plane: { kind, origin, normal, u, v }` 创建，默认 XZ 原点平面。
+- `planeId` 复用已有平面；省略时通过 `plane: { kind, origin, normal, u, v }` 创建，默认 XZ 原点平面、Y-top（+Y 向上），`u=+X`、`v=-Z`。
 - `profile.type` 支持 `polygon/rectangle/circle/ellipse/regular/line/arc`。
 - 圆使用 `[center, circumference]`；椭圆使用 `[center, majorAxis, minorAxis]`；正多边形使用 `[center, vertex]` 并传 `sides`。
 - `constrain` 接收 `constraint`、`edges: [{ entityId, index }]` 和可选 `shapeIds`，支持现有方向、平行、正交、等长、固定长度、相切和同心规则。
