@@ -146,6 +146,7 @@ const {
     document, selectedIds, activeTool, viewport: () => viewport, message, pushHistory, popHistory, inputLength,
     canSelect: () => selectionKind.value === 'face' && selectedFacePlanar.value && selectedEntities.value.length > 0
         && selectedEntities.value.every((entity) => !['sketch', 'image'].includes(entity.kind)),
+    bodySelection: () => selectionKind.value === 'body' && selectedEntities.value.length === 1 && !['sketch', 'image'].includes(selectedEntities.value[0].kind) ? selectedEntities.value[0] : null,
 });
 function onShell() {
     setTool('shell');

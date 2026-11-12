@@ -151,7 +151,7 @@ function openingCutter(opening: ShellOpening, thickness: number, sharedEdges: Sh
 /** Uniform inward erosion followed by one independent opening cutter per selected face. */
 export function evaluateShell(base: THREE.BufferGeometry, openings: ShellOpening[], thickness: number) {
     if (!(thickness > 0) || !Number.isFinite(thickness)) throw new Error('壁厚必须大于 0');
-    if (!openings.length) throw new Error('请至少选择一个开口面');
+    // Body selection intentionally has no openings: retain every outer face and create only the cavity.
     const { Manifold } = getManifold();
     let solid: InstanceType<typeof Manifold> | null = null;
     let sphere: InstanceType<typeof Manifold> | null = null;

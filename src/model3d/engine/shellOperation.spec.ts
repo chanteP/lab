@@ -19,7 +19,7 @@ function anchor(): GeometryAnchor {
     };
 }
 
-function fixture() {
+function fixture(bodyMode = false) {
     const document = ref<ModelDocument>(createDocument());
     const body = Object.assign(createEntity('box', 'body'), { width: 10, height: 10, depth: 10, position: [0, 0, 0] as Vec3 });
     document.value.entities.push(body);
@@ -29,7 +29,7 @@ function fixture() {
     let previewCalls = 0;
     let history = 0;
     const viewport = {
-        getGeometryAnchors: () => [anchor()],
+        getGeometryAnchors: () => bodyMode ? [] : [anchor()],
         setShellPreview: (value: unknown[] | null) => { previews = value; if (value) previewCalls++; },
         setTool: (tool: ViewTool) => { activeTool.value = tool; },
         clearGeometrySelection: () => undefined,
@@ -37,6 +37,7 @@ function fixture() {
     const operations = useShellOperations({
         document, selectedIds, activeTool, viewport: () => viewport as any, message: { warning: () => undefined, error: () => undefined } as any,
         pushHistory: () => { history++; }, popHistory: () => { history--; }, inputLength: (value) => value || 0, canSelect: () => true,
+        bodySelection: () => bodyMode ? document.value.entities[0] : null,
     });
     return { document, operations, history: () => history, previews: () => previews, previewCalls: () => previewCalls };
 }
@@ -77,4 +78,24 @@ test('cancelling a shell preview discards every uncommitted thickness', () => {
     assert.equal(JSON.stringify(document.value), before);
     assert.equal(history(), 0);
     assert.equal(previews(), null);
+});
+
+test('a selected body supports a closed hollow shell with every outer face retained', () => {
+    const { document, operations, history } = fixture(true);
+    const before = JSON.stringify(document.value);
+    assert.equal(operations.canShell.value, true);
+    operations.start();
+    assert.equal(operations.active.value, true);
+    assert.equal(JSON.stringify(document.value), before);
+    operations.update(1);
+    assert(operations.commit());
+    assert.equal(history(), 1);
+    const committed = buildEntityMesh(document.value.entities[0], document.value);
+    const validation = validateSolidGeometry(committed.geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(validation.volume - 488) < 0.0002, `closed hollow volume=${validation.volume}`);
+    assert.deepEqual(committed.geometry.boundingBox!.min.toArray(), [-5, -5, -5]);
+    assert.deepEqual(committed.geometry.boundingBox!.max.toArray(), [5, 5, 5]);
+    committed.geometry.dispose();
+    operations.finish();
 });

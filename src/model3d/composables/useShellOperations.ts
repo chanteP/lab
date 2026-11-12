@@ -19,6 +19,7 @@ interface ShellOperationsOptions {
     popHistory: () => void;
     inputLength: (value: number | null) => number;
     canSelect: () => boolean;
+    bodySelection: () => ModelEntity | null;
 }
 
 type ShellSession = {
@@ -34,7 +35,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
     const session = shallowRef<ShellSession | null>(null);
     let previewGeneration = 0;
     const active = computed(() => !!session.value);
-    const canShell = computed(() => options.canSelect() && !!viewport()?.getGeometryAnchors().length);
+    const canShell = computed(() => (options.canSelect() && !!viewport()?.getGeometryAnchors().length) || !!options.bodySelection());
 
     function localOpenings(anchors: GeometryAnchor[], mesh: THREE.Mesh): ShellOpening[] {
         mesh.updateWorldMatrix(true, false);
@@ -81,8 +82,9 @@ export function useShellOperations(options: ShellOperationsOptions) {
 
     function start() {
         const anchors = viewport()?.getGeometryAnchors().filter((anchor) => anchor.type === 'face' && anchor.planar) || [];
-        const entities = anchors.map((anchor) => document.value.entities.find((entity) => entity.id === anchor.id)).filter(Boolean) as ModelEntity[];
-        if (!anchors.length || !entities.length || entities.some((entity) => ['sketch', 'image'].includes(entity.kind))) return message.warning('请先选择实体的平面');
+        const body = anchors.length ? null : options.bodySelection();
+        const entities = body ? [body] : anchors.map((anchor) => document.value.entities.find((entity) => entity.id === anchor.id)).filter(Boolean) as ModelEntity[];
+        if (!entities.length || entities.some((entity) => ['sketch', 'image'].includes(entity.kind))) return message.warning('请先选择一个实体或实体平面');
         finish();
         const current: ShellSession = {
             originals: new Map(entities.map((entity) => [entity.id, cloneEntity(entity)])),
