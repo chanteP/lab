@@ -152,7 +152,7 @@ const {
     bodySelection: () => selectionKind.value === 'body' && selectedEntities.value.length === 1 && !['sketch', 'image'].includes(selectedEntities.value[0].kind) ? selectedEntities.value[0] : null,
 });
 const {
-    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, active: axisActive, canRotate, canRevolve,
+    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, copy: axisCopy, active: axisActive, canRotate, canRevolve,
     start: startAxisOperation, update: updateAxisOperation, commit: commitAxisOperation, finish: finishAxisOperation,
 } = useAxisOperations({
     document, selectedIds, selectedEntities, selectionKind, activeTool, viewport: () => viewport, message, pushHistory,
@@ -923,7 +923,7 @@ onBeforeUnmount(() => {
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
                     @history="editHistory" @boolean="applyBoolean" @shell="onShell" @rotate-axis="onRotateAxis" @revolve="onRevolve" />
                 <ShellOperationBar v-if="shellActive && !sketchMode" :value="shellThickness" :unit="lengthUnit" @update="updateShellThickness" @done="completeShell" @close="closeShell" />
-                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
+                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :copy="axisCopy" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

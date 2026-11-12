@@ -35,3 +35,13 @@ test('partial revolve preserves the requested angular fraction', () => {
     const value = validateSolidGeometry(geometry).volume;
     assert(Math.abs(value - Math.PI * 3 / 4) < 0.03);
 });
+
+test('elevation and angles above one turn create a continuous helical solid', () => {
+    const { document, profile } = fixture();
+    const geometry = evaluateRevolve(profile, document, 'y', 720, 2);
+    const validation = validateSolidGeometry(geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(validation.volume - Math.PI * 6) < 0.1, `volume=${validation.volume}`);
+    assert(Math.abs(geometry.boundingBox!.min.z - 1) < 1e-6);
+    assert(Math.abs(geometry.boundingBox!.max.z - 4) < 0.03);
+});

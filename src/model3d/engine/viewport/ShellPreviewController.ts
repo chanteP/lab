@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clearGroup } from './renderUtils';
 
-export type ShellPreview = { entityId: string; geometry: THREE.BufferGeometry; matrix?: THREE.Matrix4 };
+export type ShellPreview = { entityId: string; geometry: THREE.BufferGeometry; matrix?: THREE.Matrix4; keepSource?: boolean };
 
 /** Viewport-only shell result; source entities and the document stay untouched until commit. */
 export class ShellPreviewController {
@@ -18,11 +18,13 @@ export class ShellPreviewController {
 
     apply(model: THREE.Group, previews: ShellPreview[]) {
         this.reset();
-        previews.forEach(({ entityId, geometry, matrix }) => {
+        previews.forEach(({ entityId, geometry, matrix, keepSource }) => {
             const source = model.children.find((child): child is THREE.Mesh => child instanceof THREE.Mesh && child.userData.entityId === entityId && !child.userData.selectionProxy);
             if (!source) { geometry.dispose(); return; }
-            this.originals.push({ object: source, visible: source.visible });
-            source.visible = false;
+            if (!keepSource) {
+                this.originals.push({ object: source, visible: source.visible });
+                source.visible = false;
+            }
             const sourceMaterial = Array.isArray(source.material) ? source.material[0] : source.material;
             const material = sourceMaterial instanceof THREE.MeshStandardMaterial
                 ? sourceMaterial.clone()

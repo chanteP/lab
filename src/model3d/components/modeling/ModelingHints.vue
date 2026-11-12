@@ -33,8 +33,8 @@ const items = computed(() => {
     if (props.measureMode) return ['依次单击两个位置，读取总距离和轴向距离。', '右键或再次点击测量按钮退出。', '滚轮缩放，Space + 拖动平移。'];
     if (props.operation?.type === 'extrude') return ['拖动粗箭头，或在箭头旁输入距离。', 'E：切换单侧 / 对称拉伸。', 'Enter：完成；Esc：取消。'];
     if (props.operation?.type === 'boolean') return ['点击模型中心 + / −，切换保留或去除。', '全部为 − 时不可完成；点击空白或 Enter 完成。', 'Esc：取消并恢复素材。'];
-    if (props.activeTool === 'rotateAxis') return ['选择全局 X / Y / Z 轴，设置旋转角度和轴向偏移。', '调整后实时预览，点击完成提交。'];
-    if (props.activeTool === 'revolve') return ['封闭草图绕草图内 X / Y 轴生成实体。', '轮廓不能跨轴；调整后实时预览，点击完成提交。'];
+    if (props.activeTool === 'rotateAxis') return ['选择全局 X / Y / Z 轴和旋转角度，可按 Copy 创建副本。', '调整后实时预览，点击完成提交。'];
+    if (props.activeTool === 'revolve') return ['封闭草图绕草图内 X / Y 轴生成实体，可设置 Elevation。', '角度可超过 360° 形成螺旋；调整后实时预览，点击完成提交。'];
 
     const result: string[] = [];
     if (props.selectionKind === 'face') {

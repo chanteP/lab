@@ -12,6 +12,7 @@ import type { SketchRenderer } from './SketchRenderer';
 import type { SketchAssetRenderer } from './SketchAssetRenderer';
 import type { GuideRenderer } from './GuideRenderer';
 import { GeometrySelector, updateGeometryAnchorSelection, type GeometryAnchor } from './GeometrySelector';
+import { extrudeDragDistance } from './extrudeDrag';
 import type { MeasurementRenderer } from './MeasurementRenderer';
 import { pickLogicalEdge } from './EdgePicker';
 import { pickLogicalVertex } from './VertexPicker';
@@ -74,7 +75,7 @@ export class InteractionController {
     private lastPointer: { clientX: number; clientY: number } | null = null;
     private readonly directEditor: DirectDragController;
     private readonly gizmo: GizmoDragController;
-    private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; x: number; y: number } | null = null;
+    private extrudeArrowDrag: { profileId: string; direction: 1 | -1; worldNormal: Vec3; origin: Vec3; x: number; y: number } | null = null;
     private hoverGeometry: { id: string; normal: Vec3; point: Vec3 } | null = null;
     private marquee: { startX: number; startY: number; x: number; y: number; additive: boolean; moved: boolean } | null = null;
     private readonly selectionRectangle: HTMLDivElement;
@@ -531,8 +532,10 @@ export class InteractionController {
                 event.preventDefault(); event.stopImmediatePropagation();
                 const profile = this.document?.entities.find((item) => item.id === arrow.profileId);
                 const plane = this.document?.planes.find((item) => item.id === profile?.planeId);
-                const worldNormal = plane ? new THREE.Vector3(...plane.normal).multiplyScalar(arrow.direction).toArray() as Vec3 : [0, arrow.direction, 0] as Vec3;
-                this.extrudeArrowDrag = { profileId: arrow.profileId, direction: arrow.direction, worldNormal, x: event.clientX, y: event.clientY };
+                const worldNormal = plane ? new THREE.Vector3(...plane.normal).multiplyScalar(arrow.direction).normalize().toArray() as Vec3 : [0, arrow.direction, 0] as Vec3;
+                const profileObject = this.model.children.find((item) => item.userData.entityId === arrow.profileId);
+                const origin = (profileObject ? new THREE.Box3().setFromObject(profileObject).getCenter(new THREE.Vector3()) : this.controls.target).toArray() as Vec3;
+                this.extrudeArrowDrag = { profileId: arrow.profileId, direction: arrow.direction, worldNormal, origin, x: event.clientX, y: event.clientY };
                 this.capturePointer(event);
                 this.controls.enabled = false;
                 this.container.classList.add('is-handle-dragging');
@@ -725,16 +728,8 @@ export class InteractionController {
         }
         if (this.extrudeArrowDrag) {
             event.preventDefault(); event.stopImmediatePropagation();
-            const scale = Math.max(0.025, this.camera.position.distanceTo(this.controls.target) * 0.002);
-            const profileObject = this.model.children.find((item) => item.userData.entityId === this.extrudeArrowDrag!.profileId);
-            const origin = profileObject ? new THREE.Box3().setFromObject(profileObject).getCenter(new THREE.Vector3()) : this.controls.target.clone();
-            const from = origin.clone().project(this.camera);
-            const to = origin.clone().add(new THREE.Vector3(...this.extrudeArrowDrag.worldNormal)).project(this.camera);
-            const direction = new THREE.Vector2(to.x - from.x, -(to.y - from.y));
-            if (direction.lengthSq() < 0.000001) direction.set(0, -1);
-            direction.normalize();
-            const delta = ((event.clientX - this.extrudeArrowDrag.x) * direction.x + (event.clientY - this.extrudeArrowDrag.y) * direction.y) * scale;
-            if (Math.hypot(event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, delta, 'move');
+            const delta = extrudeDragDistance(this.camera, this.renderer.domElement, this.extrudeArrowDrag.origin, this.extrudeArrowDrag.worldNormal, event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y);
+            if (delta !== null && Math.hypot(event.clientX - this.extrudeArrowDrag.x, event.clientY - this.extrudeArrowDrag.y) > 2) this.callbacks.onExtrudeGesture(this.extrudeArrowDrag.profileId, this.extrudeArrowDrag.direction, delta, 'move');
             return;
         }
         if (this.shapeDrag && this.sketchMode) {

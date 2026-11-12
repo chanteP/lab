@@ -97,11 +97,11 @@ await model3dMCP.callTool('model3d_tool', {
 
 ```js
 await model3dMCP.callTool('model3d_tool', {
-  action: 'rotateAxis', operandIds: [bodyA.id], axis: 'y', angle: 90, offset: 10,
+  action: 'rotateAxis', operandIds: [bodyA.id], axis: 'y', angle: 90, copy: true,
 });
 await model3dMCP.callTool('model3d_tool', {
-  action: 'revolve', profileId, axis: 'x', angle: 270,
+  action: 'revolve', profileId, axis: 'x', angle: 720, offset: 20,
 });
 ```
 
-绕轴使用全局轴并叠加轴向偏移；车削使用草图内轴，轮廓不能跨轴。
+绕轴使用全局轴，`copy: true` 保留原对象并创建旋转副本；车削使用草图内轴，`offset` 对应 Shapr3D 的 Elevation 总升高，角度可超过 360°，轮廓不能跨轴。平面面片可传 `faceIds`。

@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { NSelect } from 'naive-ui';
+import { NCheckbox, NSelect } from 'naive-ui';
 import OperationBar from '../ui/OperationBar.vue';
 import IntegerInputNumber from '../ui/IntegerInputNumber.vue';
 import AppButton from '../ui/AppButton.vue';
 import type { LengthUnit } from '../../types';
 
-defineProps<{ mode: 'rotate' | 'revolve'; axis: 'x' | 'y' | 'z'; angle: number; offset: number; unit: LengthUnit }>();
-const emit = defineEmits<{ close: []; done: []; update: [value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number }] }>();
+defineProps<{ mode: 'rotate' | 'revolve'; axis: 'x' | 'y' | 'z'; angle: number; offset: number; copy: boolean; unit: LengthUnit }>();
+const emit = defineEmits<{ close: []; done: []; update: [value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number; copy?: boolean }] }>();
 </script>
 
 <template>
     <OperationBar :label="mode === 'rotate' ? '绕轴旋转' : '车削'" :close-label="mode === 'rotate' ? '取消绕轴旋转' : '取消车削'" @close="emit('close')">
-        <div class="context-title"><strong>{{ mode === 'rotate' ? '绕轴' : '车削' }}</strong><span>{{ mode === 'rotate' ? '旋转并沿轴偏移' : '封闭轮廓绕轴生成实体' }}</span></div>
+        <div class="context-title"><strong>{{ mode === 'rotate' ? '绕轴' : '车削' }}</strong><span>{{ mode === 'rotate' ? '选轴旋转，可复制' : '封闭轮廓绕轴生成实体或螺旋' }}</span></div>
         <div class="context-fields">
             <label>轴<NSelect size="small" :value="axis" :options="(mode === 'rotate' ? ['x', 'y', 'z'] : ['x', 'y']).map((value) => ({ label: value.toUpperCase(), value }))" @update:value="emit('update', { axis: $event })" /></label>
-            <label>角度<IntegerInputNumber :precision="2" :value="angle" :min="-360" :max="360" :step="5" size="small" @update:value="emit('update', { angle: $event })" /></label>
-            <template v-if="mode === 'rotate'"><label>偏移<IntegerInputNumber :precision="2" :value="offset" size="small" @update:value="emit('update', { offset: $event })" /></label><span class="unit">{{ unit }}</span></template>
+            <label>角度<IntegerInputNumber :precision="2" :value="angle" :min="mode === 'rotate' ? -360 : undefined" :max="mode === 'rotate' ? 360 : undefined" :step="5" size="small" @update:value="emit('update', { angle: $event })" /></label>
+            <template v-if="mode === 'revolve'"><label>Elevation<IntegerInputNumber :precision="2" :value="offset" size="small" @update:value="emit('update', { offset: $event })" /></label><span class="unit">{{ unit }}</span></template>
+            <NCheckbox v-if="mode === 'rotate'" :checked="copy" size="small" @update:checked="emit('update', { copy: $event })">Copy</NCheckbox>
             <AppButton type="primary" size="small" @click="emit('done')">完成</AppButton>
         </div>
     </OperationBar>
