@@ -124,11 +124,21 @@ export class TravelMap {
         L.DomEvent.disableScrollPropagation(root);
         L.DomEvent.on(main, 'click', () => this.callbacks.onOpenTrip(trip.id));
         L.DomEvent.on(edit, 'click', () => this.callbacks.onEditTrip(trip.id));
+        const positionCover = () => this.positionTripCover(root, trip);
+        L.DomEvent.on(root, 'mouseenter', positionCover);
+        L.DomEvent.on(root, 'focusin', positionCover);
         const marker = L.marker(trip.destination, {
-            icon: L.divIcon({ className: 'travel-trip-marker', html: root, iconSize: [126, 154], iconAnchor: [63, 151] }),
+            icon: L.divIcon({ className: 'travel-trip-marker', html: root, iconSize: [144, 142], iconAnchor: [72, 140] }),
             keyboard: false, riseOnHover: true, zIndexOffset: 500,
         });
         this.layers.addLayer(marker); this.markers.push(marker);
+    }
+
+    private positionTripCover(root: HTMLElement, trip: Trip) {
+        const point = this.map.latLngToContainerPoint(trip.destination);
+        const width = this.map.getSize().x;
+        root.classList.toggle('trip-pin--above', width <= 700);
+        root.classList.toggle('trip-pin--left', width > 700 && point.x > width * 0.6);
     }
 
     renderPlan(trip: Trip, animate = true) {

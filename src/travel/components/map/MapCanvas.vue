@@ -67,10 +67,11 @@ onBeforeUnmount(() => map?.destroy());
             &:hover { background: rgba(48,59,59,.9); }
         }
     }
-    .leaflet-control-attribution {
-        padding: 3px 7px; color: rgba(255,255,255,.42); background: rgba(13,18,19,.5);
+    &.leaflet-container .leaflet-control-attribution {
+        margin: 0 10px 10px 0; padding: 4px 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 8px;
+        color: rgba(255,255,255,.48); background: rgba(13,18,19,.78);
         font-size: 9px; backdrop-filter: blur(8px);
-        a { color: rgba(255,255,255,.55); }
+        a { color: rgba(255,255,255,.62); }
     }
     .leaflet-tooltip.travel-route-tooltip {
         border: 1px solid rgba(255,255,255,.12); border-radius: 9px;
@@ -82,56 +83,62 @@ onBeforeUnmount(() => map?.destroy());
 
 .travel-trip-marker, .travel-place-marker { background: none; border: 0; overflow: visible !important; }
 .trip-pin {
-    position: relative; width: 126px; height: 154px;
+    position: relative; width: 144px; height: 142px;
     &__main {
         position: absolute; z-index: 2; inset: 0; padding: 0; border: 0; cursor: pointer;
-        background: transparent; filter: drop-shadow(0 12px 12px rgba(0,0,0,.34));
+        background: transparent; filter: drop-shadow(0 12px 16px rgba(0,0,0,.32));
         transition: transform .38s cubic-bezier(.2,.8,.2,1), filter .3s ease;
-        &:focus-visible { outline: 2px solid #d6ff7f; outline-offset: 5px; border-radius: 12px; }
+        &:focus-visible { outline: 2px solid #d6ff7f; outline-offset: 5px; border-radius: 17px; }
     }
     &__photo {
-        position: relative; height: 126px; padding: 6px; overflow: hidden;
-        border: 1px solid rgba(255,255,255,.65); border-radius: 12px;
-        background: #f1efe8; transform: rotate(-1.5deg);
+        position: relative; height: 112px; overflow: hidden; border: 1px solid rgba(255,255,255,.28);
+        border-radius: 16px; background: #293630; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
     }
-    &__image { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; pointer-events: none; }
+    &__image { width: 100%; height: 100%; object-fit: cover; pointer-events: none; transition: transform .55s cubic-bezier(.2,.8,.2,1); }
     &__placeholder {
-        display: grid; place-items: center; height: 100%; border-radius: 7px;
-        color: #35413c; background: linear-gradient(145deg, #d9e5ce, #a8c5b3);
+        display: grid; place-items: center; height: 100%; color: #35413c;
+        background: linear-gradient(145deg, #d9e5ce, #a8c5b3);
         font-size: 15px; letter-spacing: 3px; font-weight: 700;
     }
     &__shine {
-        position: absolute; inset: 6px; border-radius: 7px; pointer-events: none;
-        background: linear-gradient(125deg, rgba(255,255,255,.25), transparent 42%, rgba(0,0,0,.12));
+        position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+        background: linear-gradient(145deg, rgba(255,255,255,.12), transparent 45%, rgba(0,0,0,.1));
     }
     &__point {
-        display: block; width: 19px; height: 19px; margin: -2px auto 0;
-        border: 4px solid #f4f1e9; border-radius: 50% 50% 50% 0;
-        background: #78917e; transform: rotate(-45deg); box-shadow: 0 4px 8px rgba(0,0,0,.28);
+        position: relative; display: block; width: 2px; height: 15px; margin: 5px auto 0;
+        border-radius: 2px; background: rgba(225,235,215,.72); box-shadow: 0 2px 5px rgba(0,0,0,.3);
+        &::after {
+            content: ''; position: absolute; left: 50%; bottom: -5px; width: 6px; height: 6px;
+            border: 1px solid rgba(255,255,255,.75); border-radius: 50%; background: #92ae8f;
+            transform: translateX(-50%); box-shadow: 0 2px 5px rgba(0,0,0,.3);
+        }
     }
     &__cover {
-        position: absolute; z-index: 1; left: 7px; top: 6px; width: 190px; min-height: 148px;
-        display: flex; flex-direction: column; align-items: flex-start; padding: 15px;
-        box-sizing: border-box; border: 1px solid rgba(255,255,255,.17); border-radius: 13px;
-        color: #f3f4ef; background: rgba(35,46,43,.96); box-shadow: 0 14px 35px rgba(0,0,0,.3);
-        opacity: 0; transform: translate(-8px, 12px) rotate(-8deg) scale(.88);
-        transform-origin: 20% 100%; pointer-events: none;
-        transition: transform .48s cubic-bezier(.16,1,.3,1), opacity .22s ease;
+        position: absolute; z-index: 4; left: 0; top: 0; width: 222px; min-height: 148px;
+        display: flex; flex-direction: column; align-items: flex-start; padding: 17px;
+        box-sizing: border-box; border: 1px solid rgba(255,255,255,.17); border-radius: 16px;
+        color: #f3f4ef; background: rgba(35,46,43,.97); box-shadow: 0 18px 45px rgba(0,0,0,.36);
+        opacity: 0; transform: translate(24px, 14px) rotate(-5deg) scale(.9);
+        transform-origin: 0 70%; pointer-events: none;
+        transition: transform .46s cubic-bezier(.16,1,.3,1), opacity .2s ease;
         backdrop-filter: blur(20px);
     }
     &:hover &__cover, &:focus-within &__cover {
-        opacity: 1; transform: translate(91px, -27px) rotate(3deg) scale(1); pointer-events: auto;
+        opacity: 1; transform: translate(154px, -6px) rotate(1.5deg) scale(1); pointer-events: auto;
     }
-    &:hover &__main, &:focus-within &__main { transform: translateY(-9px) rotate(1deg); filter: drop-shadow(0 20px 16px rgba(0,0,0,.38)); }
+    &--left:hover &__cover, &--left:focus-within &__cover { transform: translate(-230px, -6px) rotate(-1.5deg) scale(1); }
+    &--above:hover &__cover, &--above:focus-within &__cover { transform: translate(-39px, -166px) rotate(0) scale(.94); }
+    &:hover &__main, &:focus-within &__main { transform: translateY(-6px); filter: drop-shadow(0 18px 20px rgba(0,0,0,.38)); }
+    &:hover &__image, &:focus-within &__image { transform: scale(1.045); }
     &__eyebrow { color: #d6e9ae; font-size: 8px; font-weight: 700; letter-spacing: 1.6px; }
-    &__title { margin-top: 8px; font-size: 17px; line-height: 1.25; }
-    &__dates { margin-top: 5px; color: rgba(255,255,255,.43); font-size: 9px; font-variant-numeric: tabular-nums; }
+    &__title { margin-top: 8px; font-size: 18px; line-height: 1.3; }
+    &__dates { margin-top: 5px; color: rgba(255,255,255,.48); font-size: 10px; font-variant-numeric: tabular-nums; }
     &__description {
-        display: -webkit-box; margin-top: 6px; overflow: hidden; color: rgba(255,255,255,.65);
-        font-size: 11px; line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,.68);
+        font-size: 11px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     }
     &__edit {
-        margin-top: auto; padding: 8px 0 0; border: 0; color: #d6e9ae; background: none;
+        margin-top: auto; padding: 10px 0 0; border: 0; color: #d6e9ae; background: none;
         font-size: 10px; cursor: pointer;
         &:focus-visible { outline: 1px solid #d6e9ae; outline-offset: 3px; }
     }
@@ -173,7 +180,6 @@ onBeforeUnmount(() => map?.destroy());
     }
 }
 @media (max-width: 700px) {
-    .trip-pin:hover .trip-pin__cover { transform: translate(45px, -30px) rotate(3deg) scale(.92); }
     .place-pin__name { max-width: 100px; }
 }
 </style>
