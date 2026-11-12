@@ -286,3 +286,5 @@
 - `engine/modeling/Revolve.ts` 使用 Manifold revolve 生成闭合实体并映射回草图平面，禁止用采样点直接拼非流形三角面。
 - 多选封闭草图由 `GuideRenderer` 分别生成粗箭头和距离输入，任意箭头进入同一批量拉伸事务，禁止只显示最后轮廓的箭头。3D 提示统一展示 Command/Ctrl 拖动框选。
 - 界面和 `model3d_tool` 共用轴向操作，具体交互与 Agent 参数分别见 `docs/AXIS_TOOLS.md`、`docs/WEBMCP.md`。封闭草图即使被标为 face 也显示车削；Body 平面转换为单一边界轮廓并保留原 Body。
+
+- 实体参数面板不显示 Extrude `depth` 的“厚度”入口，拉伸深度仅由拉伸操作条或粗箭头维护，避免与其他操作流程争用同一字段。

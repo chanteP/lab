@@ -51,7 +51,6 @@ const dimensionFields = computed(() => {
     if (item.kind === 'sphere') return [{ key: 'radius' as const, label: '半径', value: item.radius! }];
     if (item.kind === 'cone') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'height' as const, label: '高', value: item.height! }];
     if (item.kind === 'torus') return [{ key: 'radius' as const, label: '半径', value: item.radius! }, { key: 'tubeRadius' as const, label: '管径', value: item.tubeRadius! }];
-    if (item.kind === 'extrude' && props.selectionKind !== 'face') return [{ key: 'depth' as const, label: '厚度', value: item.depth! }];
     return [];
 });
 const commandResults = computed(() => {
