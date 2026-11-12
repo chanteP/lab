@@ -39,7 +39,7 @@ export interface Model3dAgentBridge {
     finishShell: () => void;
     updateFaceOffset: (distance: number) => void;
     startAxis: (mode: 'rotate' | 'revolve') => void;
-    updateAxis: (value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number; copy?: boolean }) => void;
+    updateAxis: (value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number }) => void;
     commitAxis: () => boolean;
     finishAxis: () => void;
     applyConstraint: (type: SketchConstraintType) => void;
@@ -244,11 +244,11 @@ const tools: ToolDefinition[] = [
         },
     },
     {
-        name: 'model3d_tool', description: '建模工具：shell、boolean、offsetFace、rotateAxis（全局轴旋转+Copy）、revolve（草图内轴车削+Elevation）。所有距离使用项目长度单位。',
+        name: 'model3d_tool', description: '建模工具：shell、boolean、offsetFace、rotateAxis（轮廓绕轴生成新实体）、revolve（草图内轴车削+Elevation）。所有距离使用项目长度单位。',
         inputSchema: { type: 'object', properties: {
             action: { type: 'string', enum: ['shell', 'boolean', 'offsetFace', 'rotateAxis', 'revolve'] }, entityId: { type: 'string' }, faceId: { type: 'string' },
             faceIds: { type: 'array', items: { type: 'object', properties: { entityId: { type: 'string' }, faceId: { type: 'string' } }, required: ['entityId', 'faceId'] } },
-            thickness: { type: 'number' }, distance: { type: 'number' }, axis: { type: 'string', enum: ['x', 'y', 'z'] }, angle: { type: 'number' }, offset: { type: 'number', description: 'Revolve Elevation，螺旋总升高。' }, copy: { type: 'boolean', description: 'Rotate Around Axis 是否保留原对象并创建旋转副本。' }, profileId: { type: 'string' }, operation: { type: 'string', enum: ['union', 'subtract', 'intersect'] }, operandIds: { type: 'array', items: { type: 'string' } },
+            thickness: { type: 'number' }, distance: { type: 'number' }, axis: { type: 'string', enum: ['x', 'y', 'z'] }, angle: { type: 'number' }, offset: { type: 'number', description: 'Revolve Elevation，螺旋总升高。' }, profileId: { type: 'string' }, operation: { type: 'string', enum: ['union', 'subtract', 'intersect'] }, operandIds: { type: 'array', items: { type: 'string' } },
         }, required: ['action'] },
         execute: (bridge, args) => {
             if (args.action === 'rotateAxis' || args.action === 'revolve') {
@@ -262,7 +262,7 @@ const tools: ToolDefinition[] = [
                 }
                 try {
                     bridge.startAxis(args.action === 'rotateAxis' ? 'rotate' : 'revolve');
-                    bridge.updateAxis({ axis: args.axis, angle: args.angle, offset: args.offset, copy: args.copy });
+                    bridge.updateAxis({ axis: args.axis, angle: args.angle, offset: args.offset });
                     if (!bridge.commitAxis()) throw new Error('轴向操作提交失败');
                     bridge.finishAxis();
                 } catch (error) { bridge.finishAxis(); throw error; }

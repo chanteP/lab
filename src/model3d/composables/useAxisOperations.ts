@@ -2,12 +2,13 @@ import { computed, ref, shallowRef, type ComputedRef, type Ref } from 'vue';
 import * as THREE from 'three';
 import type { useMessage } from 'naive-ui';
 import { buildEntityMesh } from '../engine/geometry';
+import { buildMeshTopology } from '../engine/topology/MeshTopology';
 import { evaluateRevolve } from '../engine/modeling/Revolve';
 import { entityProfileClosed } from '../engine/profiles';
 import type { Viewport, ViewTool } from '../engine/Viewport';
+import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { createEntity, type ModelDocument, type ModelEntity, type SelectionKind, type SketchPlane, type Vec3 } from '../types';
 import { uid } from '../utils/id';
-import { cloneEntity } from '../utils/entity';
 
 interface AxisOperationsOptions {
     document: Ref<ModelDocument>;
@@ -27,36 +28,46 @@ export function useAxisOperations(options: AxisOperationsOptions) {
     const axis = ref<'x' | 'y' | 'z'>('y');
     const angle = ref(90);
     const offset = ref(0);
-    const copy = ref(false);
     const active = computed(() => !!mode.value);
-    const canRotate = computed(() => ['body', 'mixed', 'sketch'].includes(selectionKind.value || '') && selectedEntities.value.length > 0);
-    const canRevolve = computed(() => {
-        if (selectedEntities.value.length !== 1) return false;
+    const canGenerate = computed(() => {
+        if (selectedEntities.value.length !== 1 || selectedEntities.value[0].kind === 'image') return false;
         if (selectedEntities.value[0].kind === 'sketch') return entityProfileClosed(selectedEntities.value[0]);
+        if (selectionKind.value === 'body') return true;
         const anchor = viewport()?.getGeometryAnchor();
         return selectionKind.value === 'face' && anchor?.type === 'face' && anchor.planar;
     });
+    const canRotate = canGenerate;
+    const canRevolve = canGenerate;
 
-    function rotationMatrix(entity: ModelEntity) {
-        const direction = new THREE.Vector3(axis.value === 'x' ? 1 : 0, axis.value === 'y' ? 1 : 0, axis.value === 'z' ? 1 : 0);
-        const transform = new THREE.Matrix4().makeRotationAxis(direction, THREE.MathUtils.degToRad(angle.value));
-        const object = new THREE.Object3D();
-        object.position.fromArray(entity.position);
-        object.rotation.fromArray(entity.rotation);
-        object.scale.fromArray(entity.scale);
-        object.updateMatrixWorld(true);
-        return transform.multiply(object.matrixWorld);
-    }
-    function showRotate() {
-        const previews = selectedEntities.value.map((owner) => {
-            const mesh = buildEntityMesh(owner, document.value);
+    function defaultFaceAnchor(): GeometryAnchor {
+        const owner = selectedEntities.value[0];
+        const mesh = buildEntityMesh(owner, document.value);
+        try {
+            mesh.updateWorldMatrix(true, false);
+            const topology = buildMeshTopology(mesh.geometry, owner.id, owner, document.value);
+            const face = topology.faces.filter((item) => item.planar).map((candidate) => ({
+                candidate,
+                area: candidate.triangleIds.reduce((sum, id) => sum + topology.triangles[id].renderVertices.length / 3, 0),
+            })).sort((a, b) => b.area - a.area)[0]?.candidate;
+            if (!face) throw new Error('所选模型没有可用于生成轮廓的平面');
+            const vertices: Vec3[] = [], indices: number[] = [];
+            face.triangleIds.forEach((id) => topology.triangles[id].renderVertices.forEach((index) => {
+                vertices.push(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld).toArray());
+                indices.push(indices.length);
+            }));
+            return {
+                id: owner.id, key: `${owner.id}:face:${face.id}`, type: 'face', planar: true,
+                normal: new THREE.Vector3(...face.normal).transformDirection(mesh.matrixWorld).toArray(), localNormal: [...face.normal],
+                point: new THREE.Vector3(...face.point).applyMatrix4(mesh.matrixWorld).toArray(), vertices, indices, faceIds: [face.id], revision: topology.revision,
+            };
+        } finally {
+            mesh.geometry.dispose();
             (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
-            return { entityId: owner.id, geometry: mesh.geometry, matrix: rotationMatrix(owner), keepSource: copy.value };
-        });
-        viewport()?.setShellPreview(previews);
+        }
     }
-    function faceProfile(): { profile: ModelEntity; plane: SketchPlane } {
-        const anchor = viewport()?.getGeometryAnchor();
+
+    function faceProfile(explicitAnchor?: GeometryAnchor): { profile: ModelEntity; plane: SketchPlane } {
+        const anchor = explicitAnchor || viewport()?.getGeometryAnchor() || defaultFaceAnchor();
         if (!anchor) throw new Error('请先选择车削平面');
         const welded: number[] = [], unique: THREE.Vector3[] = [], keys = new Map<string, number>();
         anchor.vertices.forEach((point) => {
@@ -98,7 +109,13 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         if (Math.abs(u.dot(normal)) > 0.9) u.set(0, 1, 0);
         u.addScaledVector(normal, -u.dot(normal)).normalize();
         const v = normal.clone().cross(u).normalize();
-        const origin = new THREE.Vector3(...anchor.point);
+        const first = unique[loops[0][0]];
+        let minU = first.dot(u), minV = first.dot(v);
+        loops[0].forEach((index) => {
+            minU = Math.min(minU, unique[index].dot(u));
+            minV = Math.min(minV, unique[index].dot(v));
+        });
+        const origin = first.clone().addScaledVector(u, minU - first.dot(u)).addScaledVector(v, minV - first.dot(v));
         const plane: SketchPlane = { id: `revolve-face-${anchor.key}`, name: '车削面平面', kind: 'XY', origin: origin.toArray(), normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: false };
         const profile = createEntity('sketch', 'revolve-face-profile');
         profile.planeId = plane.id;
@@ -124,26 +141,24 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         viewport()?.setShellPreview([{ entityId: source.id, geometry, matrix: input.world ? new THREE.Matrix4() : undefined, keepSource: input.keepSource }]);
     }
     function preview() {
-        try { if (mode.value === 'rotate') showRotate(); else if (mode.value === 'revolve') showRevolve(); }
+        try { showRevolve(); }
         catch (error) { message.error(error instanceof Error ? error.message : String(error)); }
     }
     function start(next: 'rotate' | 'revolve') {
         if (next === 'rotate' ? !canRotate.value : !canRevolve.value) return;
         finish();
         mode.value = next;
-        angle.value = next === 'rotate' ? 90 : 360;
+        angle.value = 360;
         offset.value = 0;
-        copy.value = false;
-        if (next === 'revolve' && axis.value === 'z') axis.value = 'y';
+        if (axis.value === 'z') axis.value = 'y';
         activeTool.value = next;
         viewport()?.setTool(next);
         preview();
     }
-    function update(next: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number; copy?: boolean }) {
+    function update(next: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number }) {
         if (next.axis) axis.value = next.axis;
         if (next.angle !== undefined && Number.isFinite(next.angle)) angle.value = next.angle;
         if (next.offset !== undefined && Number.isFinite(next.offset)) offset.value = next.offset;
-        if (next.copy !== undefined) copy.value = next.copy;
         preview();
     }
     function bake(body: ModelEntity, geometry: THREE.BufferGeometry) {
@@ -157,24 +172,7 @@ export function useAxisOperations(options: AxisOperationsOptions) {
     function commit() {
         if (!mode.value) return false;
         try {
-            if (mode.value === 'rotate') {
-                pushHistory();
-                const rotatedIds: string[] = [];
-                selectedEntities.value.forEach((source) => {
-                    const owner = copy.value ? cloneEntity(source) : source;
-                    if (copy.value) owner.id = uid();
-                    const position = new THREE.Vector3(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3();
-                    rotationMatrix(source).decompose(position, quaternion, scale);
-                    owner.position = position.toArray();
-                    owner.rotation = new THREE.Euler().setFromQuaternion(quaternion).toArray().map(THREE.MathUtils.radToDeg) as Vec3;
-                    owner.scale = scale.toArray();
-                    if (copy.value) { document.value.entities.push(owner); rotatedIds.push(owner.id); }
-                });
-                if (copy.value) {
-                    selectedIds.value = rotatedIds;
-                    selectionKind.value = selectedEntities.value.every((item) => item.kind === 'sketch') ? 'sketch' : rotatedIds.length === 1 ? 'body' : 'mixed';
-                }
-            } else {
+            {
                 const profile = selectedEntities.value[0];
                 const input = revolveInput();
                 const geometry = evaluateRevolve(input.profile, input.document, axis.value === 'x' ? 'x' : 'y', angle.value, offset.value);
@@ -204,5 +202,5 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         mode.value = null;
         viewport()?.setShellPreview(null);
     }
-    return { mode, axis, angle, offset, copy, active, canRotate, canRevolve, start, update, commit, finish };
+    return { mode, axis, angle, offset, active, canRotate, canRevolve, start, update, commit, finish };
 }

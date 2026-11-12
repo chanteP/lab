@@ -29,17 +29,18 @@ function fixture(kind: 'body' | 'sketch') {
     return { document, owner, operations, selectionKind, previews: () => previews, history: () => history, setAnchor: (anchor: GeometryAnchor) => { geometryAnchor = anchor; } };
 }
 
-test('rotate axis applies the selected angle only on commit', () => {
-    const { owner, operations, previews, history } = fixture('body');
+test('rotate axis generates a new body from the selected body instead of transforming it', () => {
+    const { document, owner, operations, previews, history } = fixture('body');
     assert.equal(operations.canRotate.value, true);
     operations.start('rotate');
-    operations.update({ axis: 'y', angle: 90 });
+    operations.update({ axis: 'y', angle: 360 });
     assert.deepEqual(owner.position, [1, 0, 0]);
     assert.equal(previews()?.length, 1);
     assert(operations.commit());
     assert.equal(history(), 1);
-    assert(Math.abs(owner.position[0]) < 1e-7 && Math.abs(owner.position[1]) < 1e-7 && Math.abs(owner.position[2] + 1) < 1e-7);
-    assert(Math.abs(owner.rotation[1] - 90) < 1e-7, 'document rotations remain in degrees');
+    assert.equal(owner.visible, true);
+    assert(document.value.entities.some((item) => item.kind === 'extrude'));
+    assert.deepEqual(owner.position, [1, 0, 0]);
     assert.equal(previews(), null);
 });
 
@@ -57,19 +58,6 @@ test('revolve preview commits a new solid and hides the source profile', () => {
     mesh.geometry.dispose();
     assert.equal(owner.visible, false);
     assert.equal(document.value.entities[document.value.entities.length - 1].id, body.id);
-});
-
-test('rotate axis copy preserves the source and creates a rotated duplicate', () => {
-    const { document, owner, operations, history } = fixture('body');
-    operations.start('rotate');
-    operations.update({ axis: 'y', angle: 90, copy: true });
-    assert(operations.commit());
-    assert.equal(history(), 1);
-    assert.deepEqual(owner.position, [1, 0, 0]);
-    assert.equal(document.value.entities.length, 2);
-    const duplicate = document.value.entities[1];
-    assert(Math.abs(duplicate.position[0]) < 1e-7 && Math.abs(duplicate.position[1]) < 1e-7 && Math.abs(duplicate.position[2] + 1) < 1e-7);
-    assert(Math.abs(duplicate.rotation[1] - 90) < 1e-7);
 });
 
 test('a planar body face revolves into a new body without replacing its source', () => {

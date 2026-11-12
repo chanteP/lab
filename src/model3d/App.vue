@@ -19,6 +19,7 @@ import { useModelingOperations } from './composables/useModelingOperations';
 import { useEdgeTreatmentOperations } from './composables/useEdgeTreatmentOperations';
 import { useShellOperations } from './composables/useShellOperations';
 import { useAxisOperations } from './composables/useAxisOperations';
+import { useTransformOperation } from './composables/useTransformOperation';
 import { useSketchState } from './composables/sketch/useSketchState';
 import { useSketchConstraints } from './composables/sketch/useSketchConstraints';
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
@@ -40,6 +41,7 @@ import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
 import AxisOperationBar from './components/modeling/AxisOperationBar.vue';
+import TransformOperationBar from './components/modeling/TransformOperationBar.vue';
 import { initModel3dWebMCP } from './io/webmcp';
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
@@ -152,7 +154,7 @@ const {
     bodySelection: () => selectionKind.value === 'body' && selectedEntities.value.length === 1 && !['sketch', 'image'].includes(selectedEntities.value[0].kind) ? selectedEntities.value[0] : null,
 });
 const {
-    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, copy: axisCopy, active: axisActive, canRotate, canRevolve,
+    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, active: axisActive, canRotate, canRevolve,
     start: startAxisOperation, update: updateAxisOperation, commit: commitAxisOperation, finish: finishAxisOperation,
 } = useAxisOperations({
     document, selectedIds, selectedEntities, selectionKind, activeTool, viewport: () => viewport, message, pushHistory,
@@ -164,6 +166,24 @@ function closeAxisOperation() {
 function completeAxisOperation() {
     if (commitAxisOperation()) closeAxisOperation();
 }
+
+const transformOperation = useTransformOperation({
+    selectedEntities, selectedIds, activeTool, viewport: () => viewport, pushHistory,
+    isTransforming: () => transforming, setTransforming: (value) => transforming = value, setTool,
+    sync: () => viewport?.sync(document.value),
+});
+const { active: transformBarActive, values: transformBarValues, begin: beginTransformOperation, update: updateTransformOperation, endGesture: endTransformGesture, complete: completeTransformOperation } = transformOperation;
+const sketchTransformValues = computed(() => ({
+    x: sketchAdvanced.transformInput.value.x, y: sketchAdvanced.transformInput.value.y,
+    centerX: sketchAdvanced.transformInput.value.x, centerY: sketchAdvanced.transformInput.value.y,
+    angle: sketchAdvanced.transformInput.value.angle, scale: sketchAdvanced.transformInput.value.scale,
+}));
+function updateSketchTransformField(key: string, value: number) {
+    if (key === 'centerX') sketchAdvanced.setTransformCenterInput('x', value);
+    else if (key === 'centerY') sketchAdvanced.setTransformCenterInput('y', value);
+    else sketchAdvanced.setTransformInput(key as 'x' | 'y' | 'angle' | 'scale', value);
+}
+function completeSketchTransform() { chooseSketchSelection(); }
 
 function onShell() {
     setTool('shell');
@@ -290,6 +310,9 @@ function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
     activePanel.value = activePanel.value === panel ? null : panel;
 }
+function selectionTransformTool(fallback: ViewTool = 'translate'): ViewTool {
+    return ['translate', 'rotate', 'scale'].includes(activeTool.value) ? activeTool.value : fallback;
+}
 function chooseTool(tool: ViewTool) {
     if (activeTool.value === tool && !operation.value) {
         parameterCardOpen.value = !parameterCardOpen.value;
@@ -406,7 +429,7 @@ function onMarqueeSelect(ids: string[], additive: boolean) {
     selectionKind.value = selectedIds.value.length === 1 ? 'body' : selectedIds.value.length > 1 ? 'mixed' : null;
     activePanel.value = null;
     parameterCardOpen.value = true;
-    setTool(selectedIds.value.length === 1 ? 'translate' : 'select');
+    setTool(selectedIds.value.length === 1 ? selectionTransformTool() : 'select');
 }
 function onSketchMarqueeSelect(rect: SketchMarqueeRect, additive: boolean) {
     const view = viewport;
@@ -460,8 +483,8 @@ function selectFromItems(id: string | null, additive: boolean) {
     parameterCardOpen.value = true;
     if (additive) return;
     const entity = document.value.entities.find((item) => item.id === id);
-    if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool('select'); }
-    else if (entity && entity.kind !== 'boolean') setTool('translate');
+    if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool(selectionTransformTool('select')); }
+    else if (entity && entity.kind !== 'boolean') setTool(selectionTransformTool());
 }
 function selectRangeFromItems(ids: string[]) {
     cancelShellForSelection();
@@ -477,7 +500,7 @@ function selectRangeFromItems(ids: string[]) {
     selectionKind.value = ids.length === 1 ? 'body' : 'mixed';
     activePanel.value = null;
     parameterCardOpen.value = true;
-    setTool('select');
+    setTool(selectionTransformTool('select'));
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     cancelShellForSelection();
@@ -498,13 +521,13 @@ function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: 
     if (additive && type === 'face' && !profileFace) {
         selectedIds.value = [...new Set(anchors.map((anchor) => anchor.id))];
         selectionKind.value = anchors.length ? 'face' : null;
-        setTool('select');
+        setTool(selectionTransformTool('select'));
         return;
     }
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : profileFace ? 'face' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
-    if (additive) { setTool('select'); return; }
-    setTool('select');
+    if (additive) { setTool(selectionTransformTool('select')); return; }
+    setTool(selectionTransformTool('select'));
 }
 function onBodySelect(id: string) {
     cancelShellForSelection();
@@ -513,13 +536,13 @@ function onBodySelect(id: string) {
     selectEntity(id);
     if (['sketch', 'image'].includes(document.value.entities.find((item) => item.id === id)?.kind || '')) {
         selectionKind.value = 'sketch';
-        setTool('select');
+        setTool(selectionTransformTool('select'));
         return;
     }
     selectionKind.value = 'body';
     activePanel.value = null;
     parameterCardOpen.value = true;
-    setTool('translate');
+    setTool(selectionTransformTool());
 }
 function toggleMeasure() {
     if (measureMode.value) return stopMeasure();
@@ -791,15 +814,13 @@ const viewportCallbacks: ViewportCallbacks = {
         onTransform: (id, position, rotation, scale) => {
             const item = document.value.entities.find((entity) => entity.id === id);
             if (!item) return;
-            if (!transforming) { pushHistory(); transforming = true; }
+            beginTransformOperation();
             item.position = position;
             item.rotation = rotation;
             item.scale = scale;
         },
         onTransformEnd: () => {
-            if (!transforming) return;
-            transforming = false;
-            viewport.sync(document.value);
+            endTransformGesture();
         },
         onDirectEdit: handleDirectEdit,
         onDirectDragState: () => undefined,
@@ -923,7 +944,9 @@ onBeforeUnmount(() => {
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
                     @history="editHistory" @boolean="applyBoolean" @shell="onShell" @rotate-axis="onRotateAxis" @revolve="onRevolve" />
                 <ShellOperationBar v-if="shellActive && !sketchMode" :value="shellThickness" :unit="lengthUnit" @update="updateShellThickness" @done="completeShell" @close="closeShell" />
-                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :copy="axisCopy" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
+                <TransformOperationBar v-if="transformBarActive && !sketchMode" mode="3d" :tool="activeTool as 'translate' | 'rotate' | 'scale'" :values="transformBarValues" :unit="lengthUnit" @update="updateTransformOperation" @done="completeTransformOperation" />
+                <TransformOperationBar v-if="sketchMode && sketchAdvanced.transformActive.value && !symmetryActive" mode="sketch" :tool="activeTool as 'translate' | 'rotate' | 'scale'" :values="sketchTransformValues" :unit="lengthUnit" @update="updateSketchTransformField" @done="completeSketchTransform" />
+                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

@@ -45,3 +45,12 @@ test('elevation and angles above one turn create a continuous helical solid', ()
     assert(Math.abs(geometry.boundingBox!.min.z - 1) < 1e-6);
     assert(Math.abs(geometry.boundingBox!.max.z - 4) < 0.03);
 });
+
+test('a full-turn profile may sit across the revolve axis', () => {
+    const { document, profile } = fixture();
+    profile.points = [[-1, 1], [2, 1], [2, 2], [-1, 2]];
+    const geometry = evaluateRevolve(profile, document, 'y', 360);
+    const validation = validateSolidGeometry(geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(validation.volume > 0);
+});

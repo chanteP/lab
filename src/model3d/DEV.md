@@ -282,7 +282,7 @@
 
 ## 绕轴、车削与批量拉伸
 
-- `useAxisOperations` 统一管理绕轴和车削预览/完成事务；`rotation` 持久化始终使用角度制，禁止把弧度直接写入。绕轴使用全局 X/Y/Z 与 Copy，只修改提交时的实体变换或创建副本，不使用 Elevation；车削使用草图内 X/Y 与 Elevation，支持超过 360° 的螺旋，轮廓不能跨轴，负侧轮廓自动镜像。
+- `useAxisOperations` 统一管理绕轴和车削预览/完成事务；`rotation` 持久化始终使用角度制，禁止把弧度直接写入。绕轴使用轮廓生成新实体，不修改原模型，可设置 Elevation；Body 默认使用最大平面，平面轴参考位于最小 U/V 角点，整周允许跨轴，部分角度限制跨轴；车削使用草图内 X/Y 与 Elevation，支持超过 360° 的螺旋，轮廓不能跨轴，负侧轮廓自动镜像。
 - `engine/modeling/Revolve.ts` 使用 Manifold revolve 生成闭合实体并映射回草图平面，禁止用采样点直接拼非流形三角面。
 - 多选封闭草图由 `GuideRenderer` 分别生成粗箭头和距离输入，任意箭头进入同一批量拉伸事务，禁止只显示最后轮廓的箭头。3D 提示统一展示 Command/Ctrl 拖动框选。
 - 界面和 `model3d_tool` 共用轴向操作，具体交互与 Agent 参数分别见 `docs/AXIS_TOOLS.md`、`docs/WEBMCP.md`。封闭草图即使被标为 face 也显示车削；Body 平面转换为单一边界轮廓并保留原 Body。

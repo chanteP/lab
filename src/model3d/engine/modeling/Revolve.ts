@@ -15,7 +15,8 @@ export function evaluateRevolve(profile: ModelEntity, document: ModelDocument, a
     if (!(Math.abs(degrees) > 0.001)) throw new Error('车削角度不能为 0');
     const paths = contours(profile).flat();
     const coordinates = paths.flatMap((path) => path.map((point) => point[axis === 'x' ? 1 : 0]));
-    if (Math.min(...coordinates) < 0 && Math.max(...coordinates) > 0) throw new Error('车削轮廓不能跨过旋转轴');
+    const crossing = Math.min(...coordinates) < 0 && Math.max(...coordinates) > 0;
+    if (crossing && Math.abs(degrees) !== 360) throw new Error('部分车削轮廓不能跨过旋转轴，请使用 360° 或调整轴向');
     const negative = Math.max(...coordinates) <= 0;
     const { CrossSection, Manifold } = getManifold();
     const section = new CrossSection(paths);
@@ -25,7 +26,14 @@ export function evaluateRevolve(profile: ModelEntity, document: ModelDocument, a
     try {
         if (axis === 'y' && negative) mirrored = section.mirror([0, 1]);
         oriented = axis === 'x' ? section.rotate(negative ? 90 : -90) : mirrored || section;
-        const signedDegrees = negative ? -degrees : degrees;
+        let kernelNegative = negative;
+        if (crossing) {
+            const previous = oriented;
+            oriented = oriented.warp((point) => { point[0] = Math.abs(point[0]); });
+            if (previous !== section && previous !== mirrored) previous.delete();
+            kernelNegative = false;
+        }
+        const signedDegrees = kernelNegative ? -degrees : degrees;
         if (elevation || Math.abs(degrees) > 360) {
             // The kernel clamps angles above one turn; join transformed wedges to preserve every turn and elevation.
             const sign = Math.sign(signedDegrees) || 1;

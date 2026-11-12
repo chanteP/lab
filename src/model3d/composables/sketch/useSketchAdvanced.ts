@@ -377,6 +377,13 @@ export function useSketchAdvanced(options: AdvancedOptions) {
         refreshSketch();
     }
 
+    function setTransformCenterInput(axis: 'x' | 'y', value: number) {
+        if (!Number.isFinite(value)) return;
+        const index = axis === 'x' ? 0 : 1;
+        transformCenter.value = axis === 'x' ? [value, transformCenter.value[1]] : [transformCenter.value[0], value];
+        transformInput.value[axis] = value;
+    }
+
     function shapePoints(type: ProfileType, start: Point2, point: Point2): SketchProfilePart {
         if (type === 'rectangle') {
             const source: Point2[] = [start, [point[0], start[1]], point, [start[0], point[1]]];
@@ -916,7 +923,7 @@ export function useSketchAdvanced(options: AdvancedOptions) {
 
     return {
         symmetry, symmetryActive, transformActive, overlayActive, transformInput, inputPositions, lengthUnit,
-        startSymmetry, cancelSymmetry, nextSymmetryStep, updateSymmetry, setTransformInput,
+        startSymmetry, cancelSymmetry, nextSymmetryStep, updateSymmetry, setTransformInput, setTransformCenterInput,
         prepareTransform, pointerDown, pointerMove, pointerUp, pointerLeave, wheel, changeLengthUnit, doubleClick, contextMenu, render,
     };
 }
