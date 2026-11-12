@@ -300,3 +300,17 @@ test('lowering one combined top face does not move the other top face', () => {
     const positionsAfter = edited.geometry.attributes.position;
     assert(Array.from({ length: positionsAfter.count }, (_, index) => positionsAfter.getY(index)).some((value) => Math.abs(value + 5) < 0.001));
 });
+
+
+test('closed 3D sketches use a single hatched fill without a coplanar overlay', () => {
+    const sketch = Object.assign(createEntity('sketch', 'hatched'), {
+        profileType: 'rectangle' as const,
+        points: [[0, 0], [10, 0], [10, 10], [0, 10]] as [number, number][],
+    });
+    const mesh = buildEntityMesh(sketch, createDocument());
+    const material = mesh.material as THREE.MeshBasicMaterial;
+
+    assert.equal(material.userData.hatchPattern, true);
+    assert.equal(mesh.children.length, 0);
+    assert.equal(material.side, THREE.DoubleSide);
+});

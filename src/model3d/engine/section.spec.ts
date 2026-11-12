@@ -2,7 +2,9 @@ import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { measureSectionRadius } from './viewport/SceneSynchronizer';
-import { SectionRenderer, sectionSurfaceClipPlane } from './viewport/SectionRenderer';
+import { applySectionSurface, SectionRenderer, sectionSurfaceClipPlane } from './viewport/SectionRenderer';
+import { INTERACTION } from '../config/const';
+import { InfiniteGrid } from './viewport/InfiniteGrid';
 import { initializeManifold } from './modeling/ManifoldKernel';
 import { evaluateShell } from './modeling/Shell';
 
@@ -41,14 +43,17 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal(front.geometry, source.geometry);
     assert.equal((back.material as THREE.Material).stencilZPass, THREE.IncrementWrapStencilOp);
     assert.equal((front.material as THREE.Material).stencilZPass, THREE.DecrementWrapStencilOp);
-    assert.equal(source.renderOrder, 1000);
+    assert.equal(source.renderOrder, 999);
+    assert(cap.renderOrder > source.renderOrder, 'caps paint after retained inner and outer surfaces');
     assert.equal(cap.position.x, 10);
     assert.equal(cap.position.z, 0);
     const surfacePlane = sectionSurfaceClipPlane(plane);
-    assert.ok(surfacePlane.distanceToPoint(new THREE.Vector3(10, 0, 0)) < 0);
+    assert.equal(surfacePlane.distanceToPoint(new THREE.Vector3(10, 0, 0)), -INTERACTION.sectionSurfaceClipEpsilon);
     assert.equal(plane.distanceToPoint(new THREE.Vector3(10, 0, 0)), 0);
     assert.equal((cap.material as THREE.Material).stencilFunc, THREE.NotEqualStencilFunc);
     assert.equal((cap.material as THREE.Material).stencilZPass, THREE.ReplaceStencilOp);
+    assert.equal((cap.material as THREE.MeshStandardMaterial).transparent, true);
+    assert.equal((cap.material as THREE.MeshStandardMaterial).userData.hatchPattern, true);
 
     source.position.x = 25;
     renderer.update(plane);
@@ -85,3 +90,63 @@ function backStencil(renderer: SectionRenderer) {
 function frontStencil(renderer: SectionRenderer) {
     return ((renderer.group.children[1] as THREE.Mesh).material as THREE.Material).stencilZPass;
 }
+
+
+test('section surfaces show inner faces and restore their original material side', () => {
+    const material = new THREE.MeshStandardMaterial({ side: THREE.FrontSide });
+    const plane = sectionSurfaceClipPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+
+    applySectionSurface(material, plane);
+    assert.equal(material.side, THREE.DoubleSide);
+    assert.deepEqual(material.clippingPlanes, [plane]);
+
+    applySectionSurface(material, null);
+    assert.equal(material.side, THREE.FrontSide);
+    assert.deepEqual(material.clippingPlanes, []);
+    material.dispose();
+});
+
+test('section cap injects diagonal plane-UV hatching into the standard material', () => {
+    const source = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10), new THREE.MeshStandardMaterial());
+    const renderer = new SectionRenderer();
+    renderer.rebuild([source], new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+    const cap = renderer.group.children[2] as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+    const shader: { uniforms: Record<string, THREE.IUniform>; vertexShader: string; fragmentShader: string } = {
+        uniforms: {},
+        vertexShader: '#include <uv_vertex>',
+        fragmentShader: '#include <color_fragment>',
+    };
+
+    cap.material.onBeforeCompile(shader as never, null as never);
+
+    assert.match(shader.vertexShader, /vHatchUv = uv/);
+    assert.match(shader.fragmentShader, /hatchCoordinate/);
+    assert.match(shader.fragmentShader, /diffuseColor\.rgb = mix\(diffuseColor\.rgb, uHatchColor, hatchLine\)/);
+    assert.equal(shader.uniforms.uHatchScale.value, cap.scale.x);
+    assert.equal(shader.uniforms.uHatchOpacity.value, 1, 'hatch lines must not make the solid cap transparent');
+    renderer.dispose();
+});
+
+
+test('render-only grid stays farther behind coplanar bottoms than the section clip epsilon', () => {
+    const grid = new InfiniteGrid();
+    assert.equal(grid.mesh.position.y, -INTERACTION.gridSurfaceOffset);
+    assert(INTERACTION.gridSurfaceOffset > INTERACTION.sectionSurfaceClipEpsilon);
+    grid.dispose();
+});
+
+
+test('multiple section bodies keep stencil counts isolated while caps follow all source surfaces', () => {
+    const first = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial());
+    const second = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial());
+    const renderer = new SectionRenderer();
+    renderer.rebuild([first, second], new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+    const [firstBack, firstFront, firstCap, secondBack, secondFront, secondCap] = renderer.group.children;
+
+    assert(first.renderOrder < firstCap.renderOrder);
+    assert(second.renderOrder < firstCap.renderOrder);
+    assert(firstCap.renderOrder < secondBack.renderOrder);
+    assert.equal(secondBack.renderOrder, secondFront.renderOrder);
+    assert(secondBack.renderOrder < secondCap.renderOrder);
+    renderer.dispose();
+});

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AXIS_COLORS, VIEWPORT_COLORS } from '../../config/colors';
+import { INTERACTION } from '../../config/const';
 
 /** World-space adaptive grid with 5x major lines and camera/viewport fading. */
 export class InfiniteGrid {
@@ -68,7 +69,7 @@ export class InfiniteGrid {
         });
         this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
         this.mesh.rotation.x = -Math.PI / 2;
-        this.mesh.position.y = -0.02;
+        this.mesh.position.y = -INTERACTION.gridSurfaceOffset;
         this.mesh.frustumCulled = false;
         this.mesh.renderOrder = -10;
         this.setSize(this.gridSize);

@@ -34,6 +34,10 @@ export const INTERACTION = {
     sketchIntersectionTolerance: 0.02,
     // Render-only negative-normal offset avoids coplanar flicker with the XZ grid; modeling coordinates stay unchanged.
     planeHelperOffset: 0.03,
+    // Keep the render-only grid below coplanar model bottoms; modeling coordinates remain unchanged.
+    gridSurfaceOffset: 0.08,
+    // Clip coplanar source faces just inside the section so they cannot repaint the physical cap.
+    sectionSurfaceClipEpsilon: 0.02,
 } as const;
 
 /** Plane-space sketch appearance; hatch coordinates do not follow the camera. */

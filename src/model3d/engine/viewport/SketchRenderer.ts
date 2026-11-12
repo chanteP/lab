@@ -9,6 +9,7 @@ import { SKETCH_STYLE } from '../../config/const';
 import type { ConstraintRuleListItem, LengthUnit, ModelDocument, ModelEntity, Point2, SketchElementRef, SketchEdgeConstraint, SketchPlane } from '../../types';
 import type { SketchDimension } from '../Viewport';
 import { clearGroup, createFatLine } from './renderUtils';
+import { applyHatchPattern } from './HatchMaterial';
 import { sketchDimensionEdgeKey, type OverlayController } from './OverlayController';
 import { standardShapeCenter } from '../sketchWholeShapeSnap';
 import { constraintRules } from '../sketchConstraints';
@@ -313,17 +314,6 @@ export class SketchRenderer {
         return createFatLine(points, this.options.renderer.domElement.clientWidth, this.options.renderer.domElement.clientHeight, closed, segmentIndex);
     }
 
-    private hatchMaterial() {
-        return new THREE.ShaderMaterial({
-            uniforms: { uColor: { value: new THREE.Color(SKETCH_COLORS.line) } },
-            vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-            fragmentShader: `uniform vec3 uColor; varying vec2 vUv; void main() { float stripe = mod(vUv.x + vUv.y, ${SKETCH_STYLE.hatchSpacing.toFixed(3)}); if (stripe > ${SKETCH_STYLE.hatchLineWidth.toFixed(3)}) discard; gl_FragColor = vec4(uColor, ${SKETCH_STYLE.hatchOpacity.toFixed(3)}); }`,
-            transparent: true,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-        });
-    }
-
     refreshFaces(draft?: ModelEntity) {
         clearGroup(this.faces);
         this.hoverSketchFace = null;
@@ -339,16 +329,15 @@ export class SketchRenderer {
             shape.closePath();
             const geometry = new THREE.ShapeGeometry(shape);
             const matrix = this.options.planeMatrix(activePlane);
-            const fill = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+            const fillMaterial = new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+            applyHatchPattern(fillMaterial);
+            const fill = new THREE.Mesh(geometry, fillMaterial);
             fill.geometry.applyMatrix4(matrix);
             fill.position.add(new THREE.Vector3(...activePlane.normal).multiplyScalar(0.04));
             fill.renderOrder = 1;
             fill.userData.sketchFace = index;
             fill.userData.sketchFaceEntityIds = [...face.entityIds];
-            const hatch = new THREE.Mesh(geometry.clone(), this.hatchMaterial());
-            hatch.position.copy(fill.position);
-            hatch.renderOrder = 2;
-            this.faces.add(fill, hatch);
+            this.faces.add(fill);
         });
     }
 

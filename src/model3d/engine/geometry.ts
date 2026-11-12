@@ -7,6 +7,7 @@ import { sketchImageTexture } from './sketchImageTexture';
 import { applyEdgeTreatments, rebindEdgeTreatments } from './modeling/EdgeTreatments';
 import { applyVertexTreatments, rebindVertexTreatments } from './modeling/VertexTreatments';
 import { SKETCH_COLORS } from '../config/colors';
+import { applyHatchPattern } from './viewport/HatchMaterial';
 import type { BooleanOperation, GeometryQuality, ModelDocument, ModelEntity, Vec3 } from '../types';
 
 function qualityValues(quality: GeometryQuality) {
@@ -295,6 +296,8 @@ export function buildEntityMesh(
         const material = closed
             ? new THREE.MeshBasicMaterial({ color: SKETCH_COLORS.fill, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
             : new THREE.LineBasicMaterial({ color: SKETCH_COLORS.line });
+        // A single hatched fill avoids a coplanar overlay and keeps 3D face picking on the original mesh.
+        if (closed) applyHatchPattern(material);
         material.userData.sketchBaseColor = material.color.getHex();
         material.userData.sketchBaseOpacity = material.opacity;
         mesh = closed ? new THREE.Mesh(geometry, material) : new THREE.Line(geometry, material) as unknown as THREE.Mesh;

@@ -14,7 +14,7 @@ import type { BodyTopology } from '../topology/types';
 import { buildSketchRegionPreviews } from './SketchRegionPreview';
 import { BooleanPreviewController, type BooleanPreviewState } from './BooleanPreviewController';
 import type { OverlayController } from './OverlayController';
-import { SectionRenderer, sectionSurfaceClipPlane } from './SectionRenderer';
+import { applySectionSurface, SectionRenderer, sectionSurfaceClipPlane } from './SectionRenderer';
 import { ShellPreviewController, type ShellPreview } from './ShellPreviewController';
 
 /** Render-only helper position; the document plane origin remains the modeling surface. */
@@ -235,8 +235,7 @@ export class SceneSynchronizer {
                 material.transparent = this.displayMode === 'xray' || material.userData.baseTransparent;
                 material.opacity = this.displayMode === 'xray' ? Math.min(0.28, material.userData.baseOpacity) : material.userData.baseOpacity;
                 material.depthWrite = this.displayMode === 'xray' ? false : material.userData.baseDepthWrite;
-                material.clippingPlanes = this.sectionSurfacePlane ? [this.sectionSurfacePlane] : [];
-                material.needsUpdate = true;
+                applySectionSurface(material, this.sectionSurfacePlane);
             });
         });
     }
@@ -261,6 +260,10 @@ export class SceneSynchronizer {
             this.sectionCaps.dispose();
         }
         this.model.children.forEach((child) => { if (!['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === child.userData.entityId)?.kind || '')) this.applyObjectDisplay(child); });
+        this.shellPreview.group.children.forEach((child) => {
+            if (!(child instanceof THREE.Mesh)) return;
+            (Array.isArray(child.material) ? child.material : [child.material]).forEach((material) => applySectionSurface(material, this.sectionSurfacePlane));
+        });
     }
 
     setSectionOffset(offset: number) {
@@ -297,7 +300,7 @@ export class SceneSynchronizer {
         const previews = this.shellPreview.group.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
         previews.forEach((preview) => {
             const materials = Array.isArray(preview.material) ? preview.material : [preview.material];
-            materials.forEach((material) => { material.clippingPlanes = this.sectionSurfacePlane ? [this.sectionSurfacePlane] : []; });
+            materials.forEach((material) => applySectionSurface(material, this.sectionSurfacePlane));
         });
         this.sectionCaps.rebuild([...sources, ...previews], this.sectionPlane);
         sources.forEach((child) => {

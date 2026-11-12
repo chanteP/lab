@@ -13,6 +13,7 @@ import { measureSelectionStats, type SelectionStats } from './viewport/GeometryS
 import { InteractionController } from './viewport/InteractionController';
 import { clearGroup } from './viewport/renderUtils';
 import { OverlayController, type ProjectedViewportOverlay } from './viewport/OverlayController';
+import { INTERACTION } from '../config/const';
 import { applyTransformControlColors } from './viewport/transformColors';
 import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
@@ -374,7 +375,7 @@ export class Viewport {
         } else {
             this.cameraController.camera.up.set(0, 1, 0);
             this.sceneSynchronizer.planes.visible = true;
-            this.engine.grid.mesh.position.set(0, -0.02, 0);
+            this.engine.grid.mesh.position.set(0, -INTERACTION.gridSurfaceOffset, 0);
             this.engine.grid.resetOrientation();
         }
         this.interaction.updateOrbitRotation();
