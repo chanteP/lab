@@ -126,3 +126,30 @@ test('closed sketch selection shows one signed extrusion arrow and its length in
     assert.equal(input?.kind === 'dimension' && input.signed, true);
     renderer.dispose();
 });
+
+test('multiple closed sketches each expose an arrow for the shared batch extrusion', () => {
+    const document = createDocument();
+    document.planes.push({ id: 'plane', name: 'XZ', kind: 'XZ', origin: [0, 0, 0], normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1], visible: true });
+    const first = createEntity('sketch', 'first'), second = createEntity('sketch', 'second');
+    Object.assign(first, { planeId: 'plane', profileType: 'rectangle' as const, points: [[-5, -5], [5, -5], [5, 5], [-5, 5]], open: false });
+    Object.assign(second, { planeId: 'plane', profileType: 'rectangle' as const, points: [[10, -5], [20, -5], [20, 5], [10, 5]], open: false });
+    document.entities.push(first, second);
+    const overlay = new OverlayController();
+    const model = new THREE.Group();
+    model.add(buildEntityMesh(first, document), buildEntityMesh(second, document));
+    const renderer = new GuideRenderer({
+        overlay, model, renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+        getSelected: () => [first.id, second.id], getTool: () => 'select', getGeometryAnchor: () => null,
+        getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
+    });
+    renderer.update(document);
+    assert.equal(renderer.group.children.length, 2);
+    const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const inputs = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement);
+    assert.equal(inputs.length, 2);
+    assert.deepEqual(new Set(inputs.map((input) => input.kind === 'dimension' && input.target.kind === 'sketchExtrude' && input.target.profileId)), new Set([first.id, second.id]));
+    renderer.dispose();
+});

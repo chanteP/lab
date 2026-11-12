@@ -14,6 +14,8 @@ defineProps<{
     canIsolate: boolean;
     canBoolean: boolean;
     canShell: boolean;
+    canRotateAxis: boolean;
+    canRevolve: boolean;
     selectedCount: number;
     historySteps: HistoryStep[];
 }>();
@@ -26,6 +28,8 @@ const emit = defineEmits<{
     import: [];
     boolean: [type: 'union' | 'subtract' | 'intersect'];
     shell: [event: MouseEvent];
+    rotateAxis: [];
+    revolve: [];
 }>();
 const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉伸', boolean: '布尔' };
 </script>
@@ -39,8 +43,10 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
                 <ViewportToolItem :description-on-hover="false" label="插入" :active="activePanel === 'insert'" @click="emit('panel', 'insert')"><NIcon><AddOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="导入" @click="emit('import')"><NIcon><FolderOpenOutline /></NIcon></ViewportToolItem>
             </div>
-            <Transition name="tool-group-slide"><div v-if="canShell" class="tool-group advanced-tools" aria-label="高级工具">
-                <ViewportToolItem :description-on-hover="false" label="抽壳" :active="activeTool === 'shell'" @click="emit('shell', $event)"><SvgIcon name="shell" /></ViewportToolItem>
+            <Transition name="tool-group-slide"><div v-if="canShell || canRotateAxis || canRevolve" class="tool-group advanced-tools" aria-label="高级工具">
+                <ViewportToolItem v-if="canShell" :description-on-hover="false" label="抽壳" :active="activeTool === 'shell'" @click="emit('shell', $event)"><SvgIcon name="shell" /></ViewportToolItem>
+                <ViewportToolItem v-if="canRotateAxis" :description-on-hover="false" label="绕轴" :active="activeTool === 'rotateAxis'" @click="emit('rotateAxis')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem v-if="canRevolve" :description-on-hover="false" label="车削" :active="activeTool === 'revolve'" @click="emit('revolve')"><NIcon><RepeatOutline /></NIcon></ViewportToolItem>
             </div></Transition>
             <Transition name="tool-group-slide"><div v-if="selectedCount" class="tool-group transform-tools">
                 <ViewportToolItem :description-on-hover="false" label="移动" :active="activeTool === 'translate'" @click="emit('tool', 'translate')"><NIcon><MoveOutline /></NIcon></ViewportToolItem>

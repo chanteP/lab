@@ -278,3 +278,11 @@
 - `io/webmcp.ts` 统一注册 `model3d_project/entity/sketch/generate/tool/history` 六个工具域，同时暴露 `window.model3dMCP.listTools/callTool`；注册必须发生在项目库初始化完成后。
 - Agent 写入必须复用现有 history、场景同步、自动保存和几何事务，禁止模拟鼠标坐标或直接替换内部 Vue 函数。`model3d_entity.inspect` 是后续 `faceId` 工具调用的拓扑入口。
 - `docs/WEBMCP.md` 维护完整 action、参数、示例和当前能力边界；新增 API 时同步文档与 `engine/webmcp.spec.ts` 的真实几何调用回归。
+
+
+## 绕轴、车削与批量拉伸
+
+- `useAxisOperations` 统一管理绕轴和车削预览/完成事务。绕轴使用全局 X/Y/Z 与轴向偏移，只修改提交时的实体变换；车削使用草图内 X/Y，轮廓不能跨轴，负侧轮廓自动镜像。
+- `engine/modeling/Revolve.ts` 使用 Manifold revolve 生成闭合实体并映射回草图平面，禁止用采样点直接拼非流形三角面。
+- 多选封闭草图由 `GuideRenderer` 分别生成粗箭头和距离输入，任意箭头进入同一批量拉伸事务，禁止只显示最后轮廓的箭头。3D 提示统一展示 Command/Ctrl 拖动框选。
+- 界面和 `model3d_tool` 共用轴向操作，具体交互与 Agent 参数分别见 `docs/AXIS_TOOLS.md`、`docs/WEBMCP.md`。

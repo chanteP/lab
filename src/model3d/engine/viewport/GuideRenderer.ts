@@ -110,20 +110,31 @@ export class GuideRenderer {
         if (tool === 'select') {
             const sketches = selected.map((id) => document.entities.find((item) => item.id === id && item.kind === 'sketch')).filter(Boolean) as ModelDocument['entities'];
             const profiles = sketches.filter((item) => entityProfileClosed(item));
+            if (profiles.length) {
+                profiles.forEach((profile) => {
+                    const object = this.options.model.children.find((item) => item.userData.entityId === profile.id);
+                    if (!object) return;
+                    const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+                    const plane = document.planes.find((item) => item.id === profile.planeId);
+                    const normal = plane ? new THREE.Vector3(...plane.normal).normalize() : new THREE.Vector3(0, 1, 0);
+                    this.group.add(this.createThickArrow(center, normal, 18, { extrudeArrow: { profileId: profile.id, direction: 1 } }));
+                    this.options.overlay.set({
+                        id: `guide-label:sketch-extrude:${profile.id}`, kind: 'dimension', target: { kind: 'sketchExtrude', profileId: profile.id, direction: 1 },
+                        position: center.clone().add(normal.clone().multiplyScalar(12)).toArray(), screenOffset: [76, 0],
+                        value: 10, unit: this.options.getLengthUnit(), signed: true,
+                    });
+                });
+                return;
+            }
             const open = sketches.filter((item) => !entityProfileClosed(item));
             const regionPoints = open.length && open[0].planeId ? (() => {
                 const selectedRegion = sketches.filter((item) => item.planeId === open[0].planeId);
                 return uniqueClosedProfile(selectedRegion, open[0].planeId!) || uniqueClosedProfile(document.entities, open[0].planeId!);
             })() : null;
-            if (!profiles.length && !regionPoints) return;
-            const sources = profiles.length ? profiles : open;
-            const plane = document.planes.find((item) => item.id === sources[0]?.planeId);
+            if (!regionPoints) return;
+            const plane = document.planes.find((item) => item.id === open[0].planeId);
             const box = new THREE.Box3();
-            profiles.forEach((profile) => {
-                const object = this.options.model.children.find((item) => item.userData.entityId === profile.id);
-                if (object) box.expandByObject(object);
-            });
-            if (regionPoints && plane) {
+            if (plane) {
                 const origin = new THREE.Vector3(...plane.origin), u = new THREE.Vector3(...plane.u), v = new THREE.Vector3(...plane.v);
                 regionPoints.forEach(([x, y]) => box.expandByPoint(origin.clone().addScaledVector(u, x).addScaledVector(v, y)));
             }
@@ -134,7 +145,7 @@ export class GuideRenderer {
                 center.copy(new THREE.Vector3(...geometryAnchor.point));
                 normal.copy(new THREE.Vector3(...geometryAnchor.normal));
             }
-            const profileId = sources[sources.length - 1].id;
+            const profileId = open[open.length - 1].id;
             this.group.add(this.createThickArrow(center, normal, 18, { extrudeArrow: { profileId, direction: 1 } }));
             this.options.overlay.set({
                 id: 'guide-label:sketch-extrude', kind: 'dimension', target: { kind: 'sketchExtrude', profileId, direction: 1 },

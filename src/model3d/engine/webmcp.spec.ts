@@ -7,6 +7,7 @@ import { cloneDocument, createDocument, createEntity, type ModelEntity, type Pro
 import { useUndoHistory } from '../composables/useUndoHistory';
 import { useModelingOperations } from '../composables/useModelingOperations';
 import { useShellOperations } from '../composables/useShellOperations';
+import { useAxisOperations } from '../composables/useAxisOperations';
 import { buildEntityMesh } from './geometry';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
@@ -41,6 +42,7 @@ function fixture() {
         document, selectedIds, activeTool, viewport: () => viewport as any, message, pushHistory, popHistory, inputLength: (value) => value || 0,
         canSelect: () => selectionKind.value === 'face', bodySelection: () => selectionKind.value === 'body' && selected.value || null,
     });
+    const axis = useAxisOperations({ document, selectedIds, selectedEntities, selectionKind, activeTool, viewport: () => viewport as any, message, pushHistory });
     const bridge: Model3dAgentBridge = {
         document, project, projects, selectedIds, selectionKind, selectedFacePlanar, selectedEdges, selectedShapes, activePlaneId,
         viewport: () => viewport as any,
@@ -50,7 +52,8 @@ function fixture() {
         deleteEntities: (ids) => { pushHistory(); document.value.entities = document.value.entities.filter((item) => !ids.includes(item.id)); },
         startExtrude: modeling.startExtrude, updateExtrude: modeling.updateExtrude, doneOperation: modeling.doneOperation, applyBoolean: modeling.applyBoolean,
         startShell: shell.start, updateShell: shell.update, commitShell: shell.commit, finishShell: shell.finish,
-        updateFaceOffset: modeling.updateFaceOffsetInput, applyConstraint: () => undefined, undo, redo,
+        updateFaceOffset: modeling.updateFaceOffsetInput, applyConstraint: () => undefined,
+        startAxis: axis.start, updateAxis: axis.update, commitAxis: axis.commit, finishAxis: axis.finish, undo, redo,
     };
     return { bridge, document };
 }
@@ -138,4 +141,13 @@ test('WebMCP and the local agent bridge register all tools', async () => {
         (globalThis as any).window = originalWindow;
         if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
     }
+});
+
+test('agent revolves a closed sketch around a sketch-local axis', async () => {
+    const { bridge, document } = fixture();
+    const sketch = await callModel3dTool(bridge, 'model3d_sketch', { action: 'create', plane: { kind: 'XY' }, profile: { type: 'rectangle', points: [[1, 1], [2, 1], [2, 2], [1, 2]] } });
+    const revolved = await callModel3dTool(bridge, 'model3d_tool', { action: 'revolve', profileId: data(sketch).id, axis: 'x', angle: 90 });
+    assert.equal(revolved.isError, undefined, revolved.content[0].text);
+    const body = document.value.entities.find((item) => item.kind === 'extrude')!;
+    assert(Math.abs(volume(body, document.value) - Math.PI * 3 / 4) < 0.03);
 });

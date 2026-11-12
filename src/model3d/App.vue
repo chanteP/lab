@@ -18,6 +18,7 @@ import { useDocumentEntities } from './composables/useDocumentEntities';
 import { useModelingOperations } from './composables/useModelingOperations';
 import { useEdgeTreatmentOperations } from './composables/useEdgeTreatmentOperations';
 import { useShellOperations } from './composables/useShellOperations';
+import { useAxisOperations } from './composables/useAxisOperations';
 import { useSketchState } from './composables/sketch/useSketchState';
 import { useSketchConstraints } from './composables/sketch/useSketchConstraints';
 import { useSketchEditing } from './composables/sketch/useSketchEditing';
@@ -38,6 +39,7 @@ import SketchRadialPatternOverlay from './components/sketch/SketchRadialPatternO
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
+import AxisOperationBar from './components/modeling/AxisOperationBar.vue';
 import { initModel3dWebMCP } from './io/webmcp';
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
@@ -149,9 +151,31 @@ const {
         && selectedEntities.value.every((entity) => !['sketch', 'image'].includes(entity.kind)),
     bodySelection: () => selectionKind.value === 'body' && selectedEntities.value.length === 1 && !['sketch', 'image'].includes(selectedEntities.value[0].kind) ? selectedEntities.value[0] : null,
 });
+const {
+    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, active: axisActive, canRotate, canRevolve,
+    start: startAxisOperation, update: updateAxisOperation, commit: commitAxisOperation, finish: finishAxisOperation,
+} = useAxisOperations({
+    document, selectedIds, selectedEntities, selectionKind, activeTool, viewport: () => viewport, message, pushHistory,
+});
+function closeAxisOperation() {
+    finishAxisOperation();
+    setTool('select');
+}
+function completeAxisOperation() {
+    if (commitAxisOperation()) closeAxisOperation();
+}
+
 function onShell() {
     setTool('shell');
     startShell();
+}
+function onRotateAxis() {
+    setTool('rotateAxis');
+    startAxisOperation('rotate');
+}
+function onRevolve() {
+    setTool('revolve');
+    startAxisOperation('revolve');
 }
 function closeShell() {
     finishShell();
@@ -162,6 +186,7 @@ function completeShell() {
     if (commitShell()) closeShell();
 }
 function cancelShellForSelection() {
+    finishAxisOperation();
     if (shellActive.value) closeShell();
 }
 
@@ -402,6 +427,7 @@ function onBlankCommit() {
 }
 
 function setTool(tool: ViewTool) {
+    if (!['rotateAxis', 'revolve'].includes(tool)) finishAxisOperation();
     if (tool !== 'shell') finishShell();
     finishDirectEdit();
     finishEdgeTreatment();
@@ -856,6 +882,7 @@ onMounted(async () => {
             startExtrude, updateExtrude, doneOperation, applyBoolean,
             startShell, updateShell: updateShellThickness, commitShell, finishShell,
             updateFaceOffset: updateFaceOffsetInput, applyConstraint: applySketchConstraint,
+            startAxis: startAxisOperation, updateAxis: updateAxisOperation, commitAxis: commitAxisOperation, finishAxis: finishAxisOperation,
             undo: undoModel, redo: redoModel,
         });
         await nextTick();
@@ -892,10 +919,11 @@ onBeforeUnmount(() => {
                 <SketchLinearPatternOverlay v-if="sketchMode && linearPatternActive" :pattern="linearPattern" />
                 <SketchRadialPatternOverlay v-if="sketchMode && radialPatternActive" :pattern="radialPattern" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
-                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :selected-count="selectedIds.length" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :can-rotate-axis="canRotate" :can-revolve="canRevolve" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
-                    @history="editHistory" @boolean="applyBoolean" @shell="onShell" />
+                    @history="editHistory" @boolean="applyBoolean" @shell="onShell" @rotate-axis="onRotateAxis" @revolve="onRevolve" />
                 <ShellOperationBar v-if="shellActive && !sketchMode" :value="shellThickness" :unit="lengthUnit" @update="updateShellThickness" @done="completeShell" @close="closeShell" />
+                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

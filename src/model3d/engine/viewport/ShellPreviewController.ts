@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clearGroup } from './renderUtils';
 
-export type ShellPreview = { entityId: string; geometry: THREE.BufferGeometry };
+export type ShellPreview = { entityId: string; geometry: THREE.BufferGeometry; matrix?: THREE.Matrix4 };
 
 /** Viewport-only shell result; source entities and the document stay untouched until commit. */
 export class ShellPreviewController {
@@ -18,7 +18,7 @@ export class ShellPreviewController {
 
     apply(model: THREE.Group, previews: ShellPreview[]) {
         this.reset();
-        previews.forEach(({ entityId, geometry }) => {
+        previews.forEach(({ entityId, geometry, matrix }) => {
             const source = model.children.find((child): child is THREE.Mesh => child instanceof THREE.Mesh && child.userData.entityId === entityId && !child.userData.selectionProxy);
             if (!source) { geometry.dispose(); return; }
             this.originals.push({ object: source, visible: source.visible });
@@ -33,9 +33,15 @@ export class ShellPreviewController {
             const mesh = new THREE.Mesh(geometry, material);
             mesh.userData.entityId = entityId;
             mesh.userData.shellPreview = true;
-            mesh.position.copy(source.position);
-            mesh.quaternion.copy(source.quaternion);
-            mesh.scale.copy(source.scale);
+            if (matrix) {
+                mesh.matrixAutoUpdate = false;
+                mesh.matrix.copy(matrix);
+                mesh.matrixWorldNeedsUpdate = true;
+            } else {
+                mesh.position.copy(source.position);
+                mesh.quaternion.copy(source.quaternion);
+                mesh.scale.copy(source.scale);
+            }
             this.group.add(mesh);
         });
     }

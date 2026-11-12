@@ -18,7 +18,7 @@ console.log(response.structuredContent);
 | `model3d_entity` | `list/inspect/select/update/delete` | 实体查询、选择、参数修改和删除；`inspect` 返回 `faceId`、法线、相邻面和边 |
 | `model3d_sketch` | `create/update/delete/constrain` | 创建语义草图、更新轮廓、删除和应用约束 |
 | `model3d_generate` | `primitive/extrude` | 直接参数化生成立方体/圆柱/球/圆锥/圆环，或将封闭草图拉伸为实体 |
-| `model3d_tool` | `shell/boolean/offsetFace` | 封闭或开口抽壳、布尔运算、完整平面推拉 |
+| `model3d_tool` | `shell/boolean/offsetFace/rotateAxis/revolve` | 封闭或开口抽壳、布尔运算、完整平面推拉、全局轴旋转偏移和草图车削 |
 | `model3d_history` | `undo/redo` | 撤销和重做 |
 
 所有长度使用当前项目 `lengthUnit`。草图 `profile.points` 使用所属平面的二维局部坐标，不是世界坐标。修改会进入与手工操作相同的场景同步、自动保存和撤销流程。
@@ -92,3 +92,16 @@ await model3dMCP.callTool('model3d_tool', {
 - 一个建模工具调用对应一个用户可见事务；Shell 内部预览不会逐次写入历史。
 - 项目和模型数据只保存在当前浏览器 IndexedDB，不上传服务器。
 - 当前 API 不包含文件导入/导出、网格文件传输、圆角/倒角和视口鼠标手势；这些可继续通过界面操作。
+
+## 示例：绕轴与车削
+
+```js
+await model3dMCP.callTool('model3d_tool', {
+  action: 'rotateAxis', operandIds: [bodyA.id], axis: 'y', angle: 90, offset: 10,
+});
+await model3dMCP.callTool('model3d_tool', {
+  action: 'revolve', profileId, axis: 'x', angle: 270,
+});
+```
+
+绕轴使用全局轴并叠加轴向偏移；车削使用草图内轴，轮廓不能跨轴。

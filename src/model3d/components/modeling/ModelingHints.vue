@@ -16,6 +16,8 @@ const title = computed(() => {
     if (props.operation?.type === 'extrude') return '拉伸';
     if (props.operation?.type === 'boolean') return '布尔运算';
     if (props.activeTool === 'offsetFace') return '推拉面';
+    if (props.activeTool === 'rotateAxis') return '绕轴旋转';
+    if (props.activeTool === 'revolve') return '车削';
     if (props.activeTool === 'translate') return '移动';
     if (props.activeTool === 'rotate') return '旋转';
     if (props.activeTool === 'scale') return '缩放';
@@ -31,6 +33,8 @@ const items = computed(() => {
     if (props.measureMode) return ['依次单击两个位置，读取总距离和轴向距离。', '右键或再次点击测量按钮退出。', '滚轮缩放，Space + 拖动平移。'];
     if (props.operation?.type === 'extrude') return ['拖动粗箭头，或在箭头旁输入距离。', 'E：切换单侧 / 对称拉伸。', 'Enter：完成；Esc：取消。'];
     if (props.operation?.type === 'boolean') return ['点击模型中心 + / −，切换保留或去除。', '全部为 − 时不可完成；点击空白或 Enter 完成。', 'Esc：取消并恢复素材。'];
+    if (props.activeTool === 'rotateAxis') return ['选择全局 X / Y / Z 轴，设置旋转角度和轴向偏移。', '调整后实时预览，点击完成提交。'];
+    if (props.activeTool === 'revolve') return ['封闭草图绕草图内 X / Y 轴生成实体。', '轮廓不能跨轴；调整后实时预览，点击完成提交。'];
 
     const result: string[] = [];
     if (props.selectionKind === 'face') {
@@ -46,12 +50,12 @@ const items = computed(() => {
     } else if (props.selectedCount === 1) {
         result.push('拖动手柄变换实体，右侧可输入精确参数。');
     } else {
-        result.push('单击面或边选择，双击实体选择整体。', 'Ctrl / Command + 拖动：框选。');
+        result.push('单击面或边选择，双击实体选择整体。');
     }
 
     if (props.selectedCount === 1 && !['face', 'edge', 'plane', 'sketch'].includes(props.selectionKind || '')) result.push('G：移动；R：旋转；S：缩放；V：选择。');
     if (props.selectedCount) result.push('Delete：删除；Esc：取消选择或退出工具。');
-    result.push('左键 / 右键拖动：环绕；Space + 拖动：平移。', '滚轮缩放；F：适配；右下轴球点击定向、拖动旋转。');
+    result.push('Command / Ctrl + 拖动：框选多选。', '左键 / 右键拖动：环绕；Space + 拖动：平移。', '滚轮缩放；F：适配；右下轴球点击定向、拖动旋转。');
     return result;
 });
 </script>
