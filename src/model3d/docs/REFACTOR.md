@@ -37,7 +37,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/Viewport.ts` 是兼容既有调用方的轻量门面，负责模块组装、公共方法转发和草图模式切换协调。
 - `ViewportEngine` 持有 Scene、WebGLRenderer、灯光、网格/阴影、resize 和渲染循环；`CameraController` 持有相机、OrbitControls、视角切换、fit、动画和比例尺。
 - `InfiniteGrid` 使用局部平面 shader 坐标绘制自适应格距和 5 倍主线，格距在每个数量级只取 1 和 5，原点 X/Z 轴分别读取 `AXIS_COLORS.x` / `AXIS_COLORS.z`；`gridScale` 计算格距与约 150px 整数段比例尺，网格以 orbit target 的世界半径在 200%–300% 区间淡出。
-- `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SectionRenderer` 使用逐实体 stencil 正反面计数与平面封口生成斜纹实心断面，共享源几何但不进入选择和导出；`HatchMaterial` 统一向草图填充和剖视端盖注入平面 UV 斜纹。`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
+- `SceneSynchronizer` 负责 ModelDocument 到 Three.js 的同步，以及选择、隔离、剖切和显示模式；`SectionRenderer` 使用逐实体 stencil 正反面计数与平面封口生成斜纹实心断面，正反面材质共享实时剖面，源几何不进入选择和导出；`HatchMaterial` 统一向草图填充和剖视端盖注入平面 UV 斜纹。`SketchRenderer`、`MeasurementRenderer`、`GuideRenderer` 分别负责草图、测量和拉伸/直接编辑辅助内容。
 - `InteractionController` 统一接收 pointer/key 事件，持有草图拖拽、框选、直接编辑等手势状态；`GizmoDragController` 独立处理三维/草图坐标球点击、拖动与取消清理；`GeometrySelector` 负责连通曲面缓存、面高亮数据、实际轮廓边拾取结果和所选实体/面的统计。
 - `buildBooleanRegions` 按 Venn 成员关系生成互不重叠的独立区域；`BooleanPreviewController` 只管理这些区域的透明材质/边框、mini +/- 和 hover 呼吸，不叠加源模型。结果实体仍由 `useModelingOperations` 在完成时写入 document。
 - `ToolPanels`、`ModelingOperationBar` 和 `ViewportUtilities` 分别承载左侧命令弹层与右侧实体参数、顶部流程操作和底部视口工具；`OperationBar` 提供统一左对齐顶部结构与红色关闭按钮，`FloatingPanel` 提供可复用半透明浮层与可选箭头。`ViewportHints` 统一右侧提示避让布局，`ModelingHints` 按 3D 工具和选择生成内容。App 只组合组件并转发状态/事件。
@@ -244,4 +244,4 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - 2026-11-11：草图高级工具“对称”更名“镜像”，新增 Shapr3D 式线性阵列预览、n/间距输入和方向磁吸；修复 Transform 先后选择状态竞争、全语义点反算磁吸及边/端点中心；拆边重连按来源继承约束，规则区仅展示所选内容且无匹配隐藏，约束按钮去边框，补纯几何、约束来源和浏览器交互回归。
 - 2026-11-11：草图选择工具新增完整包含框选与混合删除工具组，补逻辑边/点删除和约束继承回归；实体树支持草图文件夹及多选顺序批量重命名；线性阵列按源名称编号并新增磁吸中心旋转阵列，整周副本去重；3D 拉伸统一单粗箭头与带符号长度输入，完成浏览器和几何回归。
 - 2026-11-11：旋转阵列中心改为显式端点精确磁吸，剔除推断中心、原点和轴向投影；补正三角形 30°、3 副本回归，交叉标准形状保留独立完整封闭面，裁剪/融合仍使用区域重连。
-- 2026-11-12：修复贴地底面与剖视端盖重叠、内部观察背面剔除及内表面覆盖端盖的问题；网格和源表面分别增加渲染偏移与裁剪余量，剖视临时双面渲染，端盖改为最后绘制的不透明斜纹。普通 3D 草图与编辑态封闭区域共用单面片斜纹填充，补材质恢复、shader 注入、网格偏移和草图回归。
+- 2026-11-12：修复贴地底面与剖视端盖重叠、内部观察背面剔除及内表面覆盖端盖的问题；网格和源表面分别增加渲染偏移与裁剪余量，剖视临时双面渲染，端盖改为最后绘制的不透明斜纹。普通 3D 草图与编辑态封闭区域共用单面片斜纹填充，补材质恢复、shader 注入、网格偏移和草图回归；修复 Material.clone() 深拷贝剖面导致旋转/滑杆仍使用初始平面的错误，端盖恢复正常深度读写，XZ 矩形拉伸贴地 case 经默认、旋转和正负剖面位置截图验证。

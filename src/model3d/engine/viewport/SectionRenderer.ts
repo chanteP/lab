@@ -34,10 +34,8 @@ export class SectionRenderer {
     rebuild(sources: THREE.Mesh[], plane: THREE.Plane) {
         this.dispose();
         sources.forEach((source, index) => {
-            // Keep each body's stencil -> cap pair atomic while all retained sources paint before every cap.
-            const renderOrder = index === 0 ? 1 : 1001 + (index - 1) * 2;
+            const renderOrder = index * 2 + 1;
             const base = new THREE.MeshBasicMaterial({
-                transparent: true,
                 depthTest: false,
                 depthWrite: false,
                 colorWrite: false,
@@ -51,6 +49,8 @@ export class SectionRenderer {
             const front = base.clone();
             front.side = THREE.FrontSide;
             front.stencilFail = front.stencilZFail = front.stencilZPass = THREE.DecrementWrapStencilOp;
+            // Material.clone() deep-clones clipping planes; share the live plane so orbiting cannot desync stencil and cap.
+            back.clippingPlanes = front.clippingPlanes = [plane];
             base.dispose();
 
             const stencilMeshes = [back, front].map((material) => {
@@ -66,11 +66,9 @@ export class SectionRenderer {
                 roughness: 1,
                 metalness: 0,
                 side: THREE.DoubleSide,
-                // Keep caps in the same transparent queue as x-ray sources, then paint them last by renderOrder.
-                transparent: true,
                 // Section walls must remain visible in front of both the outer and inner shell surfaces.
-                depthTest: false,
-                depthWrite: false,
+                depthTest: true,
+                depthWrite: true,
                 stencilWrite: true,
                 stencilRef: 0,
                 stencilFunc: THREE.NotEqualStencilFunc,
@@ -80,7 +78,7 @@ export class SectionRenderer {
             });
             const hatch = applyHatchPattern(capMaterial, { color: capMaterial.color.clone().multiplyScalar(0.45), opacity: 1 });
             const cap = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), capMaterial);
-            cap.renderOrder = 1000 + index * 2;
+            cap.renderOrder = renderOrder + 0.5;
             cap.frustumCulled = false;
             cap.receiveShadow = true;
             cap.onAfterRender = (renderer) => renderer.clearStencil();
@@ -91,7 +89,7 @@ export class SectionRenderer {
             const radius = Math.max(1, (sphere?.radius || 1) * source.scale.length() * 2);
             this.entries.push({ source, stencilMeshes, cap, radius, renderOrder: source.renderOrder, hatch });
             // Caps paint after retained surfaces so inner faces cannot cover the physical section.
-            source.renderOrder = 999;
+            source.renderOrder = 0;
         });
         this.update(plane);
     }

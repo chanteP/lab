@@ -43,7 +43,7 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal(front.geometry, source.geometry);
     assert.equal((back.material as THREE.Material).stencilZPass, THREE.IncrementWrapStencilOp);
     assert.equal((front.material as THREE.Material).stencilZPass, THREE.DecrementWrapStencilOp);
-    assert.equal(source.renderOrder, 999);
+    assert.equal(source.renderOrder, 0);
     assert(cap.renderOrder > source.renderOrder, 'caps paint after retained inner and outer surfaces');
     assert.equal(cap.position.x, 10);
     assert.equal(cap.position.z, 0);
@@ -52,7 +52,7 @@ test('section caps share source geometry, follow transforms and restore render o
     assert.equal(plane.distanceToPoint(new THREE.Vector3(10, 0, 0)), 0);
     assert.equal((cap.material as THREE.Material).stencilFunc, THREE.NotEqualStencilFunc);
     assert.equal((cap.material as THREE.Material).stencilZPass, THREE.ReplaceStencilOp);
-    assert.equal((cap.material as THREE.MeshStandardMaterial).transparent, true);
+    assert.equal((cap.material as THREE.MeshStandardMaterial).transparent, false);
     assert.equal((cap.material as THREE.MeshStandardMaterial).userData.hatchPattern, true);
 
     source.position.x = 25;
@@ -78,8 +78,8 @@ test('hollow shell section caps keep the wall visible instead of only rendering 
     assert.equal(backStencil(renderer), THREE.IncrementWrapStencilOp);
     assert.equal(frontStencil(renderer), THREE.DecrementWrapStencilOp);
     assert.equal(cap.material.stencilFunc, THREE.NotEqualStencilFunc);
-    assert.equal(cap.material.depthTest, false, 'the inner shell depth must not hide the physical wall cap');
-    assert.equal(cap.material.depthWrite, false);
+    assert.equal(cap.material.depthTest, true, 'the physical cap occludes later grid and coplanar helpers');
+    assert.equal(cap.material.depthWrite, true);
     assert(cap.material.color.r < material.color.r, 'wall caps use a contrasting physical-section color');
     renderer.dispose();
 });
@@ -150,3 +150,40 @@ test('multiple section bodies keep stencil counts isolated while caps follow all
     assert(secondBack.renderOrder < secondCap.renderOrder);
     renderer.dispose();
 });
+
+
+test('grounded extruded profiles keep stencil clipping on the live camera plane', () => {
+    const profile = new THREE.Shape([
+        new THREE.Vector2(-10, -10), new THREE.Vector2(10, -10),
+        new THREE.Vector2(10, 10), new THREE.Vector2(-10, 10),
+    ]);
+    const geometry = new THREE.ExtrudeGeometry(profile, { depth: 20, bevelEnabled: false });
+    // Same grounded XZ case as sketch extrusion: the bottom remains at y=0.
+    geometry.rotateX(-Math.PI / 2);
+    const source = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+    const renderer = new SectionRenderer();
+    const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+    renderer.rebuild([source], plane);
+    const [back, front] = renderer.group.children as THREE.Mesh[];
+
+    expectLivePlane(back, plane);
+    expectLivePlane(front, plane);
+    plane.normal.set(-0.6, -0.4, -0.7).normalize();
+    plane.constant = -5;
+    renderer.update(plane);
+
+    expectLivePlane(back, plane);
+    expectLivePlane(front, plane);
+    assert.equal((back.material as THREE.Material).depthTest, false);
+    assert.equal((front.material as THREE.Material).depthTest, false);
+    assert.equal((back.material as THREE.Material).depthWrite, false);
+    assert.equal((front.material as THREE.Material).depthWrite, false);
+    renderer.dispose();
+});
+
+function expectLivePlane(mesh: THREE.Mesh, plane: THREE.Plane) {
+    const material = mesh.material as THREE.Material;
+    assert.equal(material.clippingPlanes[0], plane, 'Material.clone() must not leave a stale clipping-plane copy');
+    assert.equal(material.clippingPlanes[0].normal.equals(plane.normal), true);
+    assert.equal(material.clippingPlanes[0].constant, plane.constant);
+}
