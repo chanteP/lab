@@ -38,6 +38,7 @@ import SketchRadialPatternOverlay from './components/sketch/SketchRadialPatternO
 import ToolPanels from './components/modeling/ToolPanels.vue';
 import ModelingOperationBar from './components/modeling/ModelingOperationBar.vue';
 import ShellOperationBar from './components/modeling/ShellOperationBar.vue';
+import { initModel3dWebMCP } from './io/webmcp';
 import ModelingHints from './components/modeling/ModelingHints.vue';
 import ViewportUtilities from './components/viewport/ViewportUtilities.vue';
 import SectionControl from './components/viewport/SectionControl.vue';
@@ -194,7 +195,7 @@ const {
 const {
     treeNodes, contextMenu,
     selectEntity, updateEntity, updateLengthEntity,
-    removeSelected, removeConstraintsForEdge, removeConstraintsForEntity,
+    removeSelected, deleteNodeIds, removeConstraintsForEdge, removeConstraintsForEntity,
     createFolder, openNodeContext, renameNode, renameNodes, deleteContextNodes, reparentNodes,
     createPlane, createPlaneAndSketch, selectPlane, activateTreeNode,
     toggleNodeVisibility,
@@ -847,12 +848,23 @@ onMounted(async () => {
     window.addEventListener('beforeunload', flushSave);
     try {
         await initializeProjects();
+        initModel3dWebMCP({
+            document, project, projects, selectedIds, selectionKind, selectedFacePlanar, selectedEdges, selectedShapes, activePlaneId,
+            viewport: () => viewport,
+            newProject: async (name) => { newProjectName.value = name; await newProject(); },
+            openProject, duplicateProject, removeProject, flushSave, pushHistory, deleteEntities: deleteNodeIds,
+            startExtrude, updateExtrude, doneOperation, applyBoolean,
+            startShell, updateShell: updateShellThickness, commitShell, finishShell,
+            updateFaceOffset: updateFaceOffsetInput, applyConstraint: applySketchConstraint,
+            undo: undoModel, redo: redoModel,
+        });
         await nextTick();
         viewport.fit();
     } catch (error) { message.error(`无法打开本地项目库：${(error as Error).message}`); }
 });
 onBeforeUnmount(() => {
     delete (window as any).projectData;
+    delete (window as any).model3dMCP;
     clearSaveTimer();
     cancelSketchRefresh();
     flushSave();

@@ -1106,6 +1106,14 @@ export class InteractionController {
         this.geometryAnchors = updateGeometryAnchorSelection(this.geometryAnchors, anchor, additive);
         this.geometryAnchor = this.geometryAnchors[this.geometryAnchors.length - 1] || null;
     }
+    setGeometryAnchors(anchors: GeometryAnchor[]) {
+        this.geometryAnchors = [...anchors];
+        this.geometryAnchor = this.geometryAnchors[this.geometryAnchors.length - 1] || null;
+        this.hoverFaceAnchor = null;
+        this.refreshFaceFeedback();
+        if (this.document) this.guideRenderer.update(this.document);
+    }
+
     clearGeometrySelection() {
         this.geometryAnchor = null;
         this.geometryAnchors = [];

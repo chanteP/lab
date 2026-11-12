@@ -309,6 +309,7 @@ export class Viewport {
     }
     getGeometryAnchor() { return this.interaction.geometryAnchor; }
     getGeometryAnchors() { return this.interaction.geometryAnchors; }
+    setGeometryAnchors(anchors: GeometryAnchor[]) { this.interaction.setGeometryAnchors(anchors); }
     resolveGeometryEdgeTreatment() {
         const anchor = this.interaction.geometryAnchor;
         const entity = this.sceneSynchronizer.document?.entities.find((item) => item.id === anchor?.id);

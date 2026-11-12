@@ -271,3 +271,10 @@
 - `sketchGeometricConstraints.ts` 统一描述直线、圆和椭圆约束几何。相切支持直线—圆/椭圆及曲线间关系，同心支持圆、椭圆、标准矩形和正多边形；规则保存在现有 `edgeConstraints`，进入同一 Gauss-Newton 关联链、固定点保护、删除、高亮与撤销。
 - 曲线相切使用法向支撑半径计算残差，圆/椭圆的中心、半径点和方向点均参与数值求导；不得退化为点击时一次性移动。`tangentMode` 记录创建时的内切/外切关系。
 - 约束面板按方向、几何关系和固定分区使用三列网格，按钮不加 border。全部规则只显示当前选中形状的全部规则或选中边的规则，未选择或无匹配时隐藏整个区域；规则列表独立滚动，使用 `scrollbar-gutter: stable`、右侧 padding 和固定删除列，滚动条不得覆盖删除按钮。
+
+
+## WebMCP 与本地 Agent
+
+- `io/webmcp.ts` 统一注册 `model3d_project/entity/sketch/generate/tool/history` 六个工具域，同时暴露 `window.model3dMCP.listTools/callTool`；注册必须发生在项目库初始化完成后。
+- Agent 写入必须复用现有 history、场景同步、自动保存和几何事务，禁止模拟鼠标坐标或直接替换内部 Vue 函数。`model3d_entity.inspect` 是后续 `faceId` 工具调用的拓扑入口。
+- `docs/WEBMCP.md` 维护完整 action、参数、示例和当前能力边界；新增 API 时同步文档与 `engine/webmcp.spec.ts` 的真实几何调用回归。
