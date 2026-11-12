@@ -16,7 +16,6 @@ const title = computed(() => {
     if (props.operation?.type === 'extrude') return '拉伸';
     if (props.operation?.type === 'boolean') return '布尔运算';
     if (props.activeTool === 'offsetFace') return '推拉面';
-    if (props.activeTool === 'rotateAxis') return '绕轴旋转';
     if (props.activeTool === 'revolve') return '车削';
     if (props.activeTool === 'translate') return '移动';
     if (props.activeTool === 'rotate') return '旋转';
@@ -33,8 +32,7 @@ const items = computed(() => {
     if (props.measureMode) return ['依次单击两个位置，读取总距离和轴向距离。', '右键或再次点击测量按钮退出。', '滚轮缩放，Space + 拖动平移。'];
     if (props.operation?.type === 'extrude') return ['拖动粗箭头，或在箭头旁输入距离。', 'E：切换单侧 / 对称拉伸。', 'Enter：完成；Esc：取消。'];
     if (props.operation?.type === 'boolean') return ['点击模型中心 + / −，切换保留或去除。', '全部为 − 时不可完成；点击空白或 Enter 完成。', 'Esc：取消并恢复素材。'];
-    if (props.activeTool === 'rotateAxis') return ['选择封闭草图、Body 或平面，绕轴生成新实体。', '可设置角度和 Elevation，原模型保留；点击完成提交。'];
-    if (props.activeTool === 'revolve') return ['封闭草图绕草图内 X / Y 轴生成实体，可设置 Elevation。', '角度可超过 360° 形成螺旋；调整后实时预览，点击完成提交。'];
+    if (props.activeTool === 'revolve') return ['先点击草图直线或实体线性边作为旋转轴，也可选择网格轴。', '默认 360° 扫掠生成实体；轴向位移可用于螺旋。'];
 
     const result: string[] = [];
     if (props.selectionKind === 'face') {

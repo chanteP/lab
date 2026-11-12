@@ -154,8 +154,8 @@ const {
     bodySelection: () => selectionKind.value === 'body' && selectedEntities.value.length === 1 && !['sketch', 'image'].includes(selectedEntities.value[0].kind) ? selectedEntities.value[0] : null,
 });
 const {
-    mode: axisMode, axis: axisAxis, angle: axisAngle, offset: axisOffset, active: axisActive, canRotate, canRevolve,
-    start: startAxisOperation, update: updateAxisOperation, commit: commitAxisOperation, finish: finishAxisOperation,
+    axis: axisAxis, axisLabel: axisAxisLabel, profileName: axisProfileName, gridAxis: axisGridAxis, gridAxes: axisGridAxes, angle: axisAngle, offset: axisOffset, active: axisActive, canRevolve,
+    start: startAxisOperation, update: updateAxisOperation, pickAxis: pickAxisOperation, commit: commitAxisOperation, finish: finishAxisOperation,
 } = useAxisOperations({
     document, selectedIds, selectedEntities, selectionKind, activeTool, viewport: () => viewport, message, pushHistory,
 });
@@ -189,13 +189,9 @@ function onShell() {
     setTool('shell');
     startShell();
 }
-function onRotateAxis() {
-    setTool('rotateAxis');
-    startAxisOperation('rotate');
-}
 function onRevolve() {
     setTool('revolve');
-    startAxisOperation('revolve');
+    startAxisOperation();
 }
 function closeShell() {
     finishShell();
@@ -450,7 +446,7 @@ function onBlankCommit() {
 }
 
 function setTool(tool: ViewTool) {
-    if (!['rotateAxis', 'revolve'].includes(tool)) finishAxisOperation();
+    if (tool !== 'revolve') finishAxisOperation();
     if (tool !== 'shell') finishShell();
     finishDirectEdit();
     finishEdgeTreatment();
@@ -799,6 +795,7 @@ function onSketchGuideDelete(id: string) {
 
 const viewportCallbacks: ViewportCallbacks = {
         onSelect: (id, additive) => { cancelShellForSelection(); selectEntity(id, additive); },
+        onRevolveAxis: pickAxisOperation,
         onGeometrySelect,
         onBodySelect,
         onPlaneSelect: selectPlane,
@@ -940,13 +937,13 @@ onBeforeUnmount(() => {
                 <SketchLinearPatternOverlay v-if="sketchMode && linearPatternActive" :pattern="linearPattern" />
                 <SketchRadialPatternOverlay v-if="sketchMode && radialPatternActive" :pattern="radialPattern" />
                 <ModelingToolbar :active-panel="activePanel" :active-tool="activeTool" :sketch-mode="sketchMode" :isolate-active="isolateActive"
-                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :can-rotate-axis="canRotate" :can-revolve="canRevolve" :selected-count="selectedIds.length" :history-steps="historySteps"
+                    :selection-kind="selectionKind" :can-isolate="isolateActive || selectedIds.length > 0" :can-boolean="canBoolean" :can-shell="canShell" :can-revolve="canRevolve" :selected-count="selectedIds.length" :history-steps="historySteps"
                     @panel="togglePanel" @sketch="beginSketch()" @tool="chooseTool" @isolate="toggleIsolate" @import="importMesh"
-                    @history="editHistory" @boolean="applyBoolean" @shell="onShell" @rotate-axis="onRotateAxis" @revolve="onRevolve" />
+                    @history="editHistory" @boolean="applyBoolean" @shell="onShell" @revolve="onRevolve" />
                 <ShellOperationBar v-if="shellActive && !sketchMode" :value="shellThickness" :unit="lengthUnit" @update="updateShellThickness" @done="completeShell" @close="closeShell" />
                 <TransformOperationBar v-if="transformBarActive && !sketchMode" mode="3d" :tool="activeTool as 'translate' | 'rotate' | 'scale'" :values="transformBarValues" :unit="lengthUnit" @update="updateTransformOperation" @done="completeTransformOperation" />
                 <TransformOperationBar v-if="sketchMode && sketchAdvanced.transformActive.value && !symmetryActive" mode="sketch" :tool="activeTool as 'translate' | 'rotate' | 'scale'" :values="sketchTransformValues" :unit="lengthUnit" @update="updateSketchTransformField" @done="completeSketchTransform" />
-                <AxisOperationBar v-if="axisActive && !sketchMode" :mode="axisMode!" :axis="axisAxis" :angle="axisAngle" :offset="axisOffset" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
+                <AxisOperationBar v-if="axisActive && !sketchMode" :profile-name="axisProfileName" :axis-label="axisAxisLabel" :has-axis="!!axisAxis" :grid-axis="axisGridAxis" :grid-axes="axisGridAxes" :angle="axisAngle" :offset="axisOffset" :unit="lengthUnit" @update="updateAxisOperation" @done="completeAxisOperation" @close="closeAxisOperation" />
                 <SectionControl v-if="sectionActive && !sketchMode" :value="sectionOffset" :limit="sectionLimit" :length-unit="lengthUnit" :display-length="displayLength" @update="updateSectionOffset" />
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"

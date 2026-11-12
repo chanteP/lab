@@ -280,11 +280,11 @@
 - `docs/WEBMCP.md` 维护完整 action、参数、示例和当前能力边界；新增 API 时同步文档与 `engine/webmcp.spec.ts` 的真实几何调用回归。
 
 
-## 绕轴、车削与批量拉伸
+## 车削与批量拉伸
 
-- `useAxisOperations` 统一管理绕轴和车削预览/完成事务；`rotation` 持久化始终使用角度制，禁止把弧度直接写入。绕轴使用轮廓生成新实体，不修改原模型，可设置 Elevation；Body 默认使用最大平面，平面轴参考位于最小 U/V 角点，整周允许跨轴，部分角度限制跨轴；车削使用草图内 X/Y 与 Elevation，支持超过 360° 的螺旋，轮廓不能跨轴，负侧轮廓自动镜像。
-- `engine/modeling/Revolve.ts` 使用 Manifold revolve 生成闭合实体并映射回草图平面，禁止用采样点直接拼非流形三角面。
+- `useAxisOperations` 按 Shapr3D 的 Profile → Axis → Angle 流程管理车削事务。只有封闭草图或明确选中的平面可以进入，整个 Body 不得自动取最大面；启动后固定截面，必须选择共面的草图直线、实体线性边或世界网格轴，未选轴不生成预览。Angle 默认 360°，轴向位移对应 Elevation，支持局部扫掠和多圈螺旋。
+- `engine/modeling/Revolve.ts` 统一轮廓绕向，将任意共面轴转换到截面局部坐标后使用 Manifold revolve 生成闭合实体，禁止用采样点直接拼非流形三角面；负侧局部扫掠使用轴翻转并保持用户方向，WebMCP 的 X/Y/Z 仍明确指草图局部轴。
 - 多选封闭草图由 `GuideRenderer` 分别生成粗箭头和距离输入，任意箭头进入同一批量拉伸事务，禁止只显示最后轮廓的箭头。3D 提示统一展示 Command/Ctrl 拖动框选。
-- 界面和 `model3d_tool` 共用轴向操作，具体交互与 Agent 参数分别见 `docs/AXIS_TOOLS.md`、`docs/WEBMCP.md`。封闭草图即使被标为 face 也显示车削；Body 平面转换为单一边界轮廓并保留原 Body。
+- 界面和 `model3d_tool` 共用轴向操作，具体交互与 Agent 参数分别见 `docs/AXIS_TOOLS.md`、`docs/WEBMCP.md`。封闭草图即使被标为 face 也显示车削；Body 平面转换为单一边界轮廓并保留原 Body，不再显示独立“绕轴”入口。
 
 - 实体参数面板不显示 Extrude `depth` 的“厚度”入口，拉伸深度仅由拉伸操作条或粗箭头维护，避免与其他操作流程争用同一字段。

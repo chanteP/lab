@@ -1,9 +1,7 @@
 import { computed, ref, shallowRef, type ComputedRef, type Ref } from 'vue';
 import * as THREE from 'three';
 import type { useMessage } from 'naive-ui';
-import { buildEntityMesh } from '../engine/geometry';
-import { buildMeshTopology } from '../engine/topology/MeshTopology';
-import { evaluateRevolve } from '../engine/modeling/Revolve';
+import { evaluateRevolve, type LocalRevolveAxis, type RevolveAxis } from '../engine/modeling/Revolve';
 import { entityProfileClosed } from '../engine/profiles';
 import type { Viewport, ViewTool } from '../engine/Viewport';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
@@ -21,54 +19,39 @@ interface AxisOperationsOptions {
     pushHistory: () => void;
 }
 
-/** Previewed global-axis transforms and sketch-local revolve generation. */
+interface RevolveInput {
+    profile: ModelEntity;
+    document: ModelDocument;
+    plane: SketchPlane;
+    transform: THREE.Matrix4;
+    world: boolean;
+    keepSource: boolean;
+    ownerId: string;
+    parentId: string | null;
+    selectionKind: SelectionKind;
+}
+
+/** Shapr3D-style profile -> axis -> angle revolve transaction. */
 export function useAxisOperations(options: AxisOperationsOptions) {
     const { document, selectedIds, selectedEntities, selectionKind, activeTool, viewport, message, pushHistory } = options;
-    const mode = shallowRef<'rotate' | 'revolve' | null>(null);
-    const axis = ref<'x' | 'y' | 'z'>('y');
-    const angle = ref(90);
+    const session = shallowRef<RevolveInput | null>(null);
+    const axis = shallowRef<RevolveAxis | null>(null);
+    const localAxis = shallowRef<LocalRevolveAxis | null>(null);
+    const gridAxis = ref<'x' | 'y' | 'z' | null>(null);
+    const angle = ref(360);
     const offset = ref(0);
-    const active = computed(() => !!mode.value);
-    const canGenerate = computed(() => {
+    const active = computed(() => !!session.value);
+    const axisLabel = computed(() => axis.value?.label || '点击草图直线或实体线性边');
+    const profileName = computed(() => session.value?.profile.name || '');
+
+    const canRevolve = computed(() => {
         if (selectedEntities.value.length !== 1 || selectedEntities.value[0].kind === 'image') return false;
         if (selectedEntities.value[0].kind === 'sketch') return entityProfileClosed(selectedEntities.value[0]);
-        if (selectionKind.value === 'body') return true;
         const anchor = viewport()?.getGeometryAnchor();
         return selectionKind.value === 'face' && anchor?.type === 'face' && anchor.planar;
     });
-    const canRotate = canGenerate;
-    const canRevolve = canGenerate;
 
-    function defaultFaceAnchor(): GeometryAnchor {
-        const owner = selectedEntities.value[0];
-        const mesh = buildEntityMesh(owner, document.value);
-        try {
-            mesh.updateWorldMatrix(true, false);
-            const topology = buildMeshTopology(mesh.geometry, owner.id, owner, document.value);
-            const face = topology.faces.filter((item) => item.planar).map((candidate) => ({
-                candidate,
-                area: candidate.triangleIds.reduce((sum, id) => sum + topology.triangles[id].renderVertices.length / 3, 0),
-            })).sort((a, b) => b.area - a.area)[0]?.candidate;
-            if (!face) throw new Error('所选模型没有可用于生成轮廓的平面');
-            const vertices: Vec3[] = [], indices: number[] = [];
-            face.triangleIds.forEach((id) => topology.triangles[id].renderVertices.forEach((index) => {
-                vertices.push(new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position, index).applyMatrix4(mesh.matrixWorld).toArray());
-                indices.push(indices.length);
-            }));
-            return {
-                id: owner.id, key: `${owner.id}:face:${face.id}`, type: 'face', planar: true,
-                normal: new THREE.Vector3(...face.normal).transformDirection(mesh.matrixWorld).toArray(), localNormal: [...face.normal],
-                point: new THREE.Vector3(...face.point).applyMatrix4(mesh.matrixWorld).toArray(), vertices, indices, faceIds: [face.id], revision: topology.revision,
-            };
-        } finally {
-            mesh.geometry.dispose();
-            (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
-        }
-    }
-
-    function faceProfile(explicitAnchor?: GeometryAnchor): { profile: ModelEntity; plane: SketchPlane } {
-        const anchor = explicitAnchor || viewport()?.getGeometryAnchor() || defaultFaceAnchor();
-        if (!anchor) throw new Error('请先选择车削平面');
+    function faceProfile(anchor: GeometryAnchor): { profile: ModelEntity; plane: SketchPlane } {
         const welded: number[] = [], unique: THREE.Vector3[] = [], keys = new Map<string, number>();
         anchor.vertices.forEach((point) => {
             const vector = new THREE.Vector3(...point), key = vector.toArray().map((value) => Math.round(value * 1e6)).join(',');
@@ -118,6 +101,7 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         const origin = first.clone().addScaledVector(u, minU - first.dot(u)).addScaledVector(v, minV - first.dot(v));
         const plane: SketchPlane = { id: `revolve-face-${anchor.key}`, name: '车削面平面', kind: 'XY', origin: origin.toArray(), normal: normal.toArray(), u: u.toArray(), v: v.toArray(), visible: false };
         const profile = createEntity('sketch', 'revolve-face-profile');
+        profile.name = selectedEntities.value[0].name;
         profile.planeId = plane.id;
         profile.profileType = 'polygon';
         profile.open = false;
@@ -127,40 +111,143 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         });
         return { profile, plane };
     }
-    function revolveInput() {
-        if (selectedEntities.value[0]?.kind === 'sketch') return { profile: selectedEntities.value[0], document: document.value, world: false, keepSource: false };
-        const { profile, plane } = faceProfile();
-        return { profile, document: { ...document.value, planes: [...document.value.planes, plane] }, world: true, keepSource: true };
+
+    function revolveInput(): RevolveInput {
+        const owner = selectedEntities.value[0];
+        const plane = owner.kind === 'sketch'
+            ? document.value.planes.find((item) => item.id === owner.planeId)
+            : null;
+        if (owner.kind === 'sketch' && !plane) throw new Error('车削草图必须位于显式平面');
+        const converted = owner.kind === 'sketch' ? null : faceProfile(viewport()?.getGeometryAnchor()!);
+        const profile = owner.kind === 'sketch' ? owner : converted!.profile;
+        const targetPlane = plane || converted!.plane;
+        const transform = new THREE.Object3D();
+        if (owner.kind === 'sketch') {
+            transform.position.fromArray(owner.position);
+            transform.rotation.set(...owner.rotation.map(THREE.MathUtils.degToRad) as Vec3);
+            transform.scale.fromArray(owner.scale);
+            transform.updateMatrixWorld(true);
+        }
+        return {
+            profile,
+            document: converted ? { ...document.value, planes: [...document.value.planes, targetPlane] } : document.value,
+            plane: targetPlane,
+            transform: transform.matrixWorld.clone(),
+            world: !!converted,
+            keepSource: !!converted,
+            ownerId: owner.id,
+            parentId: owner.parentId,
+            selectionKind: selectionKind.value,
+        };
     }
 
-    function showRevolve() {
-        const source = selectedEntities.value[0];
-        if (!source) return;
-        const input = revolveInput();
-        const geometry = evaluateRevolve(input.profile, input.document, axis.value === 'x' ? 'x' : 'y', angle.value, offset.value);
-        viewport()?.setShellPreview([{ entityId: source.id, geometry, matrix: input.world ? new THREE.Matrix4() : undefined, keepSource: input.keepSource }]);
+    function planeMatrix(input = session.value) {
+        if (!input) return null;
+        return new THREE.Matrix4().makeBasis(
+            new THREE.Vector3(...input.plane.u), new THREE.Vector3(...input.plane.v), new THREE.Vector3(...input.plane.normal),
+        ).setPosition(new THREE.Vector3(...input.plane.origin)).multiply(input.transform);
     }
+
+    function toLocalAxis(candidate: RevolveAxis): LocalRevolveAxis | null {
+        const matrix = planeMatrix();
+        if (!matrix) return null;
+        const point = new THREE.Vector3(...candidate.point);
+        const direction = new THREE.Vector3(...candidate.direction).normalize();
+        const normal = new THREE.Vector3(...session.value!.plane.normal).transformDirection(matrix);
+        const origin = new THREE.Vector3().setFromMatrixPosition(matrix);
+        if (Math.abs(normal.dot(direction)) > 1e-5 || Math.abs(normal.dot(point.clone().sub(origin))) > 1e-4) return null;
+        const inverse = matrix.clone().invert();
+        const localPoint = point.applyMatrix4(inverse);
+        const localDirection = direction.transformDirection(inverse);
+        if (Math.hypot(localDirection.x, localDirection.y) < 1e-8) return null;
+        return { origin: [localPoint.x, localPoint.y], direction: [localDirection.x, localDirection.y] };
+    }
+
+    const gridAxes = computed(() => {
+        if (!session.value) return [];
+        return (['x', 'y', 'z'] as const).filter((value) => {
+            const direction: Vec3 = value === 'x' ? [1, 0, 0] : value === 'y' ? [0, 1, 0] : [0, 0, 1];
+            return !!toLocalAxis({ point: [0, 0, 0], direction, label: `${value.toUpperCase()} 轴` });
+        }).map((value) => ({ label: `${value.toUpperCase()} 轴`, value }));
+    });
+
+    function restoreProfileSelection() {
+        if (!session.value) return;
+        selectedIds.value = [session.value.ownerId];
+        selectionKind.value = session.value.selectionKind;
+        activeTool.value = 'revolve';
+        viewport()?.setTool('revolve');
+    }
+
     function preview() {
-        try { showRevolve(); }
-        catch (error) { message.error(error instanceof Error ? error.message : String(error)); }
+        if (!session.value || !localAxis.value) { viewport()?.setShellPreview(null); return; }
+        try {
+            const geometry = evaluateRevolve(session.value.profile, session.value.document, localAxis.value, angle.value, offset.value);
+            viewport()?.setShellPreview([{
+                entityId: session.value.ownerId, geometry,
+                matrix: session.value.world ? new THREE.Matrix4() : undefined,
+                keepSource: session.value.keepSource,
+            }]);
+        } catch (error) {
+            viewport()?.setShellPreview(null);
+            message.error(error instanceof Error ? error.message : String(error));
+        }
     }
-    function start(next: 'rotate' | 'revolve') {
-        if (next === 'rotate' ? !canRotate.value : !canRevolve.value) return;
+
+    function setAxis(candidate: RevolveAxis) {
+        const converted = toLocalAxis(candidate);
+        if (!converted) { message.error('旋转轴必须与截面位于同一平面'); return false; }
+        axis.value = candidate;
+        localAxis.value = converted;
+        preview();
+        restoreProfileSelection();
+        return true;
+    }
+
+    function pickAxis(candidate: RevolveAxis | null) {
+        if (!session.value) return false;
+        if (!candidate) message.warning('请选择草图直线或实体线性边作为旋转轴');
+        else {
+            gridAxis.value = null;
+            setAxis(candidate);
+        }
+        restoreProfileSelection();
+        return true;
+    }
+
+    function start() {
+        if (!canRevolve.value) return;
         finish();
-        mode.value = next;
+        session.value = revolveInput();
         angle.value = 360;
         offset.value = 0;
-        if (axis.value === 'z') axis.value = 'y';
-        activeTool.value = next;
-        viewport()?.setTool(next);
-        preview();
+        axis.value = null;
+        localAxis.value = null;
+        gridAxis.value = null;
+        activeTool.value = 'revolve';
+        viewport()?.setTool('revolve');
+        viewport()?.setShellPreview(null);
     }
-    function update(next: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number }) {
-        if (next.axis) axis.value = next.axis;
+
+    function update(next: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number; local?: boolean }) {
+        if (next.axis) {
+            const direction: Vec3 = next.axis === 'x' ? [1, 0, 0] : next.axis === 'y' ? [0, 1, 0] : [0, 0, 1];
+            let candidate: RevolveAxis = { point: [0, 0, 0], direction, label: `${next.axis.toUpperCase()} 轴` };
+            if (next.local) {
+                const matrix = planeMatrix()!;
+                candidate = {
+                    point: new THREE.Vector3().setFromMatrixPosition(matrix).toArray(),
+                    direction: new THREE.Vector3(...direction).transformDirection(matrix).toArray(),
+                    label: `${next.axis.toUpperCase()} 轴`,
+                };
+            }
+            if (setAxis(candidate)) gridAxis.value = next.axis;
+        }
         if (next.angle !== undefined && Number.isFinite(next.angle)) angle.value = next.angle;
         if (next.offset !== undefined && Number.isFinite(next.offset)) offset.value = next.offset;
         preview();
     }
+
     function bake(body: ModelEntity, geometry: THREE.BufferGeometry) {
         body.meshGeometry = {
             positions: Array.from(geometry.attributes.position.array), normals: Array.from(geometry.attributes.normal?.array || []),
@@ -169,38 +256,39 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         };
         body.compositeGeometry = true;
     }
+
     function commit() {
-        if (!mode.value) return false;
+        if (!session.value) return false;
+        if (!localAxis.value) { message.error('请先选择旋转轴'); return false; }
         try {
-            {
-                const profile = selectedEntities.value[0];
-                const input = revolveInput();
-                const geometry = evaluateRevolve(input.profile, input.document, axis.value === 'x' ? 'x' : 'y', angle.value, offset.value);
-                const body = createEntity('extrude', uid());
-                body.name = `车削 ${document.value.entities.filter((item) => item.name.startsWith('车削 ')).length + 1}`;
-                body.parentId = profile.parentId;
-                body.planeId = profile.planeId;
-                body.position = input.world ? [0, 0, 0] : [...profile.position];
-                body.rotation = input.world ? [0, 0, 0] : [...profile.rotation];
-                body.scale = input.world ? [1, 1, 1] : [...profile.scale];
-                bake(body, geometry);
-                geometry.dispose();
-                pushHistory();
-                document.value.entities.push(body);
-                finish();
-                if (!input.keepSource) profile.visible = false;
-                selectedIds.value = [body.id];
-                selectionKind.value = 'body';
-                return true;
-            }
+            const input = session.value;
+            const geometry = evaluateRevolve(input.profile, input.document, localAxis.value, angle.value, offset.value);
+            const body = createEntity('extrude', uid());
+            body.name = `车削 ${document.value.entities.filter((item) => item.name.startsWith('车削 ')).length + 1}`;
+            body.parentId = input.parentId;
+            body.planeId = input.profile.planeId;
+            body.position = input.world ? [0, 0, 0] : [...input.profile.position];
+            body.rotation = input.world ? [0, 0, 0] : [...input.profile.rotation];
+            body.scale = input.world ? [1, 1, 1] : [...input.profile.scale];
+            bake(body, geometry);
+            geometry.dispose();
+            pushHistory();
+            document.value.entities.push(body);
+            if (!input.keepSource) input.profile.visible = false;
+            selectedIds.value = [body.id];
+            selectionKind.value = 'body';
             finish();
             return true;
         } catch (error) { message.error(error instanceof Error ? error.message : String(error)); return false; }
     }
+
     function finish() {
-        if (!mode.value) return;
-        mode.value = null;
+        session.value = null;
+        axis.value = null;
+        localAxis.value = null;
+        gridAxis.value = null;
         viewport()?.setShellPreview(null);
     }
-    return { mode, axis, angle, offset, active, canRotate, canRevolve, start, update, commit, finish };
+
+    return { active, axis, axisLabel, profileName, gridAxis, gridAxes, angle, offset, canRevolve, start, update, pickAxis, commit, finish };
 }

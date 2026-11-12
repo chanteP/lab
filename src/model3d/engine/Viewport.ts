@@ -19,16 +19,18 @@ import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
 import { guideScreenPosition, type SketchRulerFrame } from './sketchRulers';
 
-export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer' | 'shell' | 'rotateAxis' | 'revolve';
+export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer' | 'shell' | 'revolve';
 export type ViewportStats = { vertices: number; triangles: number; objects: number; selection: SelectionStats | null };
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';
+import type { RevolveAxis } from './modeling/Revolve';
 export type EditPhase = 'start' | 'move' | 'end' | 'cancel';
 import type { SketchMarqueeRect } from './sketchMarquee';
 export type SketchDimension = { assetId?: string; kind: 'segment' | 'control' | 'width' | 'height' | 'radius' | 'radiusX' | 'radiusY' | 'arcRadius' | 'angle'; index?: number; handle?: 1 | 2 };
 
 export interface ViewportCallbacks {
     onSelect: (id: string | null, additive: boolean) => void;
+    onRevolveAxis: (axis: RevolveAxis | null) => boolean;
     onGeometrySelect: (id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive?: boolean, profileFace?: Point2[]) => void;
     onBodySelect: (id: string) => void;
     onPlaneSelect: (id: string) => void;

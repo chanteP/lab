@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { sketchAssetExcludedIds } from '../sketchAssets';
 import { intersectionProfileAtPoint } from '../profileIntersection';
+import { borderSegments } from '../sketchBorders';
+import type { RevolveAxis } from '../modeling/Revolve';
 import { INTERACTION } from '../../config/const';
 import type { ModelEntity, Point2, SketchReferenceGuide, Vec3 } from '../../types';
 import type { ViewTool, ViewportCallbacks } from '../Viewport';
@@ -975,6 +977,13 @@ export class InteractionController {
         const edgeHit = this.hitEntityEdge(event);
         const vertexHit = this.hitEntityVertex(event);
         const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+        if (this.tool === 'revolve') {
+            const axis = this.pickRevolveAxis(event, edgeHit);
+            this.callbacks.onRevolveAxis(axis);
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         const planeHit = this.tool === 'select' && !this.sketchMode ? this.hitPlane(event) : null;
         const hitIsSketch = !!hit && ['sketch', 'image'].includes(this.document?.entities.find((item) => item.id === hit.object.userData.entityId)?.kind || '');
         if (planeHit && (!hit || (!hitIsSketch && planeHit.distance < hit.distance))) { this.callbacks.onPlaneSelect(planeHit.id); return; }
@@ -1022,6 +1031,36 @@ export class InteractionController {
         } else if (['extrude', 'offsetFace'].includes(this.tool)) this.callbacks.onBlankCommit();
         else this.callbacks.onSelect(null, additive);
     }
+    private pickRevolveAxis(event: PointerEvent, edgeHit: THREE.Intersection | null): RevolveAxis | null {
+        this.setPointer(event);
+        const borderHit = this.raycaster.intersectObjects(this.sketchRenderer.borderTargets(), false)[0];
+        if (borderHit && (!edgeHit || borderHit.distance <= edgeHit.distance)) {
+            const entity = this.document?.entities.find((item) => item.id === borderHit.object.userData.borderEntityId);
+            const plane = this.document?.planes.find((item) => item.id === entity?.planeId);
+            const segment = entity && borderSegments(entity).find((item) => item.index === borderHit.object.userData.borderSegmentIndex);
+            if (entity && plane && segment && !segment.curve) {
+                const origin = new THREE.Vector3(...plane.origin), u = new THREE.Vector3(...plane.u), v = new THREE.Vector3(...plane.v);
+                const points = segment.points.map(([x, y]) => origin.clone().addScaledVector(u, x).addScaledVector(v, y).toArray() as Vec3);
+                return this.linearRevolveAxis(points, `${entity.name} 边`);
+            }
+            return null;
+        }
+        if (!edgeHit) return null;
+        const anchor = this.geometrySelector.createEdgeAnchor(edgeHit, false);
+        const entity = this.document?.entities.find((item) => item.id === anchor.id);
+        return this.linearRevolveAxis(anchor.vertices, `${entity?.name || '实体'} 边`);
+    }
+
+    private linearRevolveAxis(points: Vec3[], label: string): RevolveAxis | null {
+        if (points.length < 2) return null;
+        const a = new THREE.Vector3(...points[0]), b = new THREE.Vector3(...points[points.length - 1]);
+        const direction = b.clone().sub(a);
+        if (direction.lengthSq() < 1e-12) return null;
+        direction.normalize();
+        if (points.some((point) => new THREE.Vector3(...point).sub(a).cross(direction).length() > 1e-4)) return null;
+        return { point: a.toArray(), direction: direction.toArray(), label };
+    }
+
     private createGeometryAnchor(hit: THREE.Intersection): GeometryAnchor {
         const entity = this.document?.entities.find((item) => item.id === hit.object.userData.entityId);
         return this.geometrySelector.createFaceAnchor(hit, entity, this.includeTangent);

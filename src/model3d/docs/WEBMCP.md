@@ -18,7 +18,7 @@ console.log(response.structuredContent);
 | `model3d_entity` | `list/inspect/select/update/delete` | 实体查询、选择、参数修改和删除；`inspect` 返回 `faceId`、法线、相邻面和边 |
 | `model3d_sketch` | `create/update/delete/constrain` | 创建语义草图、更新轮廓、删除和应用约束 |
 | `model3d_generate` | `primitive/extrude` | 直接参数化生成立方体/圆柱/球/圆锥/圆环，或将封闭草图拉伸为实体 |
-| `model3d_tool` | `shell/boolean/offsetFace/rotateAxis/revolve` | 封闭或开口抽壳、布尔运算、完整平面推拉、全局轴旋转偏移和草图车削 |
+| `model3d_tool` | `shell/boolean/offsetFace/revolve` | 封闭或开口抽壳、布尔运算、完整平面推拉和截面绕轴车削 |
 | `model3d_history` | `undo/redo` | 撤销和重做 |
 
 所有长度使用当前项目 `lengthUnit`。默认草图平面为 **XZ、Y-top（+Y 向上）**，局部 `u=+X`、`v=-Z`；草图 `profile.points` 使用所属平面的二维局部坐标，不是世界三维坐标。修改会进入与手工操作相同的场景同步、自动保存和撤销流程。
@@ -93,15 +93,15 @@ await model3dMCP.callTool('model3d_tool', {
 - 项目和模型数据只保存在当前浏览器 IndexedDB，不上传服务器。
 - 当前 API 不包含文件导入/导出、网格文件传输、圆角/倒角和视口鼠标手势；这些可继续通过界面操作。
 
-## 示例：绕轴与车削
+## 示例：车削
 
 ```js
 await model3dMCP.callTool('model3d_tool', {
-  action: 'rotateAxis', operandIds: [bodyA.id], axis: 'y', angle: 360,
+  action: 'revolve', profileId, axis: 'x', angle: 360,
 });
 await model3dMCP.callTool('model3d_tool', {
-  action: 'revolve', profileId, axis: 'x', angle: 720, offset: 20,
+  action: 'revolve', profileId, axis: 'y', angle: 720, offset: 20,
 });
 ```
 
-绕轴和车削都通过轮廓生成新实体并保留原模型；`offset` 对应 Elevation 总升高，角度可超过 360°，整周允许跨轴。Body 默认使用最大平面，平面面片可传 `faceIds`。
+`axis` 在 Agent API 中明确指草图局部 X/Y/Z 轴；界面选轴则使用真实世界坐标。车削通过封闭草图或 `faceIds` 指定的平面生成新实体，不再接受整个 Body 自动取面。`offset` 对应 Elevation 总升高，角度可超过 360°，部分角度不能跨轴。

@@ -38,8 +38,8 @@ export interface Model3dAgentBridge {
     commitShell: () => boolean;
     finishShell: () => void;
     updateFaceOffset: (distance: number) => void;
-    startAxis: (mode: 'rotate' | 'revolve') => void;
-    updateAxis: (value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number }) => void;
+    startAxis: () => void;
+    updateAxis: (value: { axis?: 'x' | 'y' | 'z'; angle?: number; offset?: number; local?: boolean }) => void;
     commitAxis: () => boolean;
     finishAxis: () => void;
     applyConstraint: (type: SketchConstraintType) => void;
@@ -244,16 +244,15 @@ const tools: ToolDefinition[] = [
         },
     },
     {
-        name: 'model3d_tool', description: '建模工具：shell、boolean、offsetFace、rotateAxis（轮廓绕轴生成新实体）、revolve（草图内轴车削+Elevation）。所有距离使用项目长度单位。',
+        name: 'model3d_tool', description: '建模工具：shell、boolean、offsetFace、revolve（截面绕明确轴旋转扫掠，可选 Elevation）。所有距离使用项目长度单位。',
         inputSchema: { type: 'object', properties: {
-            action: { type: 'string', enum: ['shell', 'boolean', 'offsetFace', 'rotateAxis', 'revolve'] }, entityId: { type: 'string' }, faceId: { type: 'string' },
+            action: { type: 'string', enum: ['shell', 'boolean', 'offsetFace', 'revolve'] }, entityId: { type: 'string' }, faceId: { type: 'string' },
             faceIds: { type: 'array', items: { type: 'object', properties: { entityId: { type: 'string' }, faceId: { type: 'string' } }, required: ['entityId', 'faceId'] } },
             thickness: { type: 'number' }, distance: { type: 'number' }, axis: { type: 'string', enum: ['x', 'y', 'z'] }, angle: { type: 'number' }, offset: { type: 'number', description: 'Revolve Elevation，螺旋总升高。' }, profileId: { type: 'string' }, operation: { type: 'string', enum: ['union', 'subtract', 'intersect'] }, operandIds: { type: 'array', items: { type: 'string' } },
         }, required: ['action'] },
         execute: (bridge, args) => {
-            if (args.action === 'rotateAxis' || args.action === 'revolve') {
-                if (args.action === 'rotateAxis') selectBodies(bridge, args.operandIds || [args.entityId]);
-                else if (args.faceIds?.length) selectFaces(bridge, args.faceIds);
+            if (args.action === 'revolve') {
+                if (args.faceIds?.length) selectFaces(bridge, args.faceIds);
                 else {
                     const profile = entity(bridge, args.profileId);
                     if (profile.kind !== 'sketch' || !entityProfileClosed(profile)) throw new Error('revolve 需要封闭草图 profileId 或平面 faceIds');
@@ -261,8 +260,8 @@ const tools: ToolDefinition[] = [
                     bridge.selectionKind.value = 'sketch';
                 }
                 try {
-                    bridge.startAxis(args.action === 'rotateAxis' ? 'rotate' : 'revolve');
-                    bridge.updateAxis({ axis: args.axis, angle: args.angle, offset: args.offset });
+                    bridge.startAxis();
+                    bridge.updateAxis({ axis: args.axis, angle: args.angle, offset: args.offset, local: true });
                     if (!bridge.commitAxis()) throw new Error('轴向操作提交失败');
                     bridge.finishAxis();
                 } catch (error) { bridge.finishAxis(); throw error; }

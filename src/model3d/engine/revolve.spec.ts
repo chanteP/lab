@@ -54,3 +54,40 @@ test('a full-turn profile may sit across the revolve axis', () => {
     assert(validation.valid, validation.errors.join(', '));
     assert(validation.volume > 0);
 });
+
+
+test('an arbitrary in-plane offset axis produces the same physical swept volume', () => {
+    const { document, profile } = fixture();
+    const geometry = evaluateRevolve(profile, document, { origin: [0, 1], direction: [1, 0] }, 90);
+    const validation = validateSolidGeometry(geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(validation.volume - Math.PI / 4) < 0.03, `volume=${validation.volume}`);
+    geometry.computeBoundingBox();
+    assert(Math.abs(geometry.boundingBox!.min.y - 1) < 1e-6);
+    assert(Math.abs(geometry.boundingBox!.max.y - 2) < 1e-6);
+});
+
+test('custom Y axis matches the built-in Y axis', () => {
+    const { document, profile } = fixture();
+    const geometry = evaluateRevolve(profile, document, { origin: [0, 0], direction: [0, 1] }, 90);
+    assert(Math.abs(validateSolidGeometry(geometry).volume - Math.PI * 3 / 4) < 0.03);
+});
+
+
+test('clockwise sketch input is normalized before kernel revolve', () => {
+    const { document, profile } = fixture();
+    profile.points = [[3.2, 7.6], [11.2, 7.6], [11.2, -4.4], [3.2, -4.4]];
+    const geometry = evaluateRevolve(profile, document, { origin: [0, 0], direction: [0, 1] }, 360);
+    const validation = validateSolidGeometry(geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(validation.volume > 0);
+});
+
+
+test('a partial revolve supports a profile on the negative side of an arbitrary axis', () => {
+    const { document, profile } = fixture();
+    const geometry = evaluateRevolve(profile, document, { origin: [0, 2], direction: [1, 0] }, 90);
+    const validation = validateSolidGeometry(geometry);
+    assert(validation.valid, validation.errors.join(', '));
+    assert(Math.abs(validation.volume - Math.PI / 4) < 0.03, `volume=${validation.volume}`);
+});
