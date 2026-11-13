@@ -5,7 +5,7 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm';
 import type { BooleanOperation, Vec3 } from '../../types';
 import { geometryMergeVectors } from '../topology/RenderVertices';
-import { buildVertexRoundingCutter, normalizeVertexRoundingNormals } from './VertexRoundingGeometry';
+import { buildVertexRoundingTools, normalizeVertexRoundingNormals } from './VertexRoundingGeometry';
 
 let modulePromise: Promise<ManifoldToplevel> | null = null;
 let kernel: ManifoldToplevel | null = null;
@@ -153,11 +153,15 @@ export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, r
 /** Remove a custom convex corner cap; the rounded patch is tangent to adjacent planes and never extends along incident edges. */
 export function evaluateVertexRounding(base: THREE.BufferGeometry, radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
     if (radius <= 0 || adjacentNormals.length !== 3) return null;
-    const cutter = buildVertexRoundingCutter(radius, corner, adjacentNormals);
+    const { cap, sphere } = buildVertexRoundingTools(radius, corner, adjacentNormals);
+    let cutter: THREE.BufferGeometry | null = null;
     try {
+        cutter = evaluateBoolean(cap, sphere, 'subtract');
         return normalizeVertexRoundingNormals(evaluateBoolean(base, cutter, 'subtract'), corner, adjacentNormals);
     } finally {
-        cutter.dispose();
+        cutter?.dispose();
+        cap.dispose();
+        sphere.dispose();
     }
 }
 

@@ -1,159 +1,39 @@
 import * as THREE from 'three';
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { Vec3 } from '../../types';
 
-const PATCH_SEGMENTS = 36;
-const ARC_CONTROL = 4 / Math.SQRT2 - 2.5;
-// Symmetry-profile regression: 0.86 still creates 6 concave intervals; 0.87 is the first ratio with none.
-export const VERTEX_ROUNDING_CENTER_RATIO = 0.87;
-
-type PositionAttribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
-
-function signedVolume(position: PositionAttribute, indices: number[]) {
-    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-    let volume = 0;
-    for (let offset = 0; offset < indices.length; offset += 3) {
-        a.fromBufferAttribute(position, indices[offset]);
-        b.fromBufferAttribute(position, indices[offset + 1]);
-        c.fromBufferAttribute(position, indices[offset + 2]);
-        volume += a.dot(b.cross(c)) / 6;
-    }
-    return volume;
+/** Solve an inward sphere center with equal perpendicular distance to the three source planes. */
+export function vertexRoundingCenter(radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+    const normals = adjacentNormals.map((normal) => new THREE.Vector3(...normal).normalize());
+    const normalMatrix = new THREE.Matrix3().set(
+        normals[0].x, normals[0].y, normals[0].z,
+        normals[1].x, normals[1].y, normals[1].z,
+        normals[2].x, normals[2].y, normals[2].z,
+    );
+    if (Math.abs(normalMatrix.determinant()) < 1e-8) throw new Error('圆角角的三个相邻面不能共线');
+    return new THREE.Vector3(1, 1, 1).applyMatrix3(normalMatrix.invert()).multiplyScalar(-radius * 2 / 3).add(new THREE.Vector3(...corner));
 }
 
-function orientClosedMesh(position: PositionAttribute, indices: number[]) {
-    type EdgeUse = { triangle: number; from: number; to: number };
-    const edges = new Map<string, EdgeUse[]>();
-    const sharedEdges = new Map<string, { first: EdgeUse; second: EdgeUse }>();
-    const adjacent: number[][] = Array.from({ length: indices.length / 3 }, () => []);
-    for (let triangle = 0; triangle < indices.length / 3; triangle++) for (let corner = 0; corner < 3; corner++) {
-        const from = indices[triangle * 3 + corner], to = indices[triangle * 3 + (corner + 1) % 3];
-        const key = [from, to].sort((a, b) => a - b).join(':');
-        const uses = edges.get(key) || [];
-        uses.forEach((use) => {
-            adjacent[triangle].push(use.triangle); adjacent[use.triangle].push(triangle);
-            sharedEdges.set([use.triangle, triangle].sort((a, b) => a - b).join(':'), { first: use, second: { triangle, from, to } });
-        });
-        uses.push({ triangle, from, to });
-        edges.set(key, uses);
-    }
-
-    const flipped = new Set<number>(), visited = new Set<number>();
-    for (let seed = 0; seed < adjacent.length; seed++) {
-        if (visited.has(seed)) continue;
-        const queue = [seed];
-        visited.add(seed);
-        while (queue.length) {
-            const triangle = queue.shift()!;
-            const direction = flipped.has(triangle) ? -1 : 1;
-            adjacent[triangle].forEach((neighbor) => {
-                if (visited.has(neighbor)) return;
-                const shared = sharedEdges.get([triangle, neighbor].sort((a, b) => a - b).join(':'))!;
-                const current = shared.first.triangle === triangle ? shared.first : shared.second;
-                const other = shared.first.triangle === neighbor ? shared.first : shared.second;
-                const currentSign = current.from === other.from ? direction : -direction;
-                if (currentSign > 0) flipped.add(neighbor);
-                visited.add(neighbor);
-                queue.push(neighbor);
-            });
-        }
-    }
-    flipped.forEach((triangle) => {
-        const offset = triangle * 3;
-        [indices[offset + 1], indices[offset + 2]] = [indices[offset + 2], indices[offset + 1]];
-    });
-    if (signedVolume(position, indices) < 0) {
-        for (let offset = 0; offset < indices.length; offset += 3) [indices[offset + 1], indices[offset + 2]] = [indices[offset + 2], indices[offset + 1]];
-    }
-}
-
-function factorial(value: number): number {
-    return value <= 1 ? 1 : value * factorial(value - 1);
-}
-
-/** One continuous quartic triangular patch; inner control rows keep it tangent to all three original planes. */
-export function buildVertexRoundingCutter(radius: number, corner: Vec3, adjacentNormals: Vec3[], centerRatio = VERTEX_ROUNDING_CENTER_RATIO) {
+/** The source-plane tetrahedron minus this sphere is the corner cutter. */
+export function buildVertexRoundingTools(radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
     const normals = adjacentNormals.map((normal) => new THREE.Vector3(...normal).normalize());
     const sourceCorner = new THREE.Vector3(...corner);
-    const center = normals.reduce((point, normal) => point.addScaledVector(normal, -radius), sourceCorner.clone());
-    const toWorld = (point: THREE.Vector3) => {
-        const result = center.clone();
-        result.addScaledVector(normals[0], point.x).addScaledVector(normals[1], point.y).addScaledVector(normals[2], point.z);
-        return result;
-    };
-
-    const r = radius, a = r * ARC_CONTROL, h = r * (81 * centerRatio - 60 - 8 * ARC_CONTROL) / 12;
-    const controls = [
-        { i: 4, j: 0, k: 0, p: new THREE.Vector3(0, r, r) },
-        { i: 0, j: 4, k: 0, p: new THREE.Vector3(r, 0, r) },
-        { i: 0, j: 0, k: 4, p: new THREE.Vector3(r, r, 0) },
-        { i: 3, j: 1, k: 0, p: new THREE.Vector3(a, r, r) },
-        { i: 3, j: 0, k: 1, p: new THREE.Vector3(a, r, r) },
-        { i: 1, j: 3, k: 0, p: new THREE.Vector3(r, a, r) },
-        { i: 0, j: 3, k: 1, p: new THREE.Vector3(r, a, r) },
-        { i: 1, j: 0, k: 3, p: new THREE.Vector3(r, r, a) },
-        { i: 0, j: 1, k: 3, p: new THREE.Vector3(r, r, a) },
-        { i: 2, j: 2, k: 0, p: new THREE.Vector3(r, r, r) },
-        { i: 2, j: 0, k: 2, p: new THREE.Vector3(r, r, r) },
-        { i: 0, j: 2, k: 2, p: new THREE.Vector3(r, r, r) },
-        { i: 2, j: 1, k: 1, p: new THREE.Vector3(h, r, r) },
-        { i: 1, j: 2, k: 1, p: new THREE.Vector3(r, h, r) },
-        { i: 1, j: 1, k: 2, p: new THREE.Vector3(r, r, h) },
-    ];
-    const evaluate = (i: number, j: number, k: number) => {
-        const point = new THREE.Vector3();
-        controls.forEach((control) => {
-            const weight = factorial(4) / factorial(control.i) / factorial(control.j) / factorial(control.k)
-                * (i / 4) ** control.i * (j / 4) ** control.j * (k / 4) ** control.k;
-            point.addScaledVector(control.p, weight);
-        });
-        return point;
-    };
-
-    const positions: number[] = [], indices: number[] = [];
-    const vertices = new Map<string, number>();
-    const addVertex = (local: THREE.Vector3) => {
-        const key = local.toArray().map((value) => Number(value.toFixed(7))).join(',');
-        const existing = vertices.get(key);
-        if (existing !== undefined) return existing;
-        const index = positions.length / 3;
-        positions.push(...toWorld(local).toArray());
-        vertices.set(key, index);
-        return index;
-    };
-    const addTriangle = (a: number, b: number, c: number) => {
-        if (a !== b && b !== c && c !== a) indices.push(a, b, c);
-    };
-
-    const grid = new Map<string, number>();
-    for (let i = 0; i <= PATCH_SEGMENTS; i++) for (let j = 0; j <= PATCH_SEGMENTS - i; j++) {
-        const k = PATCH_SEGMENTS - i - j;
-        grid.set(`${i}:${j}`, addVertex(evaluate(i / PATCH_SEGMENTS * 4, j / PATCH_SEGMENTS * 4, k / PATCH_SEGMENTS * 4)));
-    }
-    for (let i = 0; i < PATCH_SEGMENTS; i++) for (let j = 0; j < PATCH_SEGMENTS - i; j++) {
-        const a = grid.get(`${i}:${j}`)!, b = grid.get(`${i + 1}:${j}`)!, c = grid.get(`${i}:${j + 1}`)!;
-        addTriangle(a, b, c);
-        if (j < PATCH_SEGMENTS - i - 1) addTriangle(b, grid.get(`${i + 1}:${j + 1}`)!, c);
-    }
-
-    const outer = addVertex(new THREE.Vector3(r, r, r));
-    for (let side = 0; side < 3; side++) {
-        const boundary: number[] = [];
-        for (let step = 0; step <= PATCH_SEGMENTS; step++) {
-            const i = side === 0 ? PATCH_SEGMENTS - step : side === 1 ? PATCH_SEGMENTS - step : 0;
-            const j = side === 0 ? step : side === 1 ? 0 : PATCH_SEGMENTS - step;
-            boundary.push(grid.get(`${i}:${j}`)!);
-        }
-        for (let step = 0; step < PATCH_SEGMENTS; step++) addTriangle(outer, boundary[step], boundary[step + 1]);
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    orientClosedMesh(geometry.attributes.position, indices);
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    return geometry;
+    const center = vertexRoundingCenter(radius, corner, adjacentNormals);
+    const relativeCenter = center.clone().sub(sourceCorner);
+    const edgePoints = normals.map((_, index) => {
+        const j = (index + 1) % 3, k = (index + 2) % 3;
+        const direction = normals[j].clone().cross(normals[k]).normalize();
+        let axial = relativeCenter.dot(direction);
+        if (axial < 0) { direction.negate(); axial = -axial; }
+        const perpendicularSquared = Math.max(0, relativeCenter.lengthSq() - axial * axial);
+        const distance = axial + Math.sqrt(Math.max(0, radius * radius - perpendicularSquared));
+        return sourceCorner.clone().addScaledVector(direction, distance);
+    });
+    const outerDirection = normals.reduce((sum, normal) => sum.add(normal), new THREE.Vector3()).normalize();
+    const outer = sourceCorner.clone().addScaledVector(outerDirection, Math.min(0.1, radius * 0.05));
+    const cap = new ConvexGeometry([outer, ...edgePoints]);
+    const sphere = new THREE.SphereGeometry(radius, 64, 32).translate(center.x, center.y, center.z);
+    return { cap, sphere, center };
 }
 
 /** Keep planar normals exact at the three singular points where the original sharp edges terminate. */

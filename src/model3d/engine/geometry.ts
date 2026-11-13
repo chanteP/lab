@@ -54,13 +54,14 @@ export function applyEntityTransform(object: THREE.Object3D, entity: ModelEntity
 
 function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document: ModelDocument) {
     if (![...(entity.edgeTreatments || []), ...(entity.vertexTreatments || [])].some((treatment) => treatment.size > 0)) return mesh;
+    const vertexRules = rebindVertexTreatments(mesh.geometry, entity.vertexTreatments || [], entity, document);
     const edgeRules = rebindEdgeTreatments(mesh.geometry, entity.edgeTreatments || [], entity, document);
-    const withEdges = applyEdgeTreatments(mesh.geometry, edgeRules);
-    const vertexRules = rebindVertexTreatments(withEdges, entity.vertexTreatments || [], entity, document);
+    const withVertices = applyVertexTreatments(mesh.geometry, vertexRules);
     mesh.userData.resolvedEdgeTreatments = edgeRules;
     mesh.userData.resolvedVertexTreatments = vertexRules;
-    const treated = applyVertexTreatments(withEdges, vertexRules);
-    if (withEdges !== mesh.geometry && treated !== withEdges) withEdges.dispose();
+    // Evaluate the corner while its three source planes still exist, then trim incident edges.
+    const treated = applyEdgeTreatments(withVertices, edgeRules);
+    if (withVertices !== mesh.geometry && treated !== withVertices) withVertices.dispose();
     if (treated !== mesh.geometry) {
         mesh.geometry.dispose();
         mesh.geometry = treated;

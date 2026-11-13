@@ -6,6 +6,8 @@ import { initializeManifold } from './modeling/ManifoldKernel';
 import type { EdgeTreatment, ModelEntity } from '../types';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
+import { buildMeshTopology } from './topology/MeshTopology';
+import { createDocument, createEntity } from '../types';
 
 await initializeManifold();
 
@@ -50,6 +52,41 @@ test('fillet produces a curved edge with more render vertices than chamfer', () 
     assert.ok(fillet.attributes.position.count > chamfer.attributes.position.count);
     assert.ok(volume(fillet) < volume(base));
     base.dispose(); chamfer.dispose(); fillet.dispose();
+});
+
+
+test('a triangular-prism fillet is a true radius-r cylinder tangent to both non-orthogonal faces', () => {
+    const radius = 4;
+    const base = new THREE.CylinderGeometry(30, 30, 40, 3, 1, false);
+    const document = createDocument();
+    const entity = createEntity('cylinder', 'prism');
+    const topology = buildMeshTopology(base, entity.id, entity, document);
+    const edge = topology.logicalEdges.find((item) => {
+        if (item.faceIds.length !== 2 || item.points.length < 2) return false;
+        return Math.abs(item.points[0][1] - item.points[item.points.length - 1][1]) > 30;
+    })!;
+    const a = new THREE.Vector3(...edge.points[0]);
+    const b = new THREE.Vector3(...edge.points[edge.points.length - 1]);
+    const normals = edge.faceIds.map((id) => new THREE.Vector3(...topology.faces.find((face) => face.id === id)!.normal).normalize());
+    assert.ok(Math.abs(normals[0].dot(normals[1])) > 0.1, 'fixture must use a non-right dihedral angle');
+    const dot = normals[0].dot(normals[1]);
+    const center = a.clone().add(normals[0].clone().add(normals[1]).multiplyScalar(-radius / (1 + dot)));
+    const result = applyEdgeTreatments(base, [{
+        id: 'prism-edge', type: 'fillet', size: radius,
+        edge: { a: a.toArray(), b: b.toArray(), normals: normals.map((normal) => normal.toArray()) },
+    }]);
+    const position = result.attributes.position;
+    const indices = result.index ? Array.from(result.index.array) : [];
+    const hasVertex = (expected: THREE.Vector3) => indices.some((index) => new THREE.Vector3().fromBufferAttribute(position, index).distanceTo(expected) < 2e-4);
+    const tangentPoints = normals.map((normal) => center.clone().addScaledVector(normal, radius));
+    const arcMiddle = center.clone().add(normals[0].clone().add(normals[1]).normalize().multiplyScalar(radius));
+    for (const axialPoint of [a, b]) {
+        const offset = axialPoint.clone().sub(a);
+        tangentPoints.forEach((point) => assert.ok(hasVertex(point.clone().add(offset)), 'both face tangency points must be present'));
+        assert.ok(hasVertex(arcMiddle.clone().add(offset)), 'the circular arc midpoint must lie on the non-orthogonal edge fillet');
+    }
+    assert.equal(validateSolidGeometry(result).valid, true);
+    base.dispose(); result.dispose();
 });
 
 test('a full-width edge chamfer produces a closed right triangular prism', () => {

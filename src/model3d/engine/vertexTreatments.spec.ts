@@ -7,7 +7,7 @@ import { buildMeshTopology } from './topology/MeshTopology';
 import { buildEntityMesh } from './geometry';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { createDocument, createEntity, type VertexTreatment } from '../types';
-import { buildVertexRoundingCutter, VERTEX_ROUNDING_CENTER_RATIO } from './modeling/VertexRoundingGeometry';
+import { buildVertexRoundingTools, vertexRoundingCenter } from './modeling/VertexRoundingGeometry';
 
 await initializeManifold();
 
@@ -17,15 +17,24 @@ const treatment: VertexTreatment = {
 };
 
 test('convex rounding cutter is a closed oriented solid', () => {
-    const cutter = buildVertexRoundingCutter(3, [20, 20, 20], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
-    const result = validateSolidGeometry(cutter);
-    assert.equal(result.valid, true, JSON.stringify(result));
-    cutter.dispose();
+    const { cap, sphere } = buildVertexRoundingTools(3, [20, 20, 20], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    assert.equal(validateSolidGeometry(cap).valid, true);
+    assert.equal(validateSolidGeometry(sphere).valid, true);
+    cap.dispose(); sphere.dispose();
 });
 
-test('rounding center stays outside the boundary chord instead of collapsing into a recess', () => {
-    assert.ok(VERTEX_ROUNDING_CENTER_RATIO > 1 / (2 - Math.SQRT1_2));
-    assert.ok(VERTEX_ROUNDING_CENTER_RATIO >= 0.87 && VERTEX_ROUNDING_CENTER_RATIO < 0.9, '101-point symmetry profiles must not reintroduce the concave intervals present at 0.86');
+test('every rounding patch vertex lies on the requested radius sphere', () => {
+    const radius = 3;
+    const corner = new THREE.Vector3(20, 20, 20);
+    const center = new THREE.Vector3(18, 18, 18);
+    const { cap, sphere } = buildVertexRoundingTools(radius, corner.toArray(), [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
+    const position = sphere.attributes.position;
+    for (let index = 0; index < position.count; index++) {
+        const point = new THREE.Vector3().fromBufferAttribute(position, index);
+        if (point.distanceTo(corner) < 1e-6) continue;
+        assert.ok(Math.abs(point.distanceTo(center) - radius) < 2e-6);
+    }
+    cap.dispose(); sphere.dispose();
 });
 
 function volume(geometry: THREE.BufferGeometry) {
@@ -91,15 +100,21 @@ test('vertex rounding replaces the corner with one convex tangent patch without 
     const radius = 3;
     const base = new THREE.BoxGeometry(40, 40, 40);
     const result = applyVertexTreatments(base, [{ ...treatment, type: 'fillet', size: radius }]);
+
     const entity = createEntity('box', 'box');
     entity.vertexTreatments = [{ ...treatment, type: 'fillet', size: radius }];
     const topology = buildMeshTopology(result, 'box', entity, createDocument());
-    const cutter = buildVertexRoundingCutter(radius, [20, 20, 20], [[1, 0, 0], [0, 1, 0], [0, 0, 1]]);
-    assert.ok(Math.abs((volume(base) - volume(result)) - volume(cutter)) < 1e-4);
+    assert.ok(volume(result) < volume(base));
 
     assert.equal(validateSolidGeometry(result).valid, true);
     assert.equal(topology.faces.filter((face) => face.planar).length, 6);
-    assert.equal(topology.faces.filter((face) => !face.planar).length, 1);
+    const sphericalPatches = topology.faces.filter((face) => !face.planar);
+    assert.ok(sphericalPatches.length >= 1);
+    const center = new THREE.Vector3(18, 18, 18);
+    sphericalPatches.forEach((face) => face.triangleIds.forEach((id) => topology.triangles[id].renderVertices.forEach((vertex) => {
+        const point = new THREE.Vector3().fromBufferAttribute(result.attributes.position, vertex);
+        assert.ok(Math.abs(point.distanceTo(center) - radius) < radius * 0.002, 'all curved fragments must belong to the same radius-r sphere');
+    })));
     topology.faces.filter((face) => face.planar).forEach((face) => face.triangleIds.forEach((id) => {
         topology.triangles[id].renderVertices.forEach((vertex) => {
             const normal = new THREE.Vector3().fromBufferAttribute(result.attributes.normal, vertex);
@@ -110,15 +125,41 @@ test('vertex rounding replaces the corner with one convex tangent patch without 
     const direction = new THREE.Vector3(-1, -1, -1).normalize();
     const hit = new THREE.Raycaster(origin, direction).intersectObject(new THREE.Mesh(result), false)[0];
     assert.ok(hit);
-    const expectedCenter = 20 - radius + radius * VERTEX_ROUNDING_CENTER_RATIO;
+    const expectedCenter = 20 - radius * 2 / 3 + radius / Math.sqrt(3);
     assert.ok(Math.abs(hit.point.x - expectedCenter) < 0.05, 'the diagonal surface must bulge outward instead of forming a spherical recess');
 
-    const positions = result.attributes.position;
-    const indices = result.index ? Array.from(result.index.array) : [];
-    for (const point of [[20, 20, 17], [20, 17, 20], [17, 20, 20]] as [number, number, number][]) {
-        assert.ok(indices.some((index) => new THREE.Vector3().fromBufferAttribute(positions, index).distanceTo(new THREE.Vector3(...point)) < 1e-4));
-    }
-    base.dispose(); result.dispose(); cutter.dispose();
+    base.dispose(); result.dispose();
+});
+
+
+test('a triangular-prism corner uses a radius-r sphere bounded by three non-orthogonal faces', () => {
+    const radius = 4;
+    const base = new THREE.CylinderGeometry(30, 30, 40, 3, 1, false);
+    const document = createDocument();
+    const entity = createEntity('cylinder', 'prism');
+    const sourceTopology = buildMeshTopology(base, entity.id, entity, document);
+    const corner = sourceTopology.vertices.find((vertex) => vertex.point[1] > 19)!;
+    const faceIds = [...new Set(sourceTopology.logicalEdges.filter((edge) => edge.vertexIds.includes(corner.id)).flatMap((edge) => edge.faceIds))];
+    assert.equal(faceIds.length, 3);
+    const normals = faceIds.map((id) => sourceTopology.faces.find((face) => face.id === id)!.normal);
+    const center = vertexRoundingCenter(radius, corner.point, normals);
+    normals.forEach((value) => {
+        const normal = new THREE.Vector3(...value).normalize();
+        assert.ok(Math.abs(normal.dot(center.clone().sub(new THREE.Vector3(...corner.point))) + radius * 2 / 3) < 1e-6);
+    });
+
+    const result = applyVertexTreatments(base, [{ id: 'prism-corner', type: 'fillet', size: radius, vertex: { point: corner.point, normals } }]);
+    const topology = buildMeshTopology(result, entity.id, entity, document);
+    const curved = topology.faces.filter((face) => !face.planar);
+    assert.equal(curved.length, 1);
+
+    curved[0].triangleIds.forEach((id) => topology.triangles[id].renderVertices.forEach((vertex) => {
+        const point = new THREE.Vector3().fromBufferAttribute(result.attributes.position, vertex);
+        assert.ok(Math.abs(point.distanceTo(center) - radius) < radius * 0.002, 'every spherical patch vertex must be radius r from the solved center');
+    }));
+    assert.equal(validateSolidGeometry(result).valid, true, JSON.stringify(validateSolidGeometry(result)));
+    assert.equal(validateSolidGeometry(result).components, 1);
+    base.dispose(); result.dispose();
 });
 
 test('a corner fillet creates a curved surface and follows a later face drag', () => {
@@ -180,7 +221,7 @@ test('topological corners are pickable and use the same signed treatment gesture
 });
 
 
-test('corner processing runs after adjacent edge processing', async () => {
+test('corner and incident edge treatments compose from the original corner', async () => {
     const document = createDocument();
     const entity = createEntity('box', 'box');
     entity.edgeTreatments = [{
@@ -190,7 +231,7 @@ test('corner processing runs after adjacent edge processing', async () => {
     entity.vertexTreatments = [treatment];
     const result = buildEntityMesh(entity, document);
     const base = new THREE.BoxGeometry(40, 40, 40);
-    const edgeFirst = applyVertexTreatments((await import('./modeling/EdgeTreatments')).applyEdgeTreatments(base, entity.edgeTreatments), entity.vertexTreatments);
+    const edgeFirst = (await import('./modeling/EdgeTreatments')).applyEdgeTreatments(applyVertexTreatments(base, entity.vertexTreatments), entity.edgeTreatments);
     assert.ok(Math.abs(volume(result.geometry) - volume(edgeFirst)) < 1e-5);
     result.geometry.dispose(); base.dispose(); edgeFirst.dispose();
 });

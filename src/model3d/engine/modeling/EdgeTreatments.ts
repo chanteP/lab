@@ -4,6 +4,8 @@ import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { evaluateBoolean } from './ManifoldKernel';
 import { buildMeshTopology } from '../topology/MeshTopology';
 
+const FILLET_CURVE_SEGMENTS = 32;
+
 function cutter(treatment: EdgeTreatment) {
     const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);
     const tangent = b.clone().sub(a);
@@ -12,24 +14,39 @@ function cutter(treatment: EdgeTreatment) {
     tangent.normalize();
     let u = new THREE.Vector3(...treatment.edge.normals[0]).normalize();
     let v = new THREE.Vector3(...treatment.edge.normals[1]).normalize();
-    if (Math.abs(u.dot(v)) > 0.999) return null;
+    u.addScaledVector(tangent, -u.dot(tangent)).normalize();
+    v.addScaledVector(tangent, -v.dot(tangent)).normalize();
+    const dot = THREE.MathUtils.clamp(u.dot(v), -1, 1);
+    if (Math.abs(dot) > 0.999) return null;
     if (u.clone().cross(v).dot(tangent) < 0) [u, v] = [v, u];
     const w = u.clone().cross(v).normalize();
+    const e2 = w.clone().cross(u).normalize();
     const size = treatment.size;
+
+    // Solve n0·center = n1·center = -r in the plane normal to the edge.
+    // This keeps the arc circular for acute/obtuse dihedral angles instead of skewing a 90° template.
+    const sine = Math.sqrt(Math.max(0, 1 - dot * dot));
+    const center = new THREE.Vector2(-size, -size * sine / (1 + dot));
     const shape = new THREE.Shape();
     shape.moveTo(0, 0);
-    shape.lineTo(-size, 0);
-    if (treatment.type === 'fillet') shape.absarc(-size, -size, size, Math.PI / 2, 0, true);
-    else shape.lineTo(0, -size);
+    if (treatment.type === 'fillet') {
+        const angle = Math.acos(dot);
+        for (let step = 0; step <= FILLET_CURVE_SEGMENTS; step++) {
+            const theta = angle * (1 - step / FILLET_CURVE_SEGMENTS);
+            shape.lineTo(center.x + size * Math.cos(theta), center.y + size * Math.sin(theta));
+        }
+    } else {
+        shape.lineTo(center.x + size * dot, center.y + size * sine);
+        shape.lineTo(center.x + size, center.y);
+    }
     shape.closePath();
     const overlap = Math.max(0.01, size * 0.01);
     const geometry = new THREE.ExtrudeGeometry(shape, {
         depth: length + overlap * 2,
         steps: 1,
         bevelEnabled: false,
-        curveSegments: treatment.type === 'fillet' ? 12 : 1,
     });
-    const matrix = new THREE.Matrix4().makeBasis(u, v, w).setPosition(a.clone().addScaledVector(tangent, -overlap));
+    const matrix = new THREE.Matrix4().makeBasis(u, e2, w).setPosition(a.clone().addScaledVector(tangent, -overlap));
     geometry.applyMatrix4(matrix);
     geometry.computeVertexNormals();
     return geometry;

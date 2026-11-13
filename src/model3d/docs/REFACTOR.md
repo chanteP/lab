@@ -57,7 +57,7 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - `engine/modeling/`：Manifold WASM 生命周期、闭合扫掠体、Face Extrude、提交验证和直接编辑事务；`BakedGeometry.ts` 与 `FeatureReferences.ts` 负责提交烘焙及删除源对象后的 History 引用解除。
 - `engine/viewport/DirectDragController.ts`：面/边箭头的绝对拖拽投影、RAF 合并、结束与取消。
 - `SketchAssetRenderer` 负责图片/SVG 整体轮廓、viewBox 角点和尺寸覆盖层；`SketchAssetDragController`、`SketchGuideController` 分别持有资产手势与参考匹配，避免主 InteractionController 超过职责和行数边界。
-- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，`VertexRoundingGeometry.ts` 用连续四次三角 Bézier 曲面构造外凸角部切削体，与平面相切并在入射边 radius 处终止，不形成凹槽或圆柱，其他角点保持不变。渲染法线在三个棱边终止奇点按原平面拆分，merge vectors 继续维护拓扑对应。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础代理；代理除剩余面偏移外，仅为 Vertex Rounding 开放原顶点和未处理入射边的选择/编辑，边处理源边继续排除。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
+- `engine/modeling/EdgeTreatments.ts` 从原始直线凸边生成圆角/倒角切削体；`VertexTreatments.ts` 以 `trimByPlane` 生成角倒角，`VertexRoundingGeometry.ts` 用原平面角部四面体和半径 r 球体通过 Manifold 布尔构造球面角部切削体，支持非正交三面角，其他角点保持不变。渲染法线在三个棱边终止奇点按原平面拆分，merge vectors 继续维护拓扑对应。边和角共用有符号尺寸事务，内拖为正圆角、外拖为负倒角。`SceneSynchronizer` 保留最终显示网格与不写色、不导出的基础代理；代理除剩余面偏移外，仅为 Vertex Rounding 开放原顶点和未处理入射边的选择/编辑，边处理源边继续排除。生成面通过 `generatedTreatment` 和 treatment ID 继续编辑，`BakedGeometry` 保留未切削基体，防止重复切削。
 - `engine/viewport/EdgePicker.ts`、`TopologyEdges.ts`：逻辑边显示、CSS 像素拾取、遮挡与 Select Through 输入。
 - `GeometrySelector` 只负责将命中转换为 logical face/edge anchor；`SceneSynchronizer` 一次性发布 mesh、拓扑、显示边和来源关系。
 - `GeometryAnchor` 在视口层保存 owner、矩阵快照和代理来源；`GuideRenderer.updateAnimation` 在矩阵变化时刷新 active 与粗箭头，`GeometrySelector.rebindAnchor` 在场景重建后按来源和带符号法向重取当前面，并对所有 `generatedTreatment` 生效，不再只处理 `type=face`。`applyMeshEdgeTreatments` 随 mesh 发布 resolved treatments，保证面编辑后的圆角曲面分类、选择和 active 使用相同坐标。`Viewport.sync` 统一执行重绑，Transform 和 Face Extrude 不再依赖 blur 或独立世界坐标补偿。
@@ -249,3 +249,4 @@ App 可以保留跨组件的建模操作状态，但固定 Sidebar、建模工�
 - 2026-11-12：稳定版标记为 `model3d-stable`；新增 `io/webmcp.ts` 与 `docs/WEBMCP.md`，注册项目、实体、草图、生成、工具、历史六域 WebMCP，并提供 `window.model3dMCP` 本地入口、面拓扑检查及真实草图拉伸/封闭与开口 Shell/面推拉回归；新增车削预览事务，多封闭草图分别显示粗箭头并共享批量拉伸，3D 提示补 Command/Ctrl 框选，WebMCP 同步轴向工具，并在工具描述和文档中明确默认 XZ 草图平面、Y-top（+Y 向上）、u=+X/v=-Z。；按 Shapr3D Revolve 重做车削交互：移除独立“绕轴”和整个 Body 自动取最大面，固定所选封闭草图/平面后必须显式选择共面草图直线、实体线性边或网格轴，未选轴不预览；Angle 默认 360°，可选 Elevation。任意轴映射到截面局部坐标并统一轮廓绕向，支持负侧局部扫掠；浏览器验证完整/局部预览及实体边提交生成新实体。
 
 - 2026-11-13：3D 工具栏顶部新增默认“选择”和“拖拽”；普通选择不再隐式进入移动，显式变换工具仍跨选择保留；工具失败统一恢复选择，拖拽与 Space 共用左键平移且屏蔽单击/双击拾取；边/角倒角拖拽期间保留来源粗箭头和带符号长度输入，松手后仍按最终拓扑隐藏已移除来源，补工具状态与拖拽显示回归。
+- 2026-11-13：重写边/角圆角几何：棱边在垂直于棱的截面内联合求解圆心，以 32 段圆弧生成与两个相邻面距离均为 r 的真实圆柱曲面，修复三棱柱非直角棱被斜射成近似倒角的问题；顶角改为原平面四面体与半径 r 球体的内核布尔切削，支持非直角三棱柱和入射棱组合处理，补圆柱切点、球半径、闭合拓扑和组合回归。
