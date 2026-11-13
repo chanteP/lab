@@ -9,6 +9,7 @@ import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { DirectEditTransaction } from '../engine/modeling/DirectEditTransaction';
 import { bakeEntityGeometry } from '../engine/modeling/BakedGeometry';
 import { uid } from '../utils/id';
+import { recoverSelectionTool } from '../utils/viewTool';
 import { cloneEntity, uniqueEntityName } from '../utils/entity';
 import {
     cloneDocument, createEntity,
@@ -50,6 +51,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     let directRequestedDistance: number | null = null;
     let directErrorShown = false;
     let extrudeGestureMoved = false;
+    const recover = () => recoverSelectionTool(activeTool, viewport);
 
     const canBoolean = computed(() => selectedEntities.value.filter((item) => !['sketch', 'image'].includes(item.kind)).length >= 2);
     const booleanCanCommit = computed(() => {
@@ -83,7 +85,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     function applyBoolean(type: BooleanOperation) {
         if (operation.value || !canBoolean.value) return;
         const bodies = selectedEntities.value.filter((item) => !['sketch', 'image'].includes(item.kind));
-        if (bodies.length < 2) return message.warning('请选择至少两个实体 Body');
+        if (bodies.length < 2) { message.warning('请选择至少两个实体 Body'); recover(); return; }
         const before = cloneDocument(document.value);
         pushHistory();
         operation.value = {
@@ -204,6 +206,14 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         viewport()?.setBooleanPreview(draft);
     }
     function doneOperation() {
+        if (!operation.value) return;
+        try { commitOperation(); }
+        catch (error) {
+            message.error(error instanceof Error ? `操作失败：${error.message}` : '操作失败，已恢复原实体');
+            cancelOperation();
+        }
+    }
+    function commitOperation() {
         const current = operation.value;
         if (!current) return;
         if (current.type === 'extrude') {
@@ -215,9 +225,9 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             });
             let selectedId = current.combinedResultId || current.bodyId;
             if (current.result !== 'new') {
-                if (!current.targetId) return message.warning('请选择自动布尔的目标 Body');
+                if (!current.targetId) { message.warning('请选择自动布尔的目标 Body'); cancelOperation(); return; }
                 const target = document.value.entities.find((item) => item.id === current.targetId);
-                if (!target || !body) return;
+                if (!target || !body) { cancelOperation(); return; }
                 const result: ModelEntity = {
                     id: uid(), parentId: body.parentId, name: `拉伸${current.result === 'union' ? '并集' : current.result === 'subtract' ? '差集' : '交集'} ${document.value.entities.length + 1}`,
                     kind: 'boolean', color: body.color, visible: true, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
@@ -234,7 +244,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             });
             selectedIds.value = [selectedId];
         } else {
-            if (!booleanCanCommit.value) return;
+            if (!booleanCanCommit.value) { cancelOperation(); return; }
             const targetId = current.operandIds[0];
             const target = document.value.entities.find((item) => item.id === targetId);
             viewport()?.setBooleanPreview(null);
@@ -326,7 +336,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
     function updateFaceOffsetInput(value: number | null) {
         const item = selected.value;
         const anchor = viewport()?.getGeometryAnchor();
-        if (!item || value === null || !anchor || anchor.type !== 'face') return message.warning('请先选择一个实体平面');
+        if (!item || value === null || !anchor || anchor.type !== 'face') { message.warning('请先选择一个实体平面'); recover(); return; }
         onDirectEdit(item.id, anchor.localNormal, 0, 'start', anchor);
         onDirectEdit(item.id, anchor.localNormal, value, 'move');
         onDirectEdit(item.id, anchor.localNormal, value, 'end');
@@ -347,7 +357,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
         const item = document.value.entities.find((entity) => entity.id === id);
         if (!item) return;
         if (phase === 'start') {
-            if (!anchor || anchor.type !== 'face' || !anchor.planar || !anchor.vertices.length) return message.warning('只有完整平面区域支持推拉');
+            if (!anchor || anchor.type !== 'face' || !anchor.planar || !anchor.vertices.length) { message.warning('只有完整平面区域支持推拉'); recover(); return; }
             if (activeTool.value === 'select') setTool('offsetFace');
             directTransaction = new DirectEditTransaction(item, anchor, normal);
             directRequestedDistance = null;
@@ -383,6 +393,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
             item.faceOffset = previousOffset;
             if (!directErrorShown) message.error(error instanceof Error ? error.message : '无法计算当前面拉伸');
             directErrorShown = true;
+            recover();
         }
     }
 
@@ -414,6 +425,7 @@ export function useModelingOperations(options: ModelingOperationsOptions) {
                 item.faceOffset = transaction.baseEntity.faceOffset || null;
                 if (directHistoryPushed) popHistory();
                 message.error(error instanceof Error ? `提交失败：${error.message}` : '提交失败，已保留原实体');
+                recover();
             }
         }
         transaction.close();

@@ -8,6 +8,7 @@ import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import type { Viewport, ViewTool } from '../engine/Viewport';
 import type { ModelDocument, ModelEntity } from '../types';
 import { cloneEntity } from '../utils/entity';
+import { recoverSelectionTool } from '../utils/viewTool';
 
 interface ShellOperationsOptions {
     document: Ref<ModelDocument>;
@@ -31,6 +32,10 @@ type ShellSession = {
 /** Two-step shell transaction: viewport-only previews, then one document/history commit. */
 export function useShellOperations(options: ShellOperationsOptions) {
     const { document, selectedIds, activeTool, viewport, message, pushHistory, popHistory, inputLength } = options;
+    const recover = () => {
+        finish();
+        recoverSelectionTool(activeTool, viewport);
+    };
     const thickness = ref(2);
     const session = shallowRef<ShellSession | null>(null);
     let previewGeneration = 0;
@@ -77,14 +82,14 @@ export function useShellOperations(options: ShellOperationsOptions) {
     const schedulePreview = useDebounceFn((request: { value: number; generation: number }) => {
         if (!session.value || request.generation !== previewGeneration) return;
         try { showPreview(session.value, request.value); }
-        catch (error) { message.error(`抽壳预览失败：${error instanceof Error ? error.message : error}`); }
+        catch (error) { message.error(`抽壳预览失败：${error instanceof Error ? error.message : error}`); recover(); }
     }, 120);
 
     function start() {
         const anchors = viewport()?.getGeometryAnchors().filter((anchor) => anchor.type === 'face' && anchor.planar) || [];
         const body = anchors.length ? null : options.bodySelection();
         const entities = body ? [body] : anchors.map((anchor) => document.value.entities.find((entity) => entity.id === anchor.id)).filter(Boolean) as ModelEntity[];
-        if (!entities.length || entities.some((entity) => ['sketch', 'image'].includes(entity.kind))) return message.warning('请先选择一个实体或实体平面');
+        if (!entities.length || entities.some((entity) => ['sketch', 'image'].includes(entity.kind))) { message.warning('请先选择一个实体或实体平面'); recover(); return; }
         finish();
         const current: ShellSession = {
             originals: new Map(entities.map((entity) => [entity.id, cloneEntity(entity)])),
@@ -100,8 +105,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
             viewport()?.clearGeometrySelection();
         } catch (error) {
             finish();
-            activeTool.value = 'select';
-            viewport()?.setTool('select');
+            recover();
             message.error(`抽壳失败：${error instanceof Error ? error.message : error}`);
         }
     }
@@ -137,11 +141,11 @@ export function useShellOperations(options: ShellOperationsOptions) {
             const entity = document.value.entities.find((item) => item.id === id);
             if (entity) currentBodies.set(id, cloneEntity(entity));
         });
-        if (currentBodies.size !== current.originals.size) return message.error('抽壳实体已不存在'), false;
+        if (currentBodies.size !== current.originals.size) { message.error('抽壳实体已不存在'); recover(); return false; }
         previewGeneration++;
         let finalPreviews: Map<string, THREE.BufferGeometry>;
         try { finalPreviews = buildPreviews(current, inputLength(thickness.value)); }
-        catch (error) { message.error(`抽壳失败：${error instanceof Error ? error.message : error}`); return false; }
+        catch (error) { message.error(`抽壳失败：${error instanceof Error ? error.message : error}`); recover(); return false; }
         pushHistory();
         try {
             current.originals.forEach((original, id) => {
@@ -162,6 +166,7 @@ export function useShellOperations(options: ShellOperationsOptions) {
             popHistory();
             finalPreviews.forEach((geometry) => geometry.dispose());
             message.error(`抽壳失败：${error instanceof Error ? error.message : error}`);
+            recover();
             return false;
         }
     }

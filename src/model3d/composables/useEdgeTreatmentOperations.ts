@@ -8,6 +8,7 @@ import { resolveEdgeTreatment, treatmentFromAnchor } from '../engine/modeling/Ed
 import { resolveVertexTreatment, vertexTreatmentFromAnchor } from '../engine/modeling/VertexTreatments';
 import { cloneEntity } from '../utils/entity';
 import { uid } from '../utils/id';
+import { recoverSelectionTool } from '../utils/viewTool';
 import type { EdgeTreatment, ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../types';
 
 interface EdgeTreatmentOptions {
@@ -36,7 +37,8 @@ const signedValue = (treatment: Treatment) => treatment.type === 'fillet' ? trea
 
 /** Signed edge/vertex treatment gestures: inward is fillet (+), outward is chamfer (-). */
 export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
-    const { document, viewport, message, pushHistory, popHistory } = options;
+    const { document, activeTool, viewport, message, pushHistory, popHistory } = options;
+    const recover = () => recoverSelectionTool(activeTool, viewport);
     let transaction: Transaction | null = null;
 
     function straightAnchor(anchor: GeometryAnchor) {
@@ -52,14 +54,14 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
     function begin(id: string, anchor?: GeometryAnchor) {
         const item = document.value.entities.find((entity) => entity.id === id);
         const kind = anchor?.type === 'vertex' ? 'vertex' : anchor?.type === 'edge' ? 'edge' : null;
-        if (!item || !anchor || !kind) return message.warning('请先选择实体边或角点');
-        if (kind === 'edge' && !anchor.generatedTreatment && !straightAnchor(anchor)) return message.warning('当前仅支持直线边圆角和倒角');
-        if (kind === 'vertex' && (anchor.localVertex?.normals.length || 0) < 3) return message.warning('该角点缺少至少三个相邻面');
+        if (!item || !anchor || !kind) { message.warning('请先选择实体边或角点'); recover(); return; }
+        if (kind === 'edge' && !anchor.generatedTreatment && !straightAnchor(anchor)) { message.warning('当前仅支持直线边圆角和倒角'); recover(); return; }
+        if (kind === 'vertex' && (anchor.localVertex?.normals.length || 0) < 3) { message.warning('该角点缺少至少三个相邻面'); recover(); return; }
         const existing = anchor.generatedTreatment || !anchor.finalTopology
             ? kind === 'edge' ? resolveEdgeTreatment(item, anchor) : resolveVertexTreatment(item, anchor)
             : null;
         const treatment = existing || (kind === 'edge' ? treatmentFromAnchor(anchor, 'fillet', uid()) : vertexTreatmentFromAnchor(anchor, uid()));
-        if (!treatment) return message.warning('无法识别相邻面');
+        if (!treatment) { message.warning('无法识别相邻面'); recover(); return; }
         const mesh = buildEntityMesh(item, document.value);
         mesh.geometry.computeBoundingBox();
         const size = mesh.geometry.boundingBox!.getSize(new THREE.Vector3());
@@ -138,7 +140,7 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
 
     function updateEdgeTreatmentDistance(value: number | null) {
         const anchor = viewport()?.getGeometryAnchor();
-        if (value === null || !anchor || !['edge', 'vertex'].includes(anchor.type)) return message.warning('请先选择实体边或角点');
+        if (value === null || !anchor || !['edge', 'vertex'].includes(anchor.type)) { message.warning('请先选择实体边或角点'); recover(); return; }
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, 0, 'start', anchor);
         if (!transaction) return;
         onEdgeTreatmentEdit(anchor.id, anchor.localNormal, transaction.baseValue - value, 'move');

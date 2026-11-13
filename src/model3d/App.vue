@@ -50,6 +50,7 @@ import { SIDEBAR_LAYOUT, STORAGE_KEYS } from './config/const';
 import { DISPLAY_MODES, LENGTH_UNITS, normalizeDisplayMode } from './config/configs';
 import { computeSketchFaces } from './engine/sketchFaces';
 import { sketchMarqueeSelection, type SketchMarqueeRect } from './engine/sketchMarquee';
+import { toolAfterSelection } from './utils/viewTool';
 import {
     cloneDocument, createDocument,
     type DisplayMode, type ModelDocument, type ModelEntity, type Point2, type Vec3, type PrimaryPanel, type PrimitiveKind, type SelectionKind, type SketchReferenceGuide,
@@ -306,10 +307,15 @@ function togglePanel(panel: PrimaryPanel) {
     if (sketchMode.value && panel !== 'sketch') cancelSketch();
     activePanel.value = activePanel.value === panel ? null : panel;
 }
-function selectionTransformTool(fallback: ViewTool = 'translate'): ViewTool {
-    return ['translate', 'rotate', 'scale'].includes(activeTool.value) ? activeTool.value : fallback;
+function selectionTransformTool(): ViewTool {
+    return toolAfterSelection(activeTool.value);
 }
 function chooseTool(tool: ViewTool) {
+    if (['select', 'pan'].includes(tool)) {
+        activePanel.value = null;
+        setTool(tool);
+        return;
+    }
     if (activeTool.value === tool && !operation.value) {
         parameterCardOpen.value = !parameterCardOpen.value;
         return;
@@ -479,7 +485,7 @@ function selectFromItems(id: string | null, additive: boolean) {
     parameterCardOpen.value = true;
     if (additive) return;
     const entity = document.value.entities.find((item) => item.id === id);
-    if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool(selectionTransformTool('select')); }
+    if (entity?.kind === 'sketch') { selectionKind.value = 'sketch'; setTool(selectionTransformTool()); }
     else if (entity && entity.kind !== 'boolean') setTool(selectionTransformTool());
 }
 function selectRangeFromItems(ids: string[]) {
@@ -496,7 +502,7 @@ function selectRangeFromItems(ids: string[]) {
     selectionKind.value = ids.length === 1 ? 'body' : 'mixed';
     activePanel.value = null;
     parameterCardOpen.value = true;
-    setTool(selectionTransformTool('select'));
+    setTool(selectionTransformTool());
 }
 function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: Vec3, point: Vec3, additive = false, profileFace?: Point2[]) {
     cancelShellForSelection();
@@ -517,13 +523,13 @@ function onGeometrySelect(id: string, type: 'face' | 'edge' | 'vertex', normal: 
     if (additive && type === 'face' && !profileFace) {
         selectedIds.value = [...new Set(anchors.map((anchor) => anchor.id))];
         selectionKind.value = anchors.length ? 'face' : null;
-        setTool(selectionTransformTool('select'));
+        setTool(selectionTransformTool());
         return;
     }
     selectEntity(id, additive);
     selectionKind.value = additive ? 'mixed' : profileFace ? 'face' : picked && ['sketch', 'image'].includes(picked.kind) ? 'sketch' : type;
-    if (additive) { setTool(selectionTransformTool('select')); return; }
-    setTool(selectionTransformTool('select'));
+    if (additive) { setTool(selectionTransformTool()); return; }
+    setTool(selectionTransformTool());
 }
 function onBodySelect(id: string) {
     cancelShellForSelection();
@@ -532,7 +538,7 @@ function onBodySelect(id: string) {
     selectEntity(id);
     if (['sketch', 'image'].includes(document.value.entities.find((item) => item.id === id)?.kind || '')) {
         selectionKind.value = 'sketch';
-        setTool(selectionTransformTool('select'));
+        setTool(selectionTransformTool());
         return;
     }
     selectionKind.value = 'body';
@@ -633,6 +639,7 @@ function onKeyDown(event: KeyboardEvent) {
         else if (!symmetryActive.value && !linearPatternActive.value && !radialPatternActive.value) deleteCurrentSelection();
     }
     else if (event.code === 'KeyV') sketchMode.value ? chooseSketchSelection() : setTool('select');
+    else if (event.code === 'KeyH' && !sketchMode.value) setTool('pan');
     else if (event.code === 'KeyG') sketchMode.value ? chooseSketchTransform('translate') : setTool('translate');
     else if (event.code === 'KeyR') sketchMode.value ? chooseSketchTransform('rotate') : setTool('rotate');
     else if (event.code === 'KeyS' && (sketchMode.value || selectionKind.value !== 'plane')) sketchMode.value ? chooseSketchTransform('scale') : setTool('scale');

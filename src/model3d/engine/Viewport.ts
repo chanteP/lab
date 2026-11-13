@@ -19,7 +19,7 @@ import { resolveEdgeTreatmentAnchor } from './viewport/edgeTreatmentAnchor';
 import { resolveVertexTreatment } from './modeling/VertexTreatments';
 import { guideScreenPosition, type SketchRulerFrame } from './sketchRulers';
 
-export type ViewTool = 'select' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer' | 'shell' | 'revolve';
+export type ViewTool = 'select' | 'pan' | 'translate' | 'rotate' | 'scale' | 'offsetFace' | 'extrude' | 'fillet' | 'chamfer' | 'shell' | 'revolve';
 export type ViewportStats = { vertices: number; triangles: number; objects: number; selection: SelectionStats | null };
 export type { CameraView } from './viewport/CameraController';
 import type { CameraView } from './viewport/CameraController';

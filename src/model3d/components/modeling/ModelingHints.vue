@@ -12,6 +12,7 @@ const props = defineProps<{
     operation: OperationState | null;
 }>();
 const title = computed(() => {
+    if (props.activeTool === 'pan') return '抓手';
     if (props.measureMode) return '测量';
     if (props.operation?.type === 'extrude') return '拉伸';
     if (props.operation?.type === 'boolean') return '布尔运算';
@@ -29,6 +30,7 @@ const title = computed(() => {
     return '3D 建模';
 });
 const items = computed(() => {
+    if (props.activeTool === 'pan') return ['拖动渲染区平移视图，不会选择或修改元素。', 'V：选择；G / R / S：变换；Esc：返回选择。'];
     if (props.measureMode) return ['依次单击两个位置，读取总距离和轴向距离。', '右键或再次点击测量按钮退出。', '滚轮缩放，Space + 拖动平移。'];
     if (props.operation?.type === 'extrude') return ['拖动粗箭头，或在箭头旁输入距离。', 'E：切换单侧 / 对称拉伸。', 'Enter：完成；Esc：取消。'];
     if (props.operation?.type === 'boolean') return ['点击模型中心 + / −，切换保留或去除。', '全部为 − 时不可完成；点击空白或 Enter 完成。', 'Esc：取消并恢复素材。'];

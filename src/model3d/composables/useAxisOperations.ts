@@ -7,6 +7,7 @@ import type { Viewport, ViewTool } from '../engine/Viewport';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { createEntity, type ModelDocument, type ModelEntity, type SelectionKind, type SketchPlane, type Vec3 } from '../types';
 import { uid } from '../utils/id';
+import { recoverSelectionTool } from '../utils/viewTool';
 
 interface AxisOperationsOptions {
     document: Ref<ModelDocument>;
@@ -34,6 +35,10 @@ interface RevolveInput {
 /** Shapr3D-style profile -> axis -> angle revolve transaction. */
 export function useAxisOperations(options: AxisOperationsOptions) {
     const { document, selectedIds, selectedEntities, selectionKind, activeTool, viewport, message, pushHistory } = options;
+    const recover = () => {
+        finish();
+        recoverSelectionTool(activeTool, viewport);
+    };
     const session = shallowRef<RevolveInput | null>(null);
     const axis = shallowRef<RevolveAxis | null>(null);
     const localAxis = shallowRef<LocalRevolveAxis | null>(null);
@@ -191,12 +196,13 @@ export function useAxisOperations(options: AxisOperationsOptions) {
         } catch (error) {
             viewport()?.setShellPreview(null);
             message.error(error instanceof Error ? error.message : String(error));
+            recover();
         }
     }
 
     function setAxis(candidate: RevolveAxis) {
         const converted = toLocalAxis(candidate);
-        if (!converted) { message.error('旋转轴必须与截面位于同一平面'); return false; }
+        if (!converted) { message.error('旋转轴必须与截面位于同一平面'); recover(); return false; }
         axis.value = candidate;
         localAxis.value = converted;
         preview();
@@ -206,7 +212,7 @@ export function useAxisOperations(options: AxisOperationsOptions) {
 
     function pickAxis(candidate: RevolveAxis | null) {
         if (!session.value) return false;
-        if (!candidate) message.warning('请选择草图直线或实体线性边作为旋转轴');
+        if (!candidate) { message.warning('请选择草图直线或实体线性边作为旋转轴'); recover(); }
         else {
             gridAxis.value = null;
             setAxis(candidate);
@@ -259,7 +265,7 @@ export function useAxisOperations(options: AxisOperationsOptions) {
 
     function commit() {
         if (!session.value) return false;
-        if (!localAxis.value) { message.error('请先选择旋转轴'); return false; }
+        if (!localAxis.value) { message.error('请先选择旋转轴'); recover(); return false; }
         try {
             const input = session.value;
             const geometry = evaluateRevolve(input.profile, input.document, localAxis.value, angle.value, offset.value);
@@ -279,7 +285,7 @@ export function useAxisOperations(options: AxisOperationsOptions) {
             selectionKind.value = 'body';
             finish();
             return true;
-        } catch (error) { message.error(error instanceof Error ? error.message : String(error)); return false; }
+        } catch (error) { message.error(error instanceof Error ? error.message : String(error)); recover(); return false; }
     }
 
     function finish() {

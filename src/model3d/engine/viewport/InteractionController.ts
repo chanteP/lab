@@ -25,6 +25,7 @@ import { SketchAssetDragController } from './SketchAssetDragController';
 import { SketchGuideController, type SketchGuideOptions } from './SketchGuideController';
 import { isStandardClosedShape, snapWholeShapeTranslation, standardShapeEntityFromFaces, wholeShapeControlPoints } from '../sketchWholeShapeSnap';
 import type { InteractionOptions } from './InteractionOptions';
+import { shouldPanLeftDrag } from '../../utils/viewTool';
 
 function isVertexRoundingProxyHit(hit: THREE.Intersection | null) {
     let owner: THREE.Object3D | null = hit?.object || null;
@@ -259,8 +260,7 @@ export class InteractionController {
         this.spacePressed = false;
         this.spaceDragMoved = false;
         this.spaceHover = null;
-        this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-        this.container.classList.remove('is-panning');
+        this.updateOrbitRotation();
         this.callbacks.onSpaceChange(false);
     }
 
@@ -271,7 +271,17 @@ export class InteractionController {
     }
 
     updateOrbitRotation() {
+        const panning = shouldPanLeftDrag(this.tool, this.spacePressed);
+        this.controls.mouseButtons.LEFT = panning ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+        this.container.classList.toggle('is-panning', panning);
         this.controls.enableRotate = !this.sketchMode && !this.measureMode;
+        if (this.tool === 'pan') {
+            this.clearHoverFace();
+            this.hoverFaceAnchor = null;
+            this.hoverGeometry = null;
+            this.setSketchHovers([]);
+            this.refreshFaceFeedback();
+        }
     }
 
     hasSketchContentAt(event: PointerEvent) {
@@ -751,6 +761,7 @@ export class InteractionController {
             if (!event.buttons) this.sketchOperationPoint(event);
             return;
         }
+        if (this.tool === 'pan' && !this.sketchMode) return;
         if (this.measureMode && this.measurePoints.length < 2) {
             const hit = this.hitEntity(event);
             if (hit) this.showHoverFace(hit);
@@ -843,6 +854,8 @@ export class InteractionController {
     }
     private onPointerUp(event: PointerEvent) {
         this.releasePointer(event);
+        // The pan tool leaves pointer events to OrbitControls and never enters entity picking.
+        if (this.tool === 'pan' && !this.sketchMode && event.button === 0) return;
         if (this.sketchMode && (this.spacePressed || this.spaceSketchPointerBlocked)) {
             this.clearSketchReferences();
             this.spaceSketchPointerBlocked = false;
@@ -1100,7 +1113,7 @@ export class InteractionController {
     private addMeasurePoint(point: THREE.Vector3) { this.measurementRenderer.addPoint(point); }
     private addSketchMeasurePoint(point: Point2) { this.measurementRenderer.addSketchPoint(this.sketchRenderer.world(point, 0.4)); }
     private onDoubleClick(event: MouseEvent) {
-        if (this.measureMode) return;
+        if (this.measureMode || (this.tool === 'pan' && !this.sketchMode)) return;
         if (this.gizmo.contains(event as unknown as PointerEvent)) {
             event.preventDefault();
             event.stopImmediatePropagation();

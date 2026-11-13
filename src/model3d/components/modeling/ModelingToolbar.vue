@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { NIcon, NPopover } from 'naive-ui';
-import { AddOutline, EyeOutline, FolderOpenOutline, LayersOutline, MoveOutline, PencilOutline, RemoveOutline, RepeatOutline, ResizeOutline, TimeOutline } from '@vicons/ionicons5';
+import { AddOutline, EyeOutline, FolderOpenOutline, HandLeftOutline, LayersOutline, MoveOutline, PencilOutline, RemoveOutline, RepeatOutline, ResizeOutline, TimeOutline } from '@vicons/ionicons5';
 import ViewportToolItem from '../ui/ViewportToolItem.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
 
@@ -35,6 +35,10 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 <template>
     <nav class="vertical-toolbar" :class="{ 'toolbar-leave': sketchMode || activePanel }" aria-label="建模工具">
         <div class="toolbar-section toolbar-top">
+            <div class="tool-group navigation-tools" aria-label="视口工具">
+                <ViewportToolItem :description-on-hover="false" label="选择" :active="activeTool === 'select'" @click="emit('tool', 'select')"><SvgIcon name="select" /></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="抓手" :active="activeTool === 'pan'" @click="emit('tool', 'pan')"><NIcon><HandLeftOutline /></NIcon></ViewportToolItem>
+            </div>
             <div class="tool-group primary-tools">
                 <ViewportToolItem :description-on-hover="false" label="构造平面" :active="activePanel === 'construct'" @click="emit('panel', 'construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
                 <ViewportToolItem :description-on-hover="false" label="草图" :active="activePanel === 'sketch' || sketchMode" @click="emit('sketch')"><SvgIcon name="pencil" /></ViewportToolItem>
@@ -79,6 +83,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
 .toolbar-top { max-height: calc(100% - 100px); }
 .toolbar-bottom { flex: 0 0 auto; }
 .menu-state { padding: 5px 2px 7px; color: var(--model3d-ui-738079); font-size: 8px; text-align: center; }
+.navigation-tools { padding-bottom: 8px !important; border-bottom: 1px solid var(--model3d-ui-e3e8e5); }
 .tool-group { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 auto; gap: 3px; padding: 4px 0; }
 .vertical-toolbar .primary-tools :deep(.viewport-tool-item) { height: auto; min-height: 40px; }
 .advanced-tools { margin-top: 8px; padding-top: 8px !important; border-top: 1px solid var(--model3d-ui-e3e8e5); }
