@@ -227,6 +227,49 @@ test('signed edge gestures switch between fillet and chamfer and keep the overla
 });
 
 
+test('source edge and corner keep their arrow and signed input during direct dragging', () => {
+    for (const type of ['edge', 'vertex'] as const) {
+        const document = createDocument();
+        const entity = createEntity('box', 'box');
+        const corner: VertexTreatment = {
+            id: 'drag-corner', type: 'chamfer', size: 3,
+            vertex: { point: [20, 20, 20], normals: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+        };
+        if (type === 'edge') entity.edgeTreatments = [treatment];
+        else entity.vertexTreatments = [corner];
+        document.entities.push(entity);
+        const geometryAnchor: GeometryAnchor = type === 'edge' ? {
+            ...edgeAnchor(), edgeTreatmentId: treatment.id,
+        } : {
+            id: 'box', key: 'box:vertex:drag', type, planar: false,
+            normal: [1, 1, 1], localNormal: [1, 1, 1], point: [20, 20, 20], vertices: [[20, 20, 20]], indices: [0],
+            localVertex: corner.vertex, vertexTreatmentId: corner.id,
+        };
+        const overlay = new OverlayController();
+        let dragging = true;
+        const guide = new GuideRenderer({
+            overlay, model: new THREE.Group(), renderer: { domElement: { clientWidth: 800, clientHeight: 600 } } as THREE.WebGLRenderer,
+            getSelected: () => ['box'], getTool: () => 'select', getGeometryAnchor: () => geometryAnchor,
+            getHoverFaceAnchor: () => null, getSectionPlane: () => null, isSketchMode: () => false, getLengthUnit: () => 'mm',
+            isDirectDragging: () => dragging,
+        });
+        const camera = new THREE.OrthographicCamera();
+        camera.position.z = 100;
+        camera.updateMatrixWorld(true);
+
+        guide.update(document);
+        assert.equal(guide.group.children.length, 1, `${type} arrow must remain visible while dragging`);
+        const input = overlay.project(camera, { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement)
+            .find((item) => item.kind === 'dimension' && item.target.kind === 'edgeTreatment');
+        assert.equal(input?.kind === 'dimension' ? input.value : null, -3, `${type} input must remain visible with its signed value`);
+
+        dragging = false;
+        guide.update(document);
+        assert.equal(guide.group.children.length, 0, `${type} removed source is hidden again after commit`);
+        guide.dispose();
+    }
+});
+
 test('generated corner chamfer and fillet faces own their active surface and treatment anchor', () => {
     for (const type of ['chamfer', 'fillet'] as const) {
         const corner: VertexTreatment = {

@@ -200,6 +200,7 @@ export class Viewport {
             isSketchMode: () => this.sketchMode,
             getLengthUnit: () => this.lengthUnit,
             getDocument: () => this.sceneSynchronizer.document,
+            isDirectDragging: () => this.interaction?.directEditing || false,
         });
         this.engine.scene.add(
             this.sceneSynchronizer.model,

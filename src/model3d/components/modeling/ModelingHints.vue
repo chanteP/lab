@@ -12,7 +12,7 @@ const props = defineProps<{
     operation: OperationState | null;
 }>();
 const title = computed(() => {
-    if (props.activeTool === 'pan') return '抓手';
+    if (props.activeTool === 'pan') return '拖拽';
     if (props.measureMode) return '测量';
     if (props.operation?.type === 'extrude') return '拉伸';
     if (props.operation?.type === 'boolean') return '布尔运算';

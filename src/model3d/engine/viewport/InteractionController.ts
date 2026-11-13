@@ -99,6 +99,7 @@ export class InteractionController {
     private get sketch() { return this.sketchRenderer.group; }
     private get guides() { return this.guideRenderer.group; }
     private get measurePoints() { return this.measurementRenderer.points; }
+    get directEditing() { return this.directEditor.active; }
     private get tool() { return this.getTool(); }
     private get sketchMode() { return this.isSketchMode(); }
     private get sketchProfileType() { return this.sketchRenderer.profileType; }

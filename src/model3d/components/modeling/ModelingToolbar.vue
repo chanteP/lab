@@ -37,7 +37,7 @@ const historyNames: Record<string, string> = { sketch: '草图', extrude: '拉�
         <div class="toolbar-section toolbar-top">
             <div class="tool-group navigation-tools" aria-label="视口工具">
                 <ViewportToolItem :description-on-hover="false" label="选择" :active="activeTool === 'select'" @click="emit('tool', 'select')"><SvgIcon name="select" /></ViewportToolItem>
-                <ViewportToolItem :description-on-hover="false" label="抓手" :active="activeTool === 'pan'" @click="emit('tool', 'pan')"><NIcon><HandLeftOutline /></NIcon></ViewportToolItem>
+                <ViewportToolItem :description-on-hover="false" label="拖拽" :active="activeTool === 'pan'" @click="emit('tool', 'pan')"><NIcon><HandLeftOutline /></NIcon></ViewportToolItem>
             </div>
             <div class="tool-group primary-tools">
                 <ViewportToolItem :description-on-hover="false" label="构造平面" :active="activePanel === 'construct'" @click="emit('panel', 'construct')"><NIcon><LayersOutline /></NIcon></ViewportToolItem>
