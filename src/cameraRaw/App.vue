@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { NIcon, NModal, NProgress } from 'naive-ui';
-import { Add, AnalyticsOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, RefreshOutline, Remove, ShapesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
+import { Add, AnalyticsOutline, ArrowRedo, ArrowUndoOutline, BookmarksOutline, CameraOutline, CloudDownloadOutline, CropOutline, DownloadOutline, EyeOutline, FolderOpenOutline, GitCompareOutline, HardwareChipOutline, ImagesOutline, InformationCircleOutline, OptionsOutline, RefreshOutline, Remove, ShapesOutline, SyncOutline, TrashOutline } from '@vicons/ionicons5';
 import { activeAsset, assets, canRedo, canUndo, importFiles, navigate, notice, redo, removeSelected, selectedIds, syncToSelected, undo } from './store';
 import type { AdjustmentSection, MaskAdjustmentSection } from './engine/adjustments';
 import { ADJUSTMENT_SECTION_LABELS, ADJUSTMENT_SECTIONS, hasSectionAdjustments, resetAdjustmentSection, withAdjustmentSectionsReset } from './engine/adjustments';
@@ -16,17 +16,20 @@ import { importDcp, loadDcp, loadDcpCatalog } from './io/dcp';
 import type { DcpCatalogEntry, DcpProfile } from './engine/dcp/types';
 import type { ImageMask, MaskShape, MaskTool } from './engine/masks/types';
 import { createMask } from './engine/masks/mask';
-import type { ImageAsset } from './types';
+import type { CropSettings, ImageAsset } from './types';
+import { cropDimensions, hasCrop } from './engine/crop';
 import ImageViewer from './components/ImageViewer.vue';
 import AdjustmentPanel from './components/AdjustmentPanel.vue';
 import FilmStrip from './components/FilmStrip.vue';
 import Histogram from './components/Histogram.vue';
 import MetadataDialog from './components/MetadataDialog.vue';
+import CropPanel from './components/CropPanel.vue';
 
 const panels = [
     { id: 'adjustments', label: '调整', icon: OptionsOutline },
     { id: 'presets', label: '预设', icon: BookmarksOutline },
     { id: 'masking', label: '蒙版', icon: ShapesOutline },
+    { id: 'crop', label: '裁剪', icon: CropOutline },
 ];
 const panel = ref('basic'), compare = ref(0), split = ref(.5), zoom = ref(1), histogramMode = ref<'rgb' | 'luminance'>('rgb');
 const maskSection = ref<MaskAdjustmentSection>('basic');
@@ -44,8 +47,11 @@ const camera = computed(() => String(activeAsset.value?.metadata.Make || activeA
 const cameraModel = computed(() => String(activeAsset.value?.metadata.Model || activeAsset.value?.metadata.model || ''));
 const lens = computed(() => String(activeAsset.value?.metadata.LensModel || activeAsset.value?.metadata.lens || ''));
 const activeMask = computed(() => activeAsset.value?.masks?.find((mask) => mask.id === activeAsset.value?.activeMaskId));
-const dimensions = computed(() => activeAsset.value ? `${activeAsset.value.width} × ${activeAsset.value.height}` : '');
-const mainPanel = computed(() => panel.value === 'masking' || panel.value === 'presets' ? panel.value : 'adjustments');
+const dimensions = computed(() => {
+    const asset = activeAsset.value; if (!asset) return '';
+    const output = cropDimensions(asset.width, asset.height, asset.crop); return `${output.width} × ${output.height}`;
+});
+const mainPanel = computed(() => ['masking', 'presets', 'crop'].includes(panel.value) ? panel.value : 'adjustments');
 const modifiedSections = computed(() => {
     adjustmentVersion.value;
     const a = activeAsset.value?.adjustments, modified = new Set<string>(); if (!a) return modified;
@@ -57,6 +63,7 @@ const modifiedPanels = computed(() => {
     const modified = new Set<string>();
     if (modifiedSections.value.size) modified.add('adjustments');
     if (activeAsset.value?.masks?.length) modified.add('masking');
+    if (hasCrop(activeAsset.value?.crop)) modified.add('crop');
     return modified;
 });
 let toastTimer: ReturnType<typeof setTimeout>;
@@ -144,6 +151,7 @@ function openMainPanel(id: string) {
     panel.value = id === 'adjustments' ? 'basic' : id;
     mobilePanelOpen.value = true;
 }
+function changeCrop(crop?: CropSettings) { if (activeAsset.value) activeAsset.value.crop = crop; }
 function globalEffectKey(assetId: string, section: AdjustmentSection) { return `${assetId}:global:${section}`; }
 function allMasksHiddenKey(assetId: string) { return `${assetId}:masks:hidden`; }
 const allMasksHidden = computed(() => Boolean(activeAsset.value && hiddenEffectKeys.value.has(allMasksHiddenKey(activeAsset.value.id))));
@@ -228,7 +236,8 @@ function confirmHiddenExport() {
 }
 function reset() {
     if (!activeAsset.value) return;
-    if (panel.value === 'masking' && activeMask.value) resetAdjustmentSection(activeMask.value.adjustments, maskSection.value);
+    if (panel.value === 'crop') activeAsset.value.crop = undefined;
+    else if (panel.value === 'masking' && activeMask.value) resetAdjustmentSection(activeMask.value.adjustments, maskSection.value);
     else if (ADJUSTMENT_SECTIONS.includes(panel.value as AdjustmentSection)) resetAdjustmentSection(activeAsset.value.adjustments, panel.value as AdjustmentSection);
 }
 function keyboard(event: KeyboardEvent) {
@@ -282,7 +291,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
                 <button type="button" title="适合视图 (F)" @click="zoom = 1">{{ Math.round(zoom * 100) }}%</button>
             </nav>
 
-            <ImageViewer :asset="previewAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" :dcp-profile="activeDcpProfile" :mask-tool="maskTool" :mask-mode="maskMode" :active-mask="visibleActiveMask" :show-mask-overlay="panel === 'masking' && !maskInteracting" @shape="addMaskShape" @update-shape="updateMaskShape" @histogram="histogram = $event">
+            <ImageViewer :asset="previewAsset" :compare="compare" v-model:split="split" v-model:zoom="zoom" :dcp-profile="activeDcpProfile" :mask-tool="maskTool" :mask-mode="maskMode" :active-mask="visibleActiveMask" :show-mask-overlay="panel === 'masking' && !maskInteracting" :crop-editing="panel === 'crop'" @update:crop="changeCrop" @shape="addMaskShape" @update-shape="updateMaskShape" @histogram="histogram = $event">
                 <div class="empty-workspace">
                     <CameraOutline class="empty-icon" /><h1>在浏览器中冲洗照片</h1><p>将 RAW、JPEG、PNG 图片或整个文件夹拖到这里</p>
                     <div><button type="button" @click="fileInput?.click()">选择图片</button><button type="button" class="secondary" @click="folderInput?.click()">选择文件夹</button></div>
@@ -293,7 +302,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', keyboard); documen
             <aside class="right-panel">
                 <div class="histogram-head"><div class="histogram-tools"><span>直方图</span><button type="button" :title="histogramMode === 'rgb' ? '切换为明度直方图' : '切换为 RGB 直方图'" @click="histogramMode = histogramMode === 'rgb' ? 'luminance' : 'rgb'"><NIcon><AnalyticsOutline /></NIcon>{{ histogramMode === 'rgb' ? 'RGB' : '明度' }}</button></div><Histogram :pixels="histogram" :mode="histogramMode" /></div>
                 <nav class="panel-tabs" aria-label="编辑面板"><button v-for="item in panels" :key="item.id" type="button" :class="{ active: mainPanel === item.id }" :aria-label="item.label" :title="item.label" @click="openMainPanel(item.id)"><NIcon><component :is="item.icon" /></NIcon><span>{{ item.label }}</span><sup v-if="modifiedPanels.has(item.id)" aria-label="已调整">*</sup></button></nav>
-                <div class="panel-scroll"><AdjustmentPanel v-if="activeAsset" v-model="activeAsset.adjustments" v-model:panel="panel" v-model:mask-section="maskSection" :panel-hidden="currentPanelHidden" :modified-sections="modifiedSections" :camera="`${camera} ${cameraModel}`" :camera-model="cameraModel" :lens="lens" :dcp-catalog="dcpCatalog" :dcp-profile-id="activeAsset.dcp?.profileId" :dcp-loading="dcpLoading" :raw-supported="activeAsset.kind === 'raw'" :masks="activeAsset.masks" :active-mask-id="activeAsset.activeMaskId" :mask-tool="maskTool" :mask-mode="maskMode" @dcp-change="changeDcp" @dcp-import="dcpInput?.click()" @mask-tool="chooseMaskTool" @mask-select="selectMask" @mask-update="updateMask" @mask-remove="removeMask" @mask-duplicate="duplicateMask" @mask-mode="maskMode = $event" @mask-interaction="maskInteracting = $event" @toggle-hidden="toggleCurrentPanelHidden" @reset="reset" /><div v-else class="no-image">打开图片后开始调整</div></div>
+                <div class="panel-scroll"><CropPanel v-if="activeAsset && panel === 'crop'" :crop="activeAsset.crop" :width="activeAsset.width" :height="activeAsset.height" @change="changeCrop" /><AdjustmentPanel v-else-if="activeAsset" v-model="activeAsset.adjustments" v-model:panel="panel" v-model:mask-section="maskSection" :panel-hidden="currentPanelHidden" :modified-sections="modifiedSections" :camera="`${camera} ${cameraModel}`" :camera-model="cameraModel" :lens="lens" :dcp-catalog="dcpCatalog" :dcp-profile-id="activeAsset.dcp?.profileId" :dcp-loading="dcpLoading" :raw-supported="activeAsset.kind === 'raw'" :masks="activeAsset.masks" :active-mask-id="activeAsset.activeMaskId" :mask-tool="maskTool" :mask-mode="maskMode" @dcp-change="changeDcp" @dcp-import="dcpInput?.click()" @mask-tool="chooseMaskTool" @mask-select="selectMask" @mask-update="updateMask" @mask-remove="removeMask" @mask-duplicate="duplicateMask" @mask-mode="maskMode = $event" @mask-interaction="maskInteracting = $event" @toggle-hidden="toggleCurrentPanelHidden" @reset="reset" /><div v-else class="no-image">打开图片后开始调整</div></div>
                 <div class="preset-actions"><button type="button" :disabled="!activeAsset" @click="presetInput?.click()">导入预设</button><button type="button" :disabled="!activeAsset" @click="exportPreset">导出预设</button></div>
             </aside>
         </section>

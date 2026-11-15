@@ -37,6 +37,15 @@ export interface DcpSelection {
     enabled: boolean;
 }
 
+export interface CropSettings {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    /** Pixel aspect ratio; undefined allows free-form corner dragging. */
+    ratio?: number;
+}
+
 export interface ImageAsset {
     id: string;
     file: File;
@@ -52,6 +61,7 @@ export interface ImageAsset {
     rawMetadata?: Record<string, unknown>;
     adjustments: Adjustments;
     dcp?: DcpSelection;
+    crop?: CropSettings;
     masks?: import('./engine/masks/types').ImageMask[];
     activeMaskId?: string;
     loading: boolean;

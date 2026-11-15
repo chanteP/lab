@@ -11,18 +11,23 @@ export const busy = ref(false);
 export const notice = ref('');
 export const activeAsset = computed(() => assets.value.find((asset) => asset.id === activeId.value));
 
-type HistoryEntry = { past: Adjustments[]; future: Adjustments[]; last: Adjustments; timer?: ReturnType<typeof setTimeout> };
+type EditSnapshot = Pick<ImageAsset, 'adjustments' | 'crop'>;
+type HistoryEntry = { past: EditSnapshot[]; future: EditSnapshot[]; last: EditSnapshot; timer?: ReturnType<typeof setTimeout> };
 const histories = new Map<string, HistoryEntry>();
 const historyVersion = ref(0);
 let applyingHistory = false;
 
-function historyFor(id: string, current: Adjustments): HistoryEntry {
+function snapshot(asset: EditSnapshot): EditSnapshot {
+    return { adjustments: cloneAdjustments(asset.adjustments), crop: asset.crop ? { ...asset.crop } : undefined };
+}
+
+function historyFor(id: string, current: ImageAsset): HistoryEntry {
     let history = histories.get(id);
-    if (!history) { history = { past: [], future: [], last: cloneAdjustments(current) }; histories.set(id, history); }
+    if (!history) { history = { past: [], future: [], last: snapshot(current) }; histories.set(id, history); }
     return history;
 }
 
-function noteAdjustment(id: string, current: Adjustments) {
+function noteAdjustment(id: string, current: ImageAsset) {
     if (applyingHistory) return;
     const history = historyFor(id, current);
     if (history.timer) clearTimeout(history.timer);
@@ -33,15 +38,15 @@ function flushHistory(id: string) {
     const asset = assets.value.find((item) => item.id === id), history = histories.get(id);
     if (!asset || !history) return;
     if (history.timer) { clearTimeout(history.timer); history.timer = undefined; }
-    if (JSON.stringify(asset.adjustments) === JSON.stringify(history.last)) return;
+    if (JSON.stringify(snapshot(asset)) === JSON.stringify(history.last)) return;
     history.past.push(history.last); if (history.past.length > 60) history.past.shift();
-    history.last = cloneAdjustments(asset.adjustments); history.future = []; historyVersion.value++;
+    history.last = snapshot(asset); history.future = []; historyVersion.value++;
 }
 
 export const canUndo = computed(() => {
     historyVersion.value;
-    const h = histories.get(activeId.value), current = activeAsset.value?.adjustments;
-    return Boolean(h && (h.past.length || (h.timer && current && JSON.stringify(current) !== JSON.stringify(h.last))));
+    const h = histories.get(activeId.value), current = activeAsset.value;
+    return Boolean(h && (h.past.length || (h.timer && current && JSON.stringify(snapshot(current)) !== JSON.stringify(h.last))));
 });
 export const canRedo = computed(() => { historyVersion.value; return Boolean(histories.get(activeId.value)?.future.length); });
 
@@ -50,20 +55,21 @@ export function undo() {
     flushHistory(asset.id);
     const history = histories.get(asset.id)!, previous = history.past.pop();
     if (!previous) { historyVersion.value++; return; }
-    history.future.push(cloneAdjustments(asset.adjustments)); history.last = cloneAdjustments(previous);
-    applyingHistory = true; asset.adjustments = cloneAdjustments(previous); applyingHistory = false; historyVersion.value++;
+    history.future.push(snapshot(asset)); history.last = snapshot(previous);
+    applyingHistory = true; asset.adjustments = cloneAdjustments(previous.adjustments); asset.crop = previous.crop ? { ...previous.crop } : undefined; applyingHistory = false; historyVersion.value++;
 }
 
 export function redo() {
     const asset = activeAsset.value, history = histories.get(asset?.id ?? ''); if (!asset || !history) return;
     flushHistory(asset.id);
     const next = history.future.pop(); if (!next) return;
-    history.past.push(cloneAdjustments(asset.adjustments)); history.last = cloneAdjustments(next);
-    applyingHistory = true; asset.adjustments = cloneAdjustments(next); applyingHistory = false; historyVersion.value++;
+    history.past.push(snapshot(asset)); history.last = snapshot(next);
+    applyingHistory = true; asset.adjustments = cloneAdjustments(next.adjustments); asset.crop = next.crop ? { ...next.crop } : undefined; applyingHistory = false; historyVersion.value++;
 }
 
-watch(() => activeAsset.value?.adjustments, (current) => { if (current && activeId.value) noteAdjustment(activeId.value, current); }, { deep: true, flush: 'sync' });
-watch(activeId, (id, previous) => { if (previous) flushHistory(previous); if (id && activeAsset.value) historyFor(id, activeAsset.value.adjustments); historyVersion.value++; });
+watch(() => activeAsset.value?.adjustments, () => { if (activeAsset.value) noteAdjustment(activeAsset.value.id, activeAsset.value); }, { deep: true, flush: 'sync' });
+watch(() => activeAsset.value?.crop, () => { if (activeAsset.value) noteAdjustment(activeAsset.value.id, activeAsset.value); }, { deep: true, flush: 'sync' });
+watch(activeId, (id, previous) => { if (previous) flushHistory(previous); if (id && activeAsset.value) historyFor(id, activeAsset.value); historyVersion.value++; });
 
 export async function selectAsset(id: string, additive = false) {
     if (!additive) selectedIds.value = new Set([id]);
@@ -126,7 +132,7 @@ export function removeSelected() {
 export function syncToSelected() {
     const source = activeAsset.value; if (!source) return;
     for (const asset of assets.value) if (selectedIds.value.has(asset.id)) {
-        historyFor(asset.id, asset.adjustments); asset.adjustments = cloneAdjustments(source.adjustments); noteAdjustment(asset.id, asset.adjustments);
+        historyFor(asset.id, asset); asset.adjustments = cloneAdjustments(source.adjustments); asset.crop = source.crop ? { ...source.crop } : undefined; noteAdjustment(asset.id, asset);
     }
     notice.value = `已同步到 ${selectedIds.value.size} 张图片`;
 }

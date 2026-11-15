@@ -20,9 +20,12 @@ test('undo and redo restore independent adjustment history', async () => {
     assets.value = [asset]; activeId.value = 'history'; selectedIds.value = new Set(['history']);
     await Promise.resolve();
     asset.adjustments.exposure = 2;
+    asset.crop = { x: .1, y: .1, width: .8, height: .8 };
     await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.equal(canUndo.value, true); undo(); assert.equal(asset.adjustments.exposure, 0);
-    assert.equal(canRedo.value, true); redo(); assert.equal(asset.adjustments.exposure, 2);
+    assert.equal(canUndo.value, true); undo(); assert.equal(asset.adjustments.exposure, 0); assert.equal(asset.crop, undefined);
+    assert.equal(canRedo.value, true); redo(); assert.equal(asset.adjustments.exposure, 2); assert.equal(asset.crop?.width, .8);
+    asset.crop = undefined; await new Promise((resolve) => setTimeout(resolve, 300));
+    undo(); assert.equal(asset.crop?.width, .8); assert.equal(asset.adjustments.exposure, 2);
     assets.value = []; activeId.value = ''; selectedIds.value = new Set();
 });
 

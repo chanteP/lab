@@ -198,3 +198,13 @@ void main() {
     }
     outColor = vec4(c, 1.);
 }`;
+
+export const cropFragmentShader = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uCropImage;
+uniform vec4 uCrop;
+void main() {
+    outColor = texture(uCropImage, uCrop.xy + vUv * uCrop.zw);
+}`;

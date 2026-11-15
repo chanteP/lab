@@ -46,7 +46,7 @@ export async function renderExport(asset: ImageAsset, format: 'jpeg' | 'dng', qu
     const renderer = new RawRenderer();
     try {
         setLoading({ text: '正在渲染全尺寸图像', progress: 20 });
-        renderer.setSource(asset.bitmap); renderer.render(asset.adjustments, { profile, masks: asset.masks });
+        renderer.setSource(asset.bitmap); renderer.render(asset.adjustments, { profile, masks: asset.masks, crop: asset.crop });
         if (format === 'jpeg') {
             setLoading({ text: '正在编码 JPEG', progress: 72 });
             return withExif(asset, await renderer.blob('image/jpeg', quality));

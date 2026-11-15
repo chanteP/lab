@@ -1,4 +1,4 @@
-import type { Adjustments, MixerColor } from '../types';
+import type { Adjustments, CropSettings, MixerColor } from '../types';
 import { MIXER_COLORS } from '../types';
 import type { DcpProfile } from './dcp/types';
 import { dcpTableBytes, dcpToneLut } from './dcp/render';
@@ -7,7 +7,8 @@ import { createCurveLut } from './curve';
 import { combineMaskAdjustments } from './masks/mask';
 import { rasterizeMask } from './masks/rasterize';
 import type { ImageMask } from './masks/types';
-import { fragmentShader, maskBlendFragmentShader, vertexShader } from './shader';
+import { cropFragmentShader, fragmentShader, maskBlendFragmentShader, vertexShader } from './shader';
+import { cropDimensions, hasCrop } from './crop';
 
 export interface RenderOptions {
     width?: number;
@@ -18,6 +19,7 @@ export interface RenderOptions {
     masks?: ImageMask[];
     activeMaskId?: string;
     showMaskOverlay?: boolean;
+    crop?: CropSettings;
 }
 
 function compileShader(gl: WebGL2RenderingContext, type: number, source: string) {
@@ -40,6 +42,7 @@ export class RawRenderer {
     readonly gl: WebGL2RenderingContext;
     private program: WebGLProgram;
     private blendProgram: WebGLProgram;
+    private cropProgram: WebGLProgram;
     private texture: WebGLTexture;
     private curveTexture: WebGLTexture;
     private toneTexture: WebGLTexture;
@@ -48,6 +51,7 @@ export class RawRenderer {
     private baseTexture: WebGLTexture;
     private adjustedTexture: WebGLTexture;
     private maskTexture: WebGLTexture;
+    private cropTexture: WebGLTexture;
     private uniforms = new Map<string, WebGLUniformLocation | null>();
     private blendUniforms = new Map<string, WebGLUniformLocation | null>();
     private source?: ImageBitmap;
@@ -58,18 +62,20 @@ export class RawRenderer {
         const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false });
         if (!gl) throw new Error('此浏览器不支持 WebGL2');
         this.gl = gl;
-        this.program = createProgram(gl, fragmentShader); this.blendProgram = createProgram(gl, maskBlendFragmentShader);
+        this.program = createProgram(gl, fragmentShader); this.blendProgram = createProgram(gl, maskBlendFragmentShader); this.cropProgram = createProgram(gl, cropFragmentShader);
         const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
         const position = gl.getAttribLocation(this.program, 'aPosition'); gl.enableVertexAttribArray(position); gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
         this.texture = this.makeTexture(0); this.curveTexture = this.makeTexture(1); this.toneTexture = this.makeTexture(2);
         this.lookTexture = gl.createTexture()!; this.deltaTexture = gl.createTexture()!;
         this.baseTexture = this.makeTexture(5); this.adjustedTexture = this.makeTexture(6); this.maskTexture = this.makeTexture(7);
+        this.cropTexture = this.makeTexture(8);
         gl.useProgram(this.program);
         gl.uniform1i(this.u('uImage'), 0); gl.uniform1i(this.u('uCurves'), 1); gl.uniform1i(this.u('uDcpTone'), 2);
         gl.uniform1i(this.u('uDcpLook'), 3); gl.uniform1i(this.u('uDcpDelta'), 4);
         gl.useProgram(this.blendProgram);
         gl.uniform1i(this.bu('uMaskBase'), 5); gl.uniform1i(this.bu('uMaskAdjusted'), 6); gl.uniform1i(this.bu('uMask'), 7);
+        gl.useProgram(this.cropProgram); gl.uniform1i(gl.getUniformLocation(this.cropProgram, 'uCropImage'), 8);
     }
 
     private u(name: string) {
@@ -166,9 +172,12 @@ export class RawRenderer {
 
     render(a: Adjustments, options: RenderOptions = {}) {
         if (!this.source) return;
-        const ratio = this.source.width / this.source.height;
-        this.canvas.width = Math.max(1, Math.round(options.width ?? this.source.width));
-        this.canvas.height = Math.max(1, Math.round(options.height ?? this.canvas.width / ratio));
+        const cropped = hasCrop(options.crop), crop = options.crop;
+        const output = cropDimensions(this.source.width, this.source.height, crop);
+        const outputWidth = Math.max(1, Math.round(options.width ?? output.width));
+        const outputHeight = Math.max(1, Math.round(options.height ?? outputWidth * output.height / output.width));
+        this.canvas.width = cropped ? Math.max(1, Math.ceil(outputWidth / crop!.width)) : outputWidth;
+        this.canvas.height = cropped ? Math.max(1, Math.ceil(outputHeight / crop!.height)) : outputHeight;
         this.setProfile(options.profile);
         this.draw(a, options);
         const masks = (options.masks ?? []).filter((mask) => mask.visible && mask.amount > 0 && mask.shapes.length);
@@ -180,6 +189,13 @@ export class RawRenderer {
             this.copyCanvas(6, this.adjustedTexture);
             this.blend(mask, mask.amount / 100, Boolean(options.showMaskOverlay && (mask.overlay || mask.id === options.activeMaskId)), options);
             if (mask !== masks.at(-1)) this.copyCanvas(5, this.baseTexture);
+        }
+        if (cropped && crop) {
+            this.copyCanvas(8, this.cropTexture);
+            this.canvas.width = outputWidth; this.canvas.height = outputHeight;
+            const gl = this.gl; gl.useProgram(this.cropProgram); gl.viewport(0, 0, outputWidth, outputHeight);
+            gl.uniform4f(gl.getUniformLocation(this.cropProgram, 'uCrop'), crop.x, crop.y, crop.width, crop.height);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
     }
 
@@ -196,7 +212,7 @@ export class RawRenderer {
     }
 
     dispose() {
-        for (const texture of [this.texture, this.curveTexture, this.toneTexture, this.lookTexture, this.deltaTexture, this.baseTexture, this.adjustedTexture, this.maskTexture]) this.gl.deleteTexture(texture);
-        this.gl.deleteProgram(this.program); this.gl.deleteProgram(this.blendProgram);
+        for (const texture of [this.texture, this.curveTexture, this.toneTexture, this.lookTexture, this.deltaTexture, this.baseTexture, this.adjustedTexture, this.maskTexture, this.cropTexture]) this.gl.deleteTexture(texture);
+        this.gl.deleteProgram(this.program); this.gl.deleteProgram(this.blendProgram); this.gl.deleteProgram(this.cropProgram);
     }
 }

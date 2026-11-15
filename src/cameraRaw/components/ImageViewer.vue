@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { ImageAsset, Point } from '../types';
+import type { CropSettings, ImageAsset, Point } from '../types';
 import type { DcpProfile } from '../engine/dcp/types';
 import type { ImageMask, MaskShape, MaskTool } from '../engine/masks/types';
 import { createShape } from '../engine/masks/mask';
 import { RawRenderer } from '../engine/renderer';
 import { clampSplit, clampZoom, zoomAtPoint } from '../engine/view';
 import { createLatestFrameScheduler } from '../engine/frame';
+import { FULL_CROP, cropDimensions, dragCrop } from '../engine/crop';
 
 const props = withDefaults(defineProps<{
     asset?: ImageAsset;
@@ -18,15 +19,17 @@ const props = withDefaults(defineProps<{
     maskMode?: 'add' | 'subtract';
     activeMask?: ImageMask;
     showMaskOverlay?: boolean;
-}>(), { asset: undefined, dcpProfile: undefined, maskTool: '', maskMode: 'add', activeMask: undefined, showMaskOverlay: false });
+    cropEditing?: boolean;
+}>(), { asset: undefined, dcpProfile: undefined, maskTool: '', maskMode: 'add', activeMask: undefined, showMaskOverlay: false, cropEditing: false });
 const emit = defineEmits<{
     histogram: [pixels: Uint8ClampedArray];
     'update:split': [value: number];
     'update:zoom': [value: number];
     shape: [shape: MaskShape];
     'update-shape': [shape: MaskShape];
+    'update:crop': [crop: CropSettings];
 }>();
-const container = ref<HTMLDivElement>(), image = ref<HTMLImageElement>(), stage = ref<HTMLDivElement>();
+const container = ref<HTMLDivElement>(), image = ref<HTMLImageElement>(), stage = ref<HTMLDivElement>(), cropLayer = ref<HTMLDivElement>();
 const previewUrl = ref('');
 const presentCanvas = document.createElement('canvas');
 const pan = ref({ x: 0, y: 0 }), spacePressed = ref(false), panning = ref(false);
@@ -35,6 +38,10 @@ const stageSize = ref({ width: '0px', height: '0px' });
 const stageStyle = computed(() => ({ transform: `translate(${pan.value.x}px, ${pan.value.y}px)`, ...stageSize.value }));
 let renderer: RawRenderer | undefined, source: ImageBitmap | undefined, resizeObserver: ResizeObserver | undefined, dragging = false;
 let pointerStart = { x: 0, y: 0 }, panStart = { x: 0, y: 0 };
+const cropFrame = computed(() => props.asset?.crop ?? FULL_CROP);
+const cropFrameStyle = computed(() => ({ left: `${cropFrame.value.x * 100}%`, top: `${cropFrame.value.y * 100}%`, width: `${cropFrame.value.width * 100}%`, height: `${cropFrame.value.height * 100}%` }));
+const cropHandles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+let cropDrag: { crop: CropSettings; pointer: Point; handle: string } | undefined;
 
 const scheduler = createLatestFrameScheduler((version) => { void render(version); });
 const schedule = scheduler.schedule;
@@ -46,14 +53,16 @@ async function render(version: number) {
         renderer ??= new RawRenderer();
         if (source !== asset.bitmap) { renderer.setSource(asset.bitmap); source = asset.bitmap; }
         const availableWidth = Math.max(100, box.clientWidth - 42), availableHeight = Math.max(100, box.clientHeight - 42);
-        const ratio = asset.bitmap.width / asset.bitmap.height;
+        const crop = props.cropEditing ? undefined : asset.crop;
+        const output = cropDimensions(asset.bitmap.width, asset.bitmap.height, crop);
+        const ratio = output.width / output.height;
         const width = Math.min(availableWidth, availableHeight * ratio) * props.zoom, height = width / ratio;
         target.style.width = `${width}px`; target.style.height = `${height}px`;
         stageSize.value = { width: `${width}px`, height: `${height}px` };
         renderer.render(asset.adjustments, {
-            width: Math.min(asset.bitmap.width, Math.round(width * Math.min(devicePixelRatio, 2))),
+            width: Math.min(output.width, Math.round(width * Math.min(devicePixelRatio, 2))),
             compare: props.compare, split: props.split, profile: props.dcpProfile,
-            masks: asset.masks, activeMaskId: props.activeMask?.id, showMaskOverlay: props.showMaskOverlay,
+            masks: asset.masks, activeMaskId: props.activeMask?.id, showMaskOverlay: props.showMaskOverlay, crop,
         });
         const pixels = renderer.readPixels();
         presentCanvas.width = renderer.canvas.width; presentCanvas.height = renderer.canvas.height;
@@ -67,6 +76,27 @@ async function render(version: number) {
 function pointFromEvent(event: PointerEvent): Point {
     const rect = stage.value!.getBoundingClientRect();
     return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+}
+function cropStart(event: PointerEvent, handle: string) {
+    if (!props.asset?.bitmap || event.button !== 0) return;
+    event.preventDefault(); event.stopPropagation();
+    cropDrag = { crop: { ...cropFrame.value }, pointer: pointFromEvent(event), handle };
+    cropLayer.value?.setPointerCapture(event.pointerId);
+}
+function cropMove(event: PointerEvent) {
+    if (!cropDrag || !props.asset?.bitmap) return;
+    const { crop, pointer, handle } = cropDrag;
+    emit('update:crop', dragCrop(crop, handle, pointFromEvent(event), pointer, props.asset.bitmap.width, props.asset.bitmap.height, event.shiftKey));
+}
+function cropEnd() { cropDrag = undefined; }
+function cropKey(event: KeyboardEvent) {
+    const directions: Record<string, Point> = { ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 } };
+    const direction = directions[event.key];
+    if (!direction || !props.asset?.bitmap) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 10 : 1;
+    direction.x *= step / props.asset.bitmap.width; direction.y *= step / props.asset.bitmap.height;
+    emit('update:crop', dragCrop({ ...cropFrame.value }, 'move', direction, { x: 0, y: 0 }, props.asset.bitmap.width, props.asset.bitmap.height));
 }
 function maskStart(event: PointerEvent) {
     if (!props.maskTool || !stage.value || event.button !== 0) return;
@@ -157,6 +187,8 @@ watch(() => props.asset?.id, (id) => {
 watch(() => props.asset?.bitmap, schedule);
 watch(() => props.asset?.adjustments, schedule, { deep: true });
 watch(() => props.asset?.masks, schedule, { deep: true });
+watch(() => props.asset?.crop, () => { if (!props.cropEditing) schedule(); }, { deep: true });
+watch(() => props.cropEditing, () => { resetView(); schedule(); });
 watch(() => props.activeMask, schedule, { deep: true });
 watch(() => props.dcpProfile, schedule);
 watch(() => [props.compare, props.split, props.showMaskOverlay], schedule);
@@ -198,6 +230,12 @@ onBeforeUnmount(() => {
                     </template>
                 </svg>
                 <button v-if="compare === 2" class="split-line" type="button" aria-label="拖动原图对比分割线" :style="{ left: `${split * 100}%` }" @pointerdown.stop="startSplit" @pointermove="moveSplit" @pointerup="endSplit" @pointercancel="endSplit" />
+                <div v-if="cropEditing" ref="cropLayer" class="crop-layer" @pointermove.stop="cropMove" @pointerup.stop="cropEnd" @pointercancel.stop="cropEnd">
+                    <div class="crop-frame" :style="cropFrameStyle" tabindex="0" role="group" aria-label="裁剪框，方向键移动" @pointerdown="cropStart($event, 'move')" @keydown="cropKey">
+                        <div class="crop-grid" aria-hidden="true" />
+                        <button v-for="handle in cropHandles" :key="handle" type="button" class="crop-handle" :class="`crop-${handle}`" :aria-label="`拖动裁剪框 ${handle}`" @pointerdown.stop="cropStart($event, handle)" />
+                    </div>
+                </div>
             </div>
             <div v-if="compare === 2" class="compare-labels"><span>原图</span><span>调整后</span></div>
         </template>
@@ -214,6 +252,17 @@ onBeforeUnmount(() => {
 .mask-guide { fill: #ff554422; stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; &.draft { stroke: #ffb0a0; } }
 .mask-handle { fill: #fff; stroke: #333; stroke-width: 1; pointer-events: all; cursor: move; vector-effect: non-scaling-stroke; }
 .mask-brush-guide { fill: none; stroke: #ff7766; stroke-width: 2; pointer-events: none; vector-effect: non-scaling-stroke; }
+.crop-layer { position: absolute; inset: 0; z-index: 3; overflow: hidden; }
+.crop-frame { position: absolute; min-width: 8px; min-height: 8px; outline: 1px solid #fff; box-shadow: 0 0 0 2000px #0009; cursor: move; touch-action: none; &:focus-visible { outline: 2px solid #71c4ef; outline-offset: 2px; } }
+.crop-grid { position: absolute; inset: 0; pointer-events: none; background-image: linear-gradient(to right, transparent calc(33.333% - .5px), #fff9 calc(33.333% - .5px), #fff9 calc(33.333% + .5px), transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), #fff9 calc(66.666% - .5px), #fff9 calc(66.666% + .5px), transparent calc(66.666% + .5px)), linear-gradient(to bottom, transparent calc(33.333% - .5px), #fff9 calc(33.333% - .5px), #fff9 calc(33.333% + .5px), transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), #fff9 calc(66.666% - .5px), #fff9 calc(66.666% + .5px), transparent calc(66.666% + .5px)); }
+.crop-handle { position: absolute; z-index: 1; width: 18px; height: 18px; padding: 0; border: 0; background: transparent; touch-action: none; }
+.crop-nw, .crop-ne, .crop-sw, .crop-se { border-color: #fff; border-style: solid; }
+.crop-nw { top: -3px; left: -3px; border-width: 3px 0 0 3px; cursor: nwse-resize; }.crop-ne { top: -3px; right: -3px; border-width: 3px 3px 0 0; cursor: nesw-resize; }
+.crop-sw { bottom: -3px; left: -3px; border-width: 0 0 3px 3px; cursor: nesw-resize; }.crop-se { right: -3px; bottom: -3px; border-width: 0 3px 3px 0; cursor: nwse-resize; }
+.crop-n, .crop-s { left: 50%; width: 34px; height: 12px; transform: translateX(-50%); cursor: ns-resize; &::after { content: ''; position: absolute; left: 7px; right: 7px; height: 3px; background: #fff; } }
+.crop-n { top: -6px; &::after { top: 4px; } }.crop-s { bottom: -6px; &::after { bottom: 4px; } }
+.crop-e, .crop-w { top: 50%; width: 12px; height: 34px; transform: translateY(-50%); cursor: ew-resize; &::after { content: ''; position: absolute; top: 7px; bottom: 7px; width: 3px; background: #fff; } }
+.crop-e { right: -6px; &::after { right: 4px; } }.crop-w { left: -6px; &::after { left: 4px; } }
 .split-line { position: absolute; top: 0; bottom: 0; width: 12px; padding: 0; transform: translateX(-50%); border: 0; background: transparent; cursor: ew-resize; touch-action: none; &::after { content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: #fff; box-shadow: 0 0 2px #000; } }
 .compare-labels { position: absolute; inset: 10px 14px auto; display: flex; justify-content: space-between; pointer-events: none; span { padding: 3px 7px; background: #0009; color: #ddd; font-size: 10px; } }
 .viewer-status { display: flex; flex-direction: column; align-items: center; gap: 9px; color: #ddd; strong { font-size: 14px; font-weight: 400; } small { color: #888; font-size: 11px; } &.error { color: #e48a8a; } }
