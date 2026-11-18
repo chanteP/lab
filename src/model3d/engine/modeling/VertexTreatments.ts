@@ -4,6 +4,7 @@ import type { ModelDocument, ModelEntity, Vec3, VertexTreatment } from '../../ty
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { buildMeshTopology } from '../topology/MeshTopology';
 import { evaluateBoolean, evaluatePlaneChamfer, evaluateVertexRounding } from './ManifoldKernel';
+import { hasConcaveVertexEdge } from './TreatmentConvexity';
 
 function chamferTool(treatment: VertexTreatment) {
     if (treatment.size <= 0 || treatment.vertex.normals.length < 3) return null;
@@ -19,12 +20,13 @@ function chamferTool(treatment: VertexTreatment) {
 
 
 
-/** Vertex treatments are replayed after all base face and edge edits. */
+/** Vertex treatments are replayed after base face edits and before incident edge treatments. */
 export function applyVertexTreatments(base: THREE.BufferGeometry, treatments: VertexTreatment[] = []) {
     let result = base;
+    const concavity = new Map(treatments.map((treatment) => [treatment.id, hasConcaveVertexEdge(base, treatment.vertex.point, treatment.vertex.normals)]));
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
         if (treatment.type === 'fillet') {
-            const rounded = evaluateVertexRounding(result, treatment.size, treatment.vertex.point, treatment.vertex.normals.slice(0, 3));
+            const rounded = evaluateVertexRounding(result, treatment.size, treatment.vertex.point, treatment.vertex.normals.slice(0, 3), concavity.get(treatment.id));
             if (!rounded) return;
             if (result !== base) result.dispose();
             result = rounded;

@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import type { Vec3 } from '../../types';
 
-/** Solve an inward sphere center with equal perpendicular distance to the three source planes. */
-export function vertexRoundingCenter(radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+/** Solve the sphere center on the material-cutting side, or its reflected weld side for a concave corner. */
+export function vertexRoundingCenter(radius: number, corner: Vec3, adjacentNormals: Vec3[], concave = false) {
     const normals = adjacentNormals.map((normal) => new THREE.Vector3(...normal).normalize());
     const normalMatrix = new THREE.Matrix3().set(
         normals[0].x, normals[0].y, normals[0].z,
@@ -11,14 +11,14 @@ export function vertexRoundingCenter(radius: number, corner: Vec3, adjacentNorma
         normals[2].x, normals[2].y, normals[2].z,
     );
     if (Math.abs(normalMatrix.determinant()) < 1e-8) throw new Error('圆角角的三个相邻面不能共线');
-    return new THREE.Vector3(1, 1, 1).applyMatrix3(normalMatrix.invert()).multiplyScalar(-radius * 2 / 3).add(new THREE.Vector3(...corner));
+    return new THREE.Vector3(1, 1, 1).applyMatrix3(normalMatrix.invert()).multiplyScalar((concave ? 1 : -1) * radius * 2 / 3).add(new THREE.Vector3(...corner));
 }
 
-/** The source-plane tetrahedron minus this sphere is the corner cutter. */
-export function buildVertexRoundingTools(radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+/** The source-plane tetrahedron minus this sphere is the corner cutter or reflected weld filler. */
+export function buildVertexRoundingTools(radius: number, corner: Vec3, adjacentNormals: Vec3[], concave = false) {
     const normals = adjacentNormals.map((normal) => new THREE.Vector3(...normal).normalize());
     const sourceCorner = new THREE.Vector3(...corner);
-    const center = vertexRoundingCenter(radius, corner, adjacentNormals);
+    const center = vertexRoundingCenter(radius, corner, adjacentNormals, concave);
     const relativeCenter = center.clone().sub(sourceCorner);
     const edgePoints = normals.map((_, index) => {
         const j = (index + 1) % 3, k = (index + 2) % 3;
@@ -30,7 +30,7 @@ export function buildVertexRoundingTools(radius: number, corner: Vec3, adjacentN
         return sourceCorner.clone().addScaledVector(direction, distance);
     });
     const outerDirection = normals.reduce((sum, normal) => sum.add(normal), new THREE.Vector3()).normalize();
-    const outer = sourceCorner.clone().addScaledVector(outerDirection, Math.min(0.1, radius * 0.05));
+    const outer = sourceCorner.clone().addScaledVector(outerDirection, (concave ? -1 : 1) * Math.min(0.1, radius * 0.05));
     const cap = new ConvexGeometry([outer, ...edgePoints]);
     const sphere = new THREE.SphereGeometry(radius, 64, 32).translate(center.x, center.y, center.z);
     return { cap, sphere, center };

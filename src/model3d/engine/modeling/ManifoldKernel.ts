@@ -150,14 +150,16 @@ export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, r
     }
 }
 
-/** Remove a custom convex corner cap; the rounded patch is tangent to adjacent planes and never extends along incident edges. */
-export function evaluateVertexRounding(base: THREE.BufferGeometry, radius: number, corner: Vec3, adjacentNormals: Vec3[]) {
+/** Cut a convex corner cap or add its reflected weld filler; the rounded patch stays bounded by the incident edges. */
+export function evaluateVertexRounding(base: THREE.BufferGeometry, radius: number, corner: Vec3, adjacentNormals: Vec3[], concave = false) {
     if (radius <= 0 || adjacentNormals.length !== 3) return null;
-    const { cap, sphere } = buildVertexRoundingTools(radius, corner, adjacentNormals);
+    const { cap, sphere } = buildVertexRoundingTools(radius, corner, adjacentNormals, concave);
     let cutter: THREE.BufferGeometry | null = null;
     try {
         cutter = evaluateBoolean(cap, sphere, 'subtract');
-        return normalizeVertexRoundingNormals(evaluateBoolean(base, cutter, 'subtract'), corner, adjacentNormals);
+        const rounded = evaluateBoolean(base, cutter, concave ? 'union' : 'subtract');
+        // The additive kernel result already owns smooth weld normals; re-splitting its singular vertices breaks later Boolean welding.
+        return concave ? rounded : normalizeVertexRoundingNormals(rounded, corner, adjacentNormals);
     } finally {
         cutter?.dispose();
         cap.dispose();

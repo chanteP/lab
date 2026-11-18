@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { applyEdgeTreatments, resolveEdgeTreatment } from './modeling/EdgeTreatments';
-import { initializeManifold } from './modeling/ManifoldKernel';
+import { evaluateBoolean, initializeManifold } from './modeling/ManifoldKernel';
 import type { EdgeTreatment, ModelEntity } from '../types';
 import type { GeometryAnchor } from './viewport/GeometrySelector';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
@@ -150,4 +150,35 @@ test('edge treatments follow A/B/C face drags instead of remaining at the old ed
         assert.ok(Math.abs(volume(result.geometry) - volume(expected)) < 1e-5, `face ${axis} produced a joined old/new body`);
         result.geometry.dispose(); expected.dispose(); base.dispose();
     }
+});
+
+test('a boolean step concave edge adds a tangent weld-like fillet', () => {
+    const slab = new THREE.BoxGeometry(40, 10, 40).translate(0, 5, 0);
+    const column = new THREE.BoxGeometry(10, 30, 10).translate(-15, 20, -15);
+    const stepped = evaluateBoolean(slab, column, 'union');
+    const radius = 3;
+    const result = applyEdgeTreatments(stepped, [{
+        id: 'concave-step', type: 'fillet', size: radius,
+        edge: { a: [-10, 10, -20], b: [-10, 10, -10], normals: [[1, 0, 0], [0, 1, 0]] },
+    }]);
+
+    assert.ok(volume(result) > volume(stepped) + 0.05, 'a concave fillet must add weld material instead of cutting the step');
+    assert.equal(validateSolidGeometry(result).valid, true, JSON.stringify(validateSolidGeometry(result)));
+    assert.equal(validateSolidGeometry(result).components, 1);
+    const entity = createEntity('box', 'step');
+    const topology = buildMeshTopology(result, entity.id, entity, createDocument());
+    assert.ok(topology.faces.some((face) => !face.planar), 'the concave edge must expose a curved weld surface');
+    const indices = result.index ? Array.from(result.index.array) : [];
+    const hasVertex = (expected: THREE.Vector3) => indices.some((index) => new THREE.Vector3().fromBufferAttribute(result.attributes.position, index).distanceTo(expected) < 2e-4);
+    const center = new THREE.Vector3(-7, 13, 0);
+    const overlap = Math.max(0.01, radius * 0.01);
+    for (const z of [-20 - overlap, -10 + overlap]) {
+        assert.ok(hasVertex(new THREE.Vector3(-7, 10, z)), 'the top-plane tangent point must be retained');
+        assert.ok(hasVertex(new THREE.Vector3(-10, 13, z)), 'the column-plane tangent point must be retained');
+        const arcMiddle = center.clone().add(new THREE.Vector3(-1, -1, 0).normalize().multiplyScalar(radius));
+        arcMiddle.z = z;
+        assert.ok(hasVertex(arcMiddle), 'the weld arc must bulge toward the original concave edge');
+    }
+
+    slab.dispose(); column.dispose(); stepped.dispose(); result.dispose();
 });

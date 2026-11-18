@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { applyVertexTreatments } from './modeling/VertexTreatments';
-import { initializeManifold } from './modeling/ManifoldKernel';
+import { applyEdgeTreatments } from './modeling/EdgeTreatments';
+import { evaluateBoolean, initializeManifold } from './modeling/ManifoldKernel';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { buildEntityMesh } from './geometry';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
@@ -254,4 +255,33 @@ test('vertex rounding retains an existing incident edge chamfer outside the sphe
     const edgeOnly = (await import('./modeling/EdgeTreatments')).applyEdgeTreatments(new THREE.BoxGeometry(40, 40, 40), entity.edgeTreatments);
     assert.ok(volume(result.geometry) < volume(edgeOnly));
     result.geometry.dispose(); edgeOnly.dispose();
+});
+
+test('a boolean step inner corner adds a spherical weld fillet on mixed incident edges', () => {
+    const slab = new THREE.BoxGeometry(40, 10, 40).translate(0, 5, 0);
+    const column = new THREE.BoxGeometry(10, 30, 10).translate(-15, 20, -15);
+    const stepped = evaluateBoolean(slab, column, 'union');
+    const radius = 3;
+    const corner = [-10, 10, -10] as [number, number, number];
+    const normals = [[1, 0, 0], [0, 1, 0], [0, 0, 1]] as [number, number, number][];
+    const result = applyVertexTreatments(stepped, [{ id: 'step-inner', type: 'fillet', size: radius, vertex: { point: corner, normals } }]);
+
+    assert.ok(volume(result) > volume(stepped) + 0.05, 'an inner-corner fillet must add weld material');
+    assert.equal(validateSolidGeometry(result).valid, true, JSON.stringify(validateSolidGeometry(result)));
+    assert.equal(validateSolidGeometry(result).components, 1);
+    const center = new THREE.Vector3(-8, 12, -8);
+    const hasSphericalPatch = result.index && Array.from(result.index.array).some((index) => {
+        const point = new THREE.Vector3().fromBufferAttribute(result.attributes.position, index);
+        return Math.abs(point.distanceTo(center) - radius) < 1e-4 && point.x > -10 && point.y > 10 && point.z > -10;
+    });
+    assert.ok(hasSphericalPatch, 'the inner corner must expose the outward quadrant of the weld sphere');
+
+    const combined = applyEdgeTreatments(result, [{
+        id: 'step-base-edge', type: 'fillet', size: radius,
+        edge: { a: [-10, 10, -20], b: [-10, 10, -10], normals: [[1, 0, 0], [0, 1, 0]] },
+    }], stepped);
+    assert.ok(volume(combined) > volume(result), 'the incident concave edge must remain additive after the vertex pass');
+    assert.equal(validateSolidGeometry(combined).valid, true, JSON.stringify(validateSolidGeometry(combined)));
+
+    slab.dispose(); column.dispose(); stepped.dispose(); result.dispose(); combined.dispose();
 });

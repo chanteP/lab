@@ -60,7 +60,7 @@ function applyMeshEdgeTreatments(mesh: THREE.Mesh, entity: ModelEntity, document
     mesh.userData.resolvedEdgeTreatments = edgeRules;
     mesh.userData.resolvedVertexTreatments = vertexRules;
     // Evaluate the corner while its three source planes still exist, then trim incident edges.
-    const treated = applyEdgeTreatments(withVertices, edgeRules);
+    const treated = applyEdgeTreatments(withVertices, edgeRules, mesh.geometry);
     if (withVertices !== mesh.geometry && treated !== withVertices) withVertices.dispose();
     if (treated !== mesh.geometry) {
         mesh.geometry.dispose();

@@ -3,10 +3,11 @@ import type { EdgeTreatment, ModelDocument, ModelEntity, Vec3 } from '../../type
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
 import { evaluateBoolean } from './ManifoldKernel';
 import { buildMeshTopology } from '../topology/MeshTopology';
+import { isConcaveEdge } from './TreatmentConvexity';
 
 const FILLET_CURVE_SEGMENTS = 32;
 
-function cutter(treatment: EdgeTreatment) {
+function cutter(treatment: EdgeTreatment, concave = false) {
     const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);
     const tangent = b.clone().sub(a);
     const length = tangent.length();
@@ -23,21 +24,22 @@ function cutter(treatment: EdgeTreatment) {
     const e2 = w.clone().cross(u).normalize();
     const size = treatment.size;
 
-    // Solve n0·center = n1·center = -r in the plane normal to the edge.
-    // This keeps the arc circular for acute/obtuse dihedral angles instead of skewing a 90° template.
+    // Convex edges cut at -r; concave edges reflect the same tangent construction and add weld material at +r.
+    // Both arcs stay circular for acute/obtuse dihedral angles instead of skewing a 90° template.
     const sine = Math.sqrt(Math.max(0, 1 - dot * dot));
-    const center = new THREE.Vector2(-size, -size * sine / (1 + dot));
+    const direction = concave ? 1 : -1;
+    const center = new THREE.Vector2(direction * size, direction * size * sine / (1 + dot));
     const shape = new THREE.Shape();
     shape.moveTo(0, 0);
     if (treatment.type === 'fillet') {
         const angle = Math.acos(dot);
         for (let step = 0; step <= FILLET_CURVE_SEGMENTS; step++) {
-            const theta = angle * (1 - step / FILLET_CURVE_SEGMENTS);
+            const theta = (concave ? Math.PI : 0) + angle * (1 - step / FILLET_CURVE_SEGMENTS);
             shape.lineTo(center.x + size * Math.cos(theta), center.y + size * Math.sin(theta));
         }
     } else {
-        shape.lineTo(center.x + size * dot, center.y + size * sine);
-        shape.lineTo(center.x + size, center.y);
+        shape.lineTo(center.x - direction * size * dot, center.y - direction * size * sine);
+        shape.lineTo(center.x - direction * size, center.y);
     }
     shape.closePath();
     const overlap = Math.max(0.01, size * 0.01);
@@ -84,14 +86,17 @@ export function rebindEdgeTreatments(base: THREE.BufferGeometry, treatments: Edg
     });
 }
 
-/** Convex edge treatments are evaluated from their original edge on every rebuild. */
-export function applyEdgeTreatments(base: THREE.BufferGeometry, treatments: EdgeTreatment[] = []) {
+/** Edge treatments use the untouched convexityBase when a vertex pass has already removed the source edge. */
+export function applyEdgeTreatments(base: THREE.BufferGeometry, treatments: EdgeTreatment[] = [], convexityBase = base) {
     let result = base;
+    // Classify against the untouched source: an earlier treatment may remove a later treatment's original edge triangles.
+    const concavity = new Map(treatments.map((treatment) => [treatment.id, isConcaveEdge(convexityBase, treatment)]));
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
-        const tool = cutter(treatment);
+        const concave = concavity.get(treatment.id) || false;
+        const tool = cutter(treatment, concave);
         if (!tool) return;
         try {
-            const next = evaluateBoolean(result, tool, 'subtract');
+            const next = evaluateBoolean(result, tool, concave ? 'union' : 'subtract');
             if (result !== base) result.dispose();
             result = next;
         } finally {
