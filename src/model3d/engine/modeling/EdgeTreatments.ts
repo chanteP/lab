@@ -1,13 +1,55 @@
 import * as THREE from 'three';
 import type { EdgeTreatment, ModelDocument, ModelEntity, Vec3 } from '../../types';
 import type { GeometryAnchor } from '../viewport/GeometrySelector';
-import { evaluateBoolean } from './ManifoldKernel';
+import { evaluateBoolean, trimGeometryByPlane } from './ManifoldKernel';
 import { buildMeshTopology } from '../topology/MeshTopology';
 import { isConcaveEdge } from './TreatmentConvexity';
 
 const FILLET_CURVE_SEGMENTS = 32;
+const ENDPOINT_TOLERANCE = 1e-4;
 
-function cutter(treatment: EdgeTreatment, concave = false) {
+type AdjacentJoin = {
+    end: 0 | 1;
+    origin: THREE.Vector3;
+    outward: THREE.Vector3;
+    inward: THREE.Vector3;
+};
+
+function sharedEndpoint(a: Vec3, b: Vec3) {
+    return new THREE.Vector3(...a).distanceTo(new THREE.Vector3(...b)) < ENDPOINT_TOLERANCE;
+}
+
+export function hasTreatedAdjacentEdge(treatments: EdgeTreatment[], current: EdgeTreatment) {
+    return treatments.some((candidate) => candidate.id !== current.id && candidate.size > 0
+        && [candidate.edge.a, candidate.edge.b].some((point) => sharedEndpoint(point, current.edge.a) || sharedEndpoint(point, current.edge.b)));
+}
+
+/** Undefined is automatic: an edge joins once a treated neighbor exists, while either side can explicitly disable the pair. */
+export function edgeTreatmentJoinEnabled(treatments: EdgeTreatment[], current: EdgeTreatment) {
+    return current.joinAdjacent ?? hasTreatedAdjacentEdge(treatments, current);
+}
+
+function adjacentJoins(treatment: EdgeTreatment, treatments: EdgeTreatment[], concavity: Map<string, boolean>) {
+    if (!concavity.get(treatment.id) || !edgeTreatmentJoinEnabled(treatments, treatment)) return [];
+    const joins: AdjacentJoin[] = [];
+    const currentPoints = [treatment.edge.a, treatment.edge.b];
+    treatments.forEach((candidate) => {
+        if (candidate.id === treatment.id || candidate.size <= 0 || !concavity.get(candidate.id) || !edgeTreatmentJoinEnabled(treatments, candidate)) return;
+        const candidatePoints = [candidate.edge.a, candidate.edge.b];
+        for (const end of [0, 1] as const) for (const candidateEnd of [0, 1] as const) {
+            if (!sharedEndpoint(currentPoints[end], candidatePoints[candidateEnd])) continue;
+            const origin = new THREE.Vector3(...currentPoints[end]);
+            const outward = origin.clone().sub(new THREE.Vector3(...currentPoints[1 - end])).normalize();
+            // Extend toward the neighbor's treated cross-section, not back along its source edge.
+            const inward = origin.clone().sub(new THREE.Vector3(...candidatePoints[1 - candidateEnd])).normalize();
+            if (Math.abs(outward.dot(inward)) > 0.999) continue;
+            joins.push({ end, origin, outward, inward });
+        }
+    });
+    return joins;
+}
+
+function cutter(treatment: EdgeTreatment, concave = false, joins: AdjacentJoin[] = []) {
     const a = new THREE.Vector3(...treatment.edge.a), b = new THREE.Vector3(...treatment.edge.b);
     const tangent = b.clone().sub(a);
     const length = tangent.length();
@@ -23,6 +65,13 @@ function cutter(treatment: EdgeTreatment, concave = false) {
     const w = u.clone().cross(v).normalize();
     const e2 = w.clone().cross(u).normalize();
     const size = treatment.size;
+
+    // A perpendicular neighbor is clipped by the bisector of the two extension directions.
+    // Skip directions outside this cross-section, such as the third edge at a trihedral corner.
+    const miterJoins = joins.filter((join) => {
+        const x = join.inward.dot(u), y = join.inward.dot(e2);
+        return x >= -1e-5 && y >= -1e-5 && Math.max(x, y) > 1e-5;
+    });
 
     // Convex edges cut at -r; concave edges reflect the same tangent construction and add weld material at +r.
     // Both arcs stay circular for acute/obtuse dihedral angles instead of skewing a 90° template.
@@ -43,15 +92,25 @@ function cutter(treatment: EdgeTreatment, concave = false) {
     }
     shape.closePath();
     const overlap = Math.max(0.01, size * 0.01);
+    const extension = size * 4 + 0.1;
+    const startExtension = miterJoins.some((join) => join.end === 0) ? extension : 0;
+    const endExtension = miterJoins.some((join) => join.end === 1) ? extension : 0;
     const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: length + overlap * 2,
+        depth: length + overlap * 2 + startExtension + endExtension,
         steps: 1,
         bevelEnabled: false,
     });
-    const matrix = new THREE.Matrix4().makeBasis(u, e2, w).setPosition(a.clone().addScaledVector(tangent, -overlap));
+    const matrix = new THREE.Matrix4().makeBasis(u, e2, w).setPosition(a.clone().addScaledVector(tangent, -overlap - startExtension));
     geometry.applyMatrix4(matrix);
     geometry.computeVertexNormals();
-    return geometry;
+    let result: THREE.BufferGeometry = geometry;
+    for (const join of miterJoins) {
+        const normal = join.outward.clone().sub(join.inward).normalize();
+        const next = trimGeometryByPlane(result, normal.toArray() as Vec3, join.origin.toArray() as Vec3);
+        result.dispose();
+        result = next;
+    }
+    return result;
 }
 
 /** Rebind a stored edge to the current base topology before the final treatment pass. */
@@ -93,7 +152,7 @@ export function applyEdgeTreatments(base: THREE.BufferGeometry, treatments: Edge
     const concavity = new Map(treatments.map((treatment) => [treatment.id, isConcaveEdge(convexityBase, treatment)]));
     treatments.filter((treatment) => treatment.size > 0).forEach((treatment) => {
         const concave = concavity.get(treatment.id) || false;
-        const tool = cutter(treatment, concave);
+        const tool = cutter(treatment, concave, adjacentJoins(treatment, treatments, concavity));
         if (!tool) return;
         try {
             const next = evaluateBoolean(result, tool, concave ? 'union' : 'subtract');

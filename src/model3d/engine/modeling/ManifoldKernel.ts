@@ -116,6 +116,31 @@ export function evaluateBoolean(base: THREE.BufferGeometry, tool: THREE.BufferGe
     }
 }
 
+/** Retain the half-space normal·(point - origin) ≤ 0 without imposing a locality heuristic on the tool. */
+export function trimGeometryByPlane(geometry: THREE.BufferGeometry, planeNormal: Vec3, planeOrigin: Vec3) {
+    const { Manifold } = getManifold();
+    const normal = new THREE.Vector3(...planeNormal).normalize();
+    const offset = normal.dot(new THREE.Vector3(...planeOrigin));
+    let solid: InstanceType<typeof Manifold> | null = null;
+    let result: InstanceType<typeof Manifold> | null = null;
+    try {
+        solid = new Manifold(inputMesh(geometry));
+        result = solid.trimByPlane(normal.toArray(), offset);
+        if (result.status() !== 'NoError') throw new Error(`斜面裁剪失败：${result.status()}`);
+        if (result.isEmpty()) return new THREE.BufferGeometry();
+        const simplified = result.asOriginal().simplify();
+        result.delete();
+        result = simplified;
+        const shaded = result.calculateNormals(0, 60);
+        result.delete();
+        result = shaded;
+        return outputGeometry(result.getMesh(0));
+    } finally {
+        result?.delete();
+        solid?.delete();
+    }
+}
+
 /** Exact local chamfer using the kernel's half-space trim instead of a coplanar tetrahedron subtraction. */
 export function evaluatePlaneChamfer(base: THREE.BufferGeometry, corner: Vec3, radius: number, planeNormal: Vec3, planeOffset: number) {
     const { Manifold } = getManifold();

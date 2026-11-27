@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { EditPhase, ViewTool, Viewport } from '../engine/Viewport';
 import type { GeometryAnchor } from '../engine/viewport/GeometrySelector';
 import { buildEntityMesh } from '../engine/geometry';
-import { resolveEdgeTreatment, treatmentFromAnchor } from '../engine/modeling/EdgeTreatments';
+import { edgeTreatmentJoinEnabled, resolveEdgeTreatment, treatmentFromAnchor } from '../engine/modeling/EdgeTreatments';
 import { resolveVertexTreatment, vertexTreatmentFromAnchor } from '../engine/modeling/VertexTreatments';
 import { cloneEntity } from '../utils/entity';
 import { uid } from '../utils/id';
@@ -138,6 +138,33 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         return true;
     }
 
+    function selectedEdgeJoinTarget() {
+        const anchor = viewport()?.getGeometryAnchor();
+        const item = document.value.entities.find((entity) => entity.id === anchor?.id);
+        if (!item || !anchor || anchor.type !== 'edge') return null;
+        const existing = anchor.generatedTreatment || !anchor.finalTopology ? resolveEdgeTreatment(item, anchor) : null;
+        const treatment = existing || treatmentFromAnchor(anchor, 'fillet', 'selected-edge');
+        return treatment ? { item, treatment, existing } : null;
+    }
+
+    function getSelectedEdgeJoinState() {
+        const target = selectedEdgeJoinTarget();
+        return target ? edgeTreatmentJoinEnabled(target.item.edgeTreatments || [], target.treatment) : null;
+    }
+
+    function updateEdgeTreatmentJoin(value: boolean) {
+        const target = selectedEdgeJoinTarget();
+        if (!target) return;
+        const { item, treatment, existing } = target;
+        transaction = null;
+        pushHistory();
+        treatment.joinAdjacent = value;
+        if (!existing) {
+            treatment.id = uid();
+            item.edgeTreatments = [...(item.edgeTreatments || []), treatment];
+        }
+    }
+
     function updateEdgeTreatmentDistance(value: number | null) {
         const anchor = viewport()?.getGeometryAnchor();
         if (value === null || !anchor || !['edge', 'vertex'].includes(anchor.type)) { message.warning('请先选择实体边或角点'); recover(); return; }
@@ -151,6 +178,8 @@ export function useEdgeTreatmentOperations(options: EdgeTreatmentOptions) {
         onEdgeTreatmentEdit,
         updateEdgeTreatmentDistance,
         getSelectedEdgeTreatment,
+        getSelectedEdgeJoinState,
+        updateEdgeTreatmentJoin,
         resetEdgeTreatment,
         finishEdgeTreatment: () => { transaction = null; },
         cancelEdgeTreatment: () => {

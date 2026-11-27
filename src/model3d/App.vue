@@ -141,7 +141,7 @@ const {
     startSketch: (editProfile) => sketchSession.startSketch(editProfile),
 });
 const {
-    onEdgeTreatmentEdit, updateEdgeTreatmentDistance, getSelectedEdgeTreatment, resetEdgeTreatment, finishEdgeTreatment, cancelEdgeTreatment,
+    onEdgeTreatmentEdit, updateEdgeTreatmentDistance, getSelectedEdgeTreatment, getSelectedEdgeJoinState, updateEdgeTreatmentJoin, resetEdgeTreatment, finishEdgeTreatment, cancelEdgeTreatment,
 } = useEdgeTreatmentOperations({
     document, activeTool, viewport: () => viewport, message, pushHistory, popHistory, setTool,
 });
@@ -212,6 +212,12 @@ const canRestoreTreatment = computed(() => {
     selectedIds.value;
     document.value.entities;
     return (getSelectedEdgeTreatment()?.size || 0) > 0;
+});
+const edgeJoinAdjacent = computed(() => {
+    selectionKind.value;
+    selectedIds.value;
+    document.value.entities;
+    return getSelectedEdgeJoinState() ?? false;
 });
 function restoreSelectedTreatment() {
     if (!resetEdgeTreatment()) return;
@@ -955,10 +961,10 @@ onBeforeUnmount(() => {
 
                 <ToolPanels :active-panel="activePanel" :sketch-mode="sketchMode" :operation="operation" :selected-entities="selectedEntities"
                     :selection-kind="selectionKind" :active-tool="activeTool" :can-boolean="canBoolean" v-model:select-through="selectThrough" v-model:include-tangent="includeTangent" :selected-face-planar="selectedFacePlanar"
-                    :parameter-card-open="parameterCardOpen" :can-restore-treatment="canRestoreTreatment" :display-length="displayLength"
+                    :parameter-card-open="parameterCardOpen" :can-restore-treatment="canRestoreTreatment" :edge-join-adjacent="edgeJoinAdjacent" :display-length="displayLength"
                     @close-panel="activePanel = null" @command="runCommand" @primitive="createPrimitive" @create-plane="createPlane"
                     @tool="chooseTool" @sketch="beginSketch()" @boolean="applyBoolean" @clear-selection="selectEntity(null)" @restore-treatment="restoreSelectedTreatment" @extrude-hint="message.info('请拖动视图中的上下粗箭头进行拉伸')"
-                    @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" />
+                    @update-dimension="updateLengthEntity" @update-color="updateEntity('color', $event)" @update:edge-join-adjacent="updateEdgeTreatmentJoin" />
 
                 <SketchToolbar :sketch-mode="sketchMode" :active-panel="activePanel" :selection-tool="sketchSelectionTool" :sketch-type="sketchType" :sides="sketchSides" :active-tool="activeTool" :symmetry-step="symmetry?.step || null"
                     :planes="document.planes" :selection-kind="selectionKind" :has-selection="hintSketchHasSelection" :has-shape-selection="selectedShapes.length > 0" :linear-pattern-active="linearPatternActive" :radial-pattern-active="radialPatternActive" @close="sketchMode ? closeSketchMode() : activePanel = null" @select="chooseSketchSelection"

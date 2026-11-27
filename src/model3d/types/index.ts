@@ -57,6 +57,8 @@ export type EdgeTreatment = {
     id: string;
     type: 'fillet' | 'chamfer';
     size: number;
+    /** Manual override for 45-degree joins; undefined follows adjacent treated edges. */
+    joinAdjacent?: boolean;
     /** Original body-local edge and adjacent outward normals; survives generated topology changes. */
     edge: { a: Vec3; b: Vec3; normals: Vec3[] };
 };

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { NIcon, NInput } from 'naive-ui';
+import { NIcon, NInput, NSwitch } from 'naive-ui';
 import { ArrowUpOutline, CloseOutline, CubeOutline, EllipseOutline, GridOutline, MoveOutline, RadioOutline, RefreshOutline, ShapesOutline, TriangleOutline } from '@vicons/ionicons5';
 import MenuCommand from '../ui/MenuCommand.vue';
 import SvgIcon from '../ui/SvgIcon.vue';
@@ -22,6 +22,7 @@ const props = defineProps<{
     selectedFacePlanar: boolean;
     parameterCardOpen: boolean;
     canRestoreTreatment: boolean;
+    edgeJoinAdjacent: boolean;
     displayLength: (value: number) => number;
 }>();
 const emit = defineEmits<{
@@ -37,6 +38,7 @@ const emit = defineEmits<{
     extrudeHint: [];
     'update:selectThrough': [value: boolean];
     'update:includeTangent': [value: boolean];
+    'update:edgeJoinAdjacent': [value: boolean];
     updateDimension: [key: keyof ModelEntity, value: number | null];
     updateColor: [value: string];
 }>();
@@ -113,7 +115,7 @@ function runCommand(id: string) {
             <div class="tool-panel-title"><div><small>自适应工具</small><strong>{{ selectedSketches.length === selectedEntities.length ? '封闭草图轮廓' : selectionKind === 'edge' ? '边' : selectionKind === 'vertex' ? '角点' : selectionKind === 'face' ? '面' : selectionKind === 'plane' ? '构造平面' : selectedEntities.length > 1 ? `${selectedEntities.length} 个实体` : '实体' }}</strong></div><button aria-label="取消选择" @click="emit('clearSelection')"><NIcon><CloseOutline /></NIcon></button></div>
             <template v-if="selectedSketches.length === selectedEntities.length"><p class="panel-note">已选择 {{ selectedSketches.length }} 个封闭轮廓。拖动视图中的上下粗箭头生成实体，草图底面保持在原平面。</p></template>
             <template v-else-if="selectionKind === 'plane'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在所选平面上绘制</small></span></button></template>
-            <template v-else-if="selectionKind === 'edge' || selectionKind === 'vertex'"><p class="panel-note">往内拖动为圆角（正数），往外拖动为倒角（负数）。</p><button v-if="canRestoreTreatment" class="menu-command" @click="emit('restoreTreatment')"><NIcon><RefreshOutline /></NIcon><span><strong>复原倒角/圆角</strong><small>将当前角修正数值归零</small></span></button></template>
+            <template v-else-if="selectionKind === 'edge' || selectionKind === 'vertex'"><p class="panel-note">往内拖动为圆角（正数），往外拖动为倒角（负数）。</p><label v-if="selectionKind === 'edge'" class="edge-join-option"><span><strong>邻边衔接</strong><small>与已处理邻边按 45° 扩展</small></span><NSwitch size="small" aria-label="邻边衔接" :value="edgeJoinAdjacent" @update:value="emit('update:edgeJoinAdjacent', $event)" /></label><button v-if="canRestoreTreatment" class="menu-command" @click="emit('restoreTreatment')"><NIcon><RefreshOutline /></NIcon><span><strong>复原倒角/圆角</strong><small>将当前角修正数值归零</small></span></button></template>
             <template v-else-if="selectionKind === 'face'"><button class="menu-command" @click="emit('sketch')"><SvgIcon name="pencil" /><span><strong>草图</strong><small>在此平面上新建草图</small></span></button></template>
             <div v-if="['face', 'edge', 'vertex'].includes(selectionKind || '')" class="inline-command-row vertical">
                 <button :class="{ active: includeTangent }" @click="emit('update:includeTangent', !includeTangent)">相切扩选</button>
@@ -142,6 +144,10 @@ function runCommand(id: string) {
 .property-grid :deep(.n-input-number) { width: 100%; }
 .property-color { display: flex; align-items: center; justify-content: space-between; }
 .property-color input { width: 42px; height: 25px; padding: 2px; background: var(--model3d-ui-fff); border: 1px solid var(--model3d-ui-d5ddd8); border-radius: 5px; cursor: pointer; }
+.edge-join-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 3px; color: var(--model3d-ui-748078); font-size: 9px; }
+.edge-join-option > span { display: grid; gap: 3px; }
+.edge-join-option strong { color: var(--model3d-ui-33443b); font-size: 10px; font-weight: 500; }
+.edge-join-option small { line-height: 1.4; }
 </style>
 
 .tool-panel-slide-enter-active, .tool-panel-slide-leave-active { transition: opacity .18s ease, transform .22s cubic-bezier(.2,.8,.2,1); transform-origin: left top; }

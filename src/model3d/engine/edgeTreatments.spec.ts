@@ -8,6 +8,8 @@ import type { GeometryAnchor } from './viewport/GeometrySelector';
 import { validateSolidGeometry } from './modeling/GeometryValidator';
 import { buildMeshTopology } from './topology/MeshTopology';
 import { createDocument, createEntity } from '../types';
+import { ref } from 'vue';
+import { useEdgeTreatmentOperations } from '../composables/useEdgeTreatmentOperations';
 
 await initializeManifold();
 
@@ -181,4 +183,81 @@ test('a boolean step concave edge adds a tangent weld-like fillet', () => {
     }
 
     slab.dispose(); column.dispose(); stepped.dispose(); result.dispose();
+});
+
+test('adjacent concave treatments extend into a 45-degree junction by default', () => {
+    for (const type of ['fillet', 'chamfer'] as const) {
+        const slab = new THREE.BoxGeometry(40, 10, 40).translate(0, 5, 0);
+        const column = new THREE.BoxGeometry(10, 30, 10).translate(-15, 20, -15);
+        const stepped = evaluateBoolean(slab, column, 'union');
+        const radius = 3;
+        const treatments: EdgeTreatment[] = [{
+            id: 'concave-z', type, size: radius,
+            edge: { a: [-10, 10, -20], b: [-10, 10, -10], normals: [[1, 0, 0], [0, 1, 0]] },
+        }, {
+            id: 'concave-x', type, size: radius,
+            edge: { a: [-20, 10, -10], b: [-10, 10, -10], normals: [[0, 0, 1], [0, 1, 0]] },
+        }];
+        const result = applyEdgeTreatments(stepped, treatments);
+        const indices = result.index ? Array.from(result.index.array) : [];
+        const hasVertex = (expected: THREE.Vector3) => indices.some((index) => new THREE.Vector3().fromBufferAttribute(result.attributes.position, index).distanceTo(expected) < 2e-4);
+
+        assert.equal(validateSolidGeometry(result).valid, true, JSON.stringify(validateSolidGeometry(result)));
+        assert.ok(hasVertex(new THREE.Vector3(-7, 10, -7)), `${type} treatments must meet on the 45-degree plane x = z at their shared corner`);
+
+        slab.dispose(); column.dispose(); stepped.dispose(); result.dispose();
+    }
+});
+
+test('disabling either side of an adjacent concave junction retains square ends', () => {
+    const slab = new THREE.BoxGeometry(40, 10, 40).translate(0, 5, 0);
+    const column = new THREE.BoxGeometry(10, 30, 10).translate(-15, 20, -15);
+    const stepped = evaluateBoolean(slab, column, 'union');
+    const treatments: EdgeTreatment[] = [{
+        id: 'concave-z', type: 'fillet', size: 3, joinAdjacent: false,
+        edge: { a: [-10, 10, -20], b: [-10, 10, -10], normals: [[1, 0, 0], [0, 1, 0]] },
+    }, {
+        id: 'concave-x', type: 'fillet', size: 3,
+        edge: { a: [-20, 10, -10], b: [-10, 10, -10], normals: [[0, 0, 1], [0, 1, 0]] },
+    }];
+    const result = applyEdgeTreatments(stepped, treatments);
+    const indices = result.index ? Array.from(result.index.array) : [];
+    const hasJoinedVertex = indices.some((index) => new THREE.Vector3().fromBufferAttribute(result.attributes.position, index).distanceTo(new THREE.Vector3(-7, 10, -7)) < 2e-4);
+
+    assert.equal(hasJoinedVertex, false, 'one disabled side must disable the shared 45-degree extension');
+    assert.equal(validateSolidGeometry(result).valid, true, JSON.stringify(validateSolidGeometry(result)));
+
+    slab.dispose(); column.dispose(); stepped.dispose(); result.dispose();
+});
+
+test('edge panel join state defaults from treated neighbors and saves a manual override', () => {
+    const document = ref(createDocument());
+    const entity = createEntity('box', 'step');
+    const neighbor: EdgeTreatment = {
+        id: 'concave-z', type: 'fillet', size: 3,
+        edge: { a: [-10, 10, -20], b: [-10, 10, -10], normals: [[1, 0, 0], [0, 1, 0]] },
+    };
+    entity.edgeTreatments = [neighbor];
+    document.value.entities.push(entity);
+    const anchor = {
+        id: entity.id, type: 'edge', finalTopology: false,
+        localEdge: { a: [-20, 10, -10], b: [-10, 10, -10], normals: [[0, 0, 1], [0, 1, 0]] },
+    } as GeometryAnchor;
+    let history = 0;
+    const operations = useEdgeTreatmentOperations({
+        document, activeTool: ref('select') as any, viewport: () => ({ getGeometryAnchor: () => anchor } as any),
+        message: { warning: () => undefined } as any, pushHistory: () => { history++; }, popHistory: () => undefined, setTool: () => undefined,
+    });
+
+    assert.equal(operations.getSelectedEdgeJoinState(), true, 'a treated neighbor enables the default');
+    operations.updateEdgeTreatmentJoin(false);
+    assert.equal(entity.edgeTreatments?.length, 2);
+    assert.equal(entity.edgeTreatments?.[1]?.size, 0, 'the panel can save the option before a size is dragged');
+    assert.equal(operations.getSelectedEdgeJoinState(), false);
+    operations.updateEdgeTreatmentJoin(true);
+    assert.equal(operations.getSelectedEdgeJoinState(), true);
+    assert.equal(history, 2);
+
+    entity.edgeTreatments = [];
+    assert.equal(operations.getSelectedEdgeJoinState(), false, 'an isolated edge defaults to off');
 });
